@@ -19,6 +19,10 @@ pnpm-debug.log*
 # Build outputs
 /dist/
 /build/
+apps/**/dist/
+apps/**/build/
+services/**/dist/
+services/**/build/
 /.turbo/
 /.nx/
 /.parcel-cache/
@@ -37,6 +41,7 @@ __pycache__/
 *.py[cod]
 .venv/
 venv/
+**/*.egg-info/
 
 # Others
 .gitignore.local

@@ -1,5 +1,0 @@
-Metadata-Version: 2.4
-Name: cad-worker
-Version: 0.0.0
-Summary: Skeleton CAD worker (MVP) — provides CLI entrypoint and healthcheck.
-Requires-Python: >=3.12
