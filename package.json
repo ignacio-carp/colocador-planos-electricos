@@ -1,0 +1,15 @@
+{
+  "name": "cambre-planos-de-luz",
+  "private": true,
+  "version": "0.0.0",
+  "workspaces": [
+    "apps/*",
+    "services/*"
+  ],
+  "scripts": {
+    "dev": "npm run dev --workspace apps/api --if-present & npm run dev --workspace apps/web --if-present",
+    "lint": "npm run lint --workspace apps/api --if-present && npm run lint --workspace apps/web --if-present",
+    "test": "npm run test --workspace apps/api --if-present && npm run test --workspace apps/web --if-present"
+  }
+}
+

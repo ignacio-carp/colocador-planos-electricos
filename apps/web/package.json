@@ -1,0 +1,15 @@
+{
+  "name": "web",
+  "private": true,
+  "version": "0.0.0",
+  "type": "module",
+  "scripts": {
+    "dev": "vite --host 0.0.0.0 --port 5173",
+    "build": "vite build",
+    "preview": "vite preview --host 0.0.0.0 --port 5173",
+    "lint": "eslint .",
+    "format": "prettier -c .",
+    "typecheck": "tsc -p tsconfig.json --noEmit"
+  }
+}
+
