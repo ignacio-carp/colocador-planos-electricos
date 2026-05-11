@@ -1,0 +1,56 @@
+services:
+  api:
+    image: node:20-slim
+    working_dir: /repo
+    volumes:
+      - ./:/repo
+    environment:
+      - NODE_ENV=development
+      - API_PORT=3001
+    ports:
+      - "3001:3001"
+    command: bash -lc "npm install && npm --workspace api run dev"
+    healthcheck:
+      interval: 5s
+      timeout: 2s
+      retries: 20
+      test:
+        - CMD-SHELL
+        - node -e "fetch('http://localhost:3001/healthz').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"
+
+  web:
+    image: node:20-slim
+    working_dir: /repo
+    volumes:
+      - ./:/repo
+    environment:
+      - NODE_ENV=development
+      - VITE_PORT=5173
+    ports:
+      - "5173:5173"
+    depends_on:
+      api:
+        condition: service_healthy
+    command: bash -lc "npm install && npm --workspace web run dev"
+    healthcheck:
+      interval: 5s
+      timeout: 2s
+      retries: 20
+      test:
+        - CMD-SHELL
+        - node -e "fetch('http://localhost:5173/healthz').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"
+
+  cad-worker:
+    image: python:3.12-slim
+    working_dir: /repo
+    volumes:
+      - ./:/repo
+    command: bash -lc "python -m pip install -e ./services/cad-worker && sleep infinity"
+    healthcheck:
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      test:
+        - CMD-SHELL
+        - python -m cad_worker health
+

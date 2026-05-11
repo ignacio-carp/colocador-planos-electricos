@@ -1,0 +1,10 @@
+README.md
+pyproject.toml
+src/cad_worker/__init__.py
+src/cad_worker/__main__.py
+src/cad_worker/cli.py
+src/cad_worker.egg-info/PKG-INFO
+src/cad_worker.egg-info/SOURCES.txt
+src/cad_worker.egg-info/dependency_links.txt
+src/cad_worker.egg-info/entry_points.txt
+src/cad_worker.egg-info/top_level.txt

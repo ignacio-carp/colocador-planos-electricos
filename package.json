@@ -1,0 +1,20 @@
+{
+  "name": "cambre-planos-electricos-mvp",
+  "private": true,
+  "workspaces": [
+    "apps/*"
+  ],
+  "scripts": {
+    "dev:web": "npm --workspace web run dev",
+    "dev:api": "npm --workspace api run dev",
+    "dev": "npm run dev:web & npm run dev:api",
+    "lint": "npm -ws run lint",
+    "format": "npm -ws run format",
+    "typecheck": "npm -ws run typecheck",
+    "build": "npm -ws run build"
+  },
+  "engines": {
+    "node": ">=20"
+  }
+}
+
