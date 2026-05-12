@@ -1,0 +1,18 @@
+[build-system]
+requires = ["setuptools>=69", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "cad-worker"
+version = "0.1.0"
+description = "Minimal CAD worker CLI"
+requires-python = ">=3.11"
+dependencies = []
+
+[project.scripts]
+cad-worker = "cad_worker.cli:main"
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["cad_worker"]
+
