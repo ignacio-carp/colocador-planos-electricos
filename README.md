@@ -1,38 +1,58 @@
-# Cambre Planos de Luz
+# VanguardIA — Cambre Planos Electricos (MVP)
 
-Monorepo con:
+Repo (MVP) organizado como **monorepo**.
 
-- `apps/web`: React + Tailwind + Vite
-- `apps/api`: Node + Express + TypeScript
-- `services/cad-worker`: CLI Python (worker mínimo)
+## Estructura
+
+- `apps/web`: Frontend React + Tailwind + Vite.
+- `apps/api`: Backend Node + Express + TypeScript.
+- `services/cad-worker`: Skeleton Python (CLI + healthcheck) con `pyproject.toml`.
+- `docs/adr`: ADRs del diseño (ej. `ADR-001`).
 
 ## Requisitos
 
-- Node.js >= 22
-- Python >= 3.11
+- Node.js 20+
+- Python 3.12+
+- (Opcional) Docker / Docker Compose
 
-## Bootstrap (dev)
+## Variables de entorno
+
+```bash
+cp .env.example .env
+```
+
+## Levantar en modo local (sin Docker)
 
 1. Instalar dependencias:
-   - `npm install`
-2. Levantar API:
-   - `npm run dev --workspace apps/api`
-   - Verificar: `curl http://localhost:3001/health`
-3. Levantar Web:
-   - `npm run dev --workspace apps/web`
-   - La app consulta `GET /health` (proxy del dev server) para mostrar el estado.
 
-## Scripts (desde la raíz)
+```bash
+npm install
+```
 
-- `npm run dev` (dev API + dev Web en paralelo)
-- `npm run lint` (placeholder por ahora)
-- `npm test` (placeholder por ahora)
+2. Iniciar apps:
 
-## Servicios Python
+```bash
+npm run dev:api
+npm run dev:web
+```
 
-El worker CAD se ha scaffoldeado como CLI mínima. Para probar:
+3. Worker (en otra terminal):
 
-- `cd services/cad-worker && python -m cad_worker.cli`
+```bash
+cd services/cad-worker
+python -m pip install -e .
+python -m cad_worker health
+```
 
-Nota: para un setup de empaquetado/ejecución más completo (virtualenv, dependencias reales, Docker, etc.) se requiere un alcance posterior.
+## Salud (healthchecks)
+
+- Web: `GET http://localhost:5173/healthz`
+- API: `GET http://localhost:3001/healthz`
+- Worker: `python -m cad_worker health` (exit code 0)
+
+## Docker Compose (opcional)
+
+```bash
+docker compose up --build
+```
 

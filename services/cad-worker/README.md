@@ -1,18 +1,19 @@
-# cad-worker
+# cad-worker (MVP skeleton)
 
-CLI mínima de scaffolding para la tarea T-01.
+Skeleton del worker Python para el MVP.
 
-## Uso
-
-Desde `services/cad-worker`:
+## Ejecución
 
 ```bash
-python -m cad_worker.cli
+python -m pip install -e .
+python -m cad_worker health
 ```
 
-Si se instala como paquete:
+## Lint / format
 
 ```bash
-cad-worker
+python -m pip install ruff black
+ruff check .
+black --check .
 ```
 

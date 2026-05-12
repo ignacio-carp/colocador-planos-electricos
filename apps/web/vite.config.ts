@@ -6,13 +6,9 @@ export default defineConfig({
   server: {
     host: true,
     port: Number(process.env.VITE_PORT ?? 5173),
-    proxy: {
-      // Dev convenience: allow the React app to call GET /health directly.
-      "/health": {
-        target: "http://localhost:3001",
-        changeOrigin: true
-      }
-    }
+  },
+  preview: {
+    host: true,
+    port: Number(process.env.VITE_PORT ?? 5173),
   },
 })
-

@@ -1,15 +1,20 @@
 {
-  "name": "cambre-planos-de-luz",
+  "name": "cambre-planos-electricos-mvp",
   "private": true,
-  "version": "0.0.0",
   "workspaces": [
-    "apps/*",
-    "services/*"
+    "apps/*"
   ],
   "scripts": {
-    "dev": "npm run dev --workspace apps/api --if-present & npm run dev --workspace apps/web --if-present",
-    "lint": "npm run lint --workspace apps/api --if-present && npm run lint --workspace apps/web --if-present",
-    "test": "npm run test --workspace apps/api --if-present && npm run test --workspace apps/web --if-present"
+    "dev:web": "npm --workspace web run dev",
+    "dev:api": "npm --workspace api run dev",
+    "dev": "npm run dev:web & npm run dev:api",
+    "lint": "npm -ws run lint",
+    "format": "npm -ws run format",
+    "typecheck": "npm -ws run typecheck",
+    "build": "npm -ws run build"
+  },
+  "engines": {
+    "node": ">=20"
   }
 }
 
