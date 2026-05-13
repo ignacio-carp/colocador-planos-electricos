@@ -1,13 +1,17 @@
 import 'dotenv/config'
 import cors from 'cors'
 import express from 'express'
+import { createJob, findJob, listAllJobs, listJobsForOwner } from './jobsStore'
+import { runJobPipeline } from './jobsPipeline'
+import { getMetricsSnapshot } from './metrics'
+import { correlationMiddleware } from './middleware/correlation'
 import { requireAuth, type AuthedRequest } from './middleware/requireAuth'
 import { requireArchitectOrAdmin, requireRole } from './middleware/requireRole'
 import { getAppRole } from './roles'
-import { createJob, findJob, listAllJobs, listJobsForOwner } from './jobsStore'
 
 const app = express()
 app.use(express.json())
+app.use(correlationMiddleware)
 
 const corsOrigin = process.env.CORS_ORIGIN?.split(',').map((s) => s.trim()) ?? true
 app.use(
@@ -42,6 +46,50 @@ app.post('/api/jobs', requireAuth, requireRole('architect'), (req, res) => {
   }
   const job = createJob(user.id, title)
   res.status(201).json(job)
+})
+
+/**
+ * T-07: ejecuta pipeline MVP (sincrónico). Propaga `X-Correlation-Id` del request;
+ * logs JSON incluyen job_id + correlation_id. Para simular fallo IA tras reintentos:
+ * `CAD_IA_SIMULATE_FAILURE=true`.
+ */
+app.post(
+  '/api/jobs/:jobId/process',
+  requireAuth,
+  requireRole('architect'),
+  async (req, res) => {
+    const { user } = req as AuthedRequest
+    const correlationId = req.correlationId
+    const jobId = typeof req.params.jobId === 'string' ? req.params.jobId : req.params.jobId?.[0]
+    if (!jobId) {
+      res.status(400).json({ error: 'Missing jobId' })
+      return
+    }
+    const job = findJob(jobId)
+    if (!job) {
+      res.status(404).json({ error: 'Job not found' })
+      return
+    }
+    if (job.owner_user_id !== user.id) {
+      res.status(403).json({ error: 'Forbidden', code: 'NOT_JOB_OWNER' })
+      return
+    }
+    if (job.status === 'processing') {
+      res.status(409).json({ error: 'Job already processing' })
+      return
+    }
+    const result = await runJobPipeline(jobId, correlationId)
+    if (!result) {
+      res.status(404).json({ error: 'Job not found' })
+      return
+    }
+    res.status(200).json(result)
+  },
+)
+
+/** T-07 métricas stub — consumo TBD por dashboard; solo administrador. */
+app.get('/api/metrics', requireAuth, requireRole('administrator'), (_req, res) => {
+  res.json(getMetricsSnapshot())
 })
 
 /**
