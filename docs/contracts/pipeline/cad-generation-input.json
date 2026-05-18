@@ -1,0 +1,102 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://cambre.local/schemas/pipeline/cad-generation-input.json",
+  "title": "CadGenerationInput",
+  "description": "US-009 — Entrada al script CAD (ezdxf): DWG original + salida normativa US-008.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "contract_version",
+    "job_id",
+    "correlation_id",
+    "story_id",
+    "dwg",
+    "normative_result",
+    "output_layer"
+  ],
+  "properties": {
+    "contract_version": {
+      "type": "string",
+      "pattern": "^(0|[1-9]\\d*)\\.(0|[1-9]\\d*)\\.(0|[1-9]\\d*)(?:-[0-9A-Za-z-]+(?:\\.[0-9A-Za-z-]+)*)?(?:\\+[0-9A-Za-z-]+(?:\\.[0-9A-Za-z-]+)*)?$"
+    },
+    "job_id": { "type": "string", "format": "uuid" },
+    "correlation_id": { "type": "string", "minLength": 8, "maxLength": 128 },
+    "story_id": { "type": "string", "const": "US-009" },
+    "feature_key": { "type": "string", "const": "cad.layer_output" },
+    "dwg": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["storage_path", "checksum_sha256"],
+      "properties": {
+        "storage_path": { "type": "string" },
+        "checksum_sha256": {
+          "type": "string",
+          "pattern": "^[a-f0-9]{64}$"
+        }
+      }
+    },
+    "normative_result": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "story_id",
+        "contract_version",
+        "normative_rules_version",
+        "outlet_placements"
+      ],
+      "properties": {
+        "story_id": { "type": "string", "const": "US-008" },
+        "contract_version": { "type": "string" },
+        "normative_rules_version": { "type": "string" },
+        "outlet_placements": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "$ref": "normative-inference-output.json#/definitions/OutletPlacement"
+          }
+        }
+      }
+    },
+    "layout_interpretation": {
+      "$ref": "vision-layout-output.json#/definitions/LayoutInterpretation",
+      "description": "Opcional: alinea símbolos con geometría de habitaciones"
+    },
+    "output_layer": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["name"],
+      "properties": {
+        "name": {
+          "type": "string",
+          "const": "Cambre_Electrical",
+          "description": "Capa no destructiva sobre el DWG original (US-009)"
+        },
+        "block_name": {
+          "type": "string",
+          "default": "CAMBRE_OUTLET",
+          "description": "Nombre de bloque/símbolo TBD con Cambre"
+        },
+        "color_aci": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 255,
+          "default": 3
+        }
+      }
+    },
+    "output_dwg": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "storage_path_hint": {
+          "type": "string",
+          "description": "Destino sugerido del blob resultado"
+        },
+        "preserve_source_layers": {
+          "type": "boolean",
+          "const": true
+        }
+      }
+    }
+  }
+}

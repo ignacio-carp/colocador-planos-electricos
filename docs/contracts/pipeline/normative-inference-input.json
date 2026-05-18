@@ -1,0 +1,69 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://cambre.local/schemas/pipeline/normative-inference-input.json",
+  "title": "NormativeInferenceInput",
+  "description": "US-008 — Entrada a inferencia normativa; layout_interpretation debe ser salida válida de US-007.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "contract_version",
+    "job_id",
+    "correlation_id",
+    "story_id",
+    "layout_interpretation",
+    "normative_rules_version"
+  ],
+  "properties": {
+    "contract_version": {
+      "type": "string",
+      "pattern": "^(0|[1-9]\\d*)\\.(0|[1-9]\\d*)\\.(0|[1-9]\\d*)(?:-[0-9A-Za-z-]+(?:\\.[0-9A-Za-z-]+)*)?(?:\\+[0-9A-Za-z-]+(?:\\.[0-9A-Za-z-]+)*)?$"
+    },
+    "job_id": { "type": "string", "format": "uuid" },
+    "correlation_id": { "type": "string", "minLength": 8, "maxLength": 128 },
+    "story_id": { "type": "string", "const": "US-008" },
+    "feature_key": {
+      "type": "string",
+      "const": "ai.normative_inference"
+    },
+    "source_vision": {
+      "type": "object",
+      "additionalProperties": false,
+      "description": "Trazabilidad al paso US-007",
+      "required": ["story_id", "contract_version", "provider"],
+      "properties": {
+        "story_id": { "type": "string", "const": "US-007" },
+        "contract_version": { "type": "string" },
+        "provider": {
+          "type": "object",
+          "required": ["name", "model"],
+          "properties": {
+            "name": { "type": "string" },
+            "model": { "type": "string" },
+            "request_id": { "type": "string" }
+          }
+        },
+        "completed_at": { "type": "string", "format": "date-time" }
+      }
+    },
+    "layout_interpretation": {
+      "$ref": "vision-layout-output.json#/definitions/LayoutInterpretation"
+    },
+    "normative_rules_version": {
+      "type": "string",
+      "description": "Versión del prompt/reglas Cambre aplicadas (semver o tag git)",
+      "examples": ["cambre-normative-2026.05.1"]
+    },
+    "job_context": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "project_type": {
+          "type": "string",
+          "enum": ["residential", "commercial", "mixed", "unknown"]
+        },
+        "country_code": { "type": "string", "pattern": "^[A-Z]{2}$", "default": "ES" },
+        "notes": { "type": "string" }
+      }
+    }
+  }
+}

@@ -1,0 +1,158 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://cambre.local/schemas/pipeline/vision-layout-output.json",
+  "title": "VisionLayoutOutput",
+  "description": "US-007 — Salida estructurada de interpretación visual; entrada canónica a US-008 vía layout_interpretation.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "contract_version",
+    "job_id",
+    "correlation_id",
+    "story_id",
+    "provider",
+    "layout_interpretation",
+    "completed_at"
+  ],
+  "properties": {
+    "contract_version": {
+      "type": "string",
+      "pattern": "^(0|[1-9]\\d*)\\.(0|[1-9]\\d*)\\.(0|[1-9]\\d*)(?:-[0-9A-Za-z-]+(?:\\.[0-9A-Za-z-]+)*)?(?:\\+[0-9A-Za-z-]+(?:\\.[0-9A-Za-z-]+)*)?$"
+    },
+    "job_id": { "type": "string", "format": "uuid" },
+    "correlation_id": { "type": "string", "minLength": 8, "maxLength": 128 },
+    "story_id": { "type": "string", "const": "US-007" },
+    "provider": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["name", "model"],
+      "properties": {
+        "name": { "type": "string", "enum": ["openai", "anthropic"] },
+        "model": { "type": "string", "examples": ["gpt-4o", "claude-3-5-sonnet-20241022"] },
+        "request_id": { "type": "string" }
+      }
+    },
+    "layout_interpretation": { "$ref": "#/definitions/LayoutInterpretation" },
+    "confidence": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "overall": { "type": "number", "minimum": 0, "maximum": 1 },
+        "scale_detected": { "type": "boolean" }
+      }
+    },
+    "warnings": {
+      "type": "array",
+      "items": { "type": "string" }
+    },
+    "completed_at": {
+      "type": "string",
+      "format": "date-time"
+    }
+  },
+  "definitions": {
+    "Point2D": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["x", "y"],
+      "properties": {
+        "x": { "type": "number" },
+        "y": { "type": "number" },
+        "unit": { "type": "string", "enum": ["mm", "cm", "m", "drawing_units"], "default": "drawing_units" }
+      }
+    },
+    "Polygon2D": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["vertices"],
+      "properties": {
+        "vertices": {
+          "type": "array",
+          "minItems": 3,
+          "items": { "$ref": "#/definitions/Point2D" }
+        }
+      }
+    },
+    "Room": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "label", "polygon"],
+      "properties": {
+        "id": { "type": "string", "pattern": "^room-[a-z0-9-]+$" },
+        "label": { "type": "string" },
+        "room_type": {
+          "type": "string",
+          "enum": [
+            "living",
+            "bedroom",
+            "kitchen",
+            "bathroom",
+            "hallway",
+            "office",
+            "storage",
+            "other",
+            "unknown"
+          ]
+        },
+        "polygon": { "$ref": "#/definitions/Polygon2D" },
+        "area_m2": { "type": "number", "minimum": 0 }
+      }
+    },
+    "WallSegment": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "start", "end"],
+      "properties": {
+        "id": { "type": "string" },
+        "start": { "$ref": "#/definitions/Point2D" },
+        "end": { "$ref": "#/definitions/Point2D" },
+        "is_exterior": { "type": "boolean" }
+      }
+    },
+    "Opening": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "kind", "center"],
+      "properties": {
+        "id": { "type": "string" },
+        "kind": { "type": "string", "enum": ["door", "window", "opening"] },
+        "center": { "$ref": "#/definitions/Point2D" },
+        "width_mm": { "type": "number", "minimum": 0 },
+        "wall_id": { "type": "string" }
+      }
+    },
+    "LayoutInterpretation": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["coordinate_system", "rooms"],
+      "properties": {
+        "coordinate_system": {
+          "type": "string",
+          "enum": ["drawing_origin_bottom_left", "drawing_origin_top_left"],
+          "description": "Origen y eje Y del espacio de dibujo respecto al render enviado"
+        },
+        "scale": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "pixels_per_meter": { "type": "number", "exclusiveMinimum": 0 },
+            "known": { "type": "boolean" }
+          }
+        },
+        "rooms": {
+          "type": "array",
+          "minItems": 1,
+          "items": { "$ref": "#/definitions/Room" }
+        },
+        "walls": {
+          "type": "array",
+          "items": { "$ref": "#/definitions/WallSegment" }
+        },
+        "openings": {
+          "type": "array",
+          "items": { "$ref": "#/definitions/Opening" }
+        }
+      }
+    }
+  }
+}

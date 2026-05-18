@@ -6,6 +6,7 @@ import {
   recordIaRetry,
   recordStepLatency,
 } from './metrics'
+import { PIPELINE_CONTRACT_VERSION } from './pipelineContracts'
 
 const IA_MAX_ATTEMPTS = 3
 
@@ -24,6 +25,7 @@ async function runTimedStep(
     event: 'pipeline_step_start',
     job_id: jobId,
     correlation_id: correlationId,
+    contract_version: PIPELINE_CONTRACT_VERSION,
     step,
   })
   try {
@@ -35,6 +37,7 @@ async function runTimedStep(
     event: 'pipeline_step_end',
     job_id: jobId,
     correlation_id: correlationId,
+    contract_version: PIPELINE_CONTRACT_VERSION,
     step,
   })
 }
@@ -52,6 +55,7 @@ async function runIaWithRetries(jobId: string, correlationId: string): Promise<v
       event: 'ia_attempt',
       job_id: jobId,
       correlation_id: correlationId,
+      contract_version: PIPELINE_CONTRACT_VERSION,
       step: 'ia_generate',
       attempt,
       max_attempts: IA_MAX_ATTEMPTS,
@@ -101,6 +105,7 @@ export async function runJobPipeline(jobId: string, correlationId: string): Prom
       event: 'pipeline_job_missing',
       job_id: jobId,
       correlation_id: correlationId,
+      contract_version: PIPELINE_CONTRACT_VERSION,
     })
     return undefined
   }
@@ -114,11 +119,12 @@ export async function runJobPipeline(jobId: string, correlationId: string): Prom
     await runTimedStep(jobId, correlationId, 'cad_export', () => sleep(5))
 
     const done = patchJob(jobId, { status: 'completed', error: undefined })
-    logStructured('info', {
-      event: 'pipeline_complete',
-      job_id: jobId,
-      correlation_id: correlationId,
-    })
+  logStructured('info', {
+    event: 'pipeline_complete',
+    job_id: jobId,
+    correlation_id: correlationId,
+    contract_version: PIPELINE_CONTRACT_VERSION,
+  })
     return done
   } catch (e) {
     const message = e instanceof Error ? e.message : 'Unknown pipeline error'
@@ -133,6 +139,7 @@ export async function runJobPipeline(jobId: string, correlationId: string): Prom
       event: 'pipeline_error',
       job_id: jobId,
       correlation_id: correlationId,
+      contract_version: PIPELINE_CONTRACT_VERSION,
       step: 'ia_generate',
       error: message,
     })
