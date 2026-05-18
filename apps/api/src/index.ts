@@ -10,6 +10,7 @@ import {
   objectPathMatchesJobAndOwner,
 } from './dwgStorage'
 import { findLatestOutputForJob, insertFileRow, listFilesForJob } from './filesStore'
+import { acceptInvitation } from './inviteAccept'
 import { createInviteRateLimiter } from './inviteRateLimit'
 import {
   createInvitationRecord,
@@ -543,7 +544,22 @@ app.post(
   },
 )
 
-/** Verificación pública de token (US-002 puede extender). */
+/** US-002: activar cuenta de arquitecto invitado. */
+app.post('/api/invites/accept', async (req, res) => {
+  const body = req.body as { token?: string; password?: string; fullName?: string }
+  const result = await acceptInvitation({
+    token: String(body.token ?? ''),
+    password: String(body.password ?? ''),
+    fullName: String(body.fullName ?? ''),
+  })
+  if (!result.ok) {
+    res.status(result.status).json({ error: result.message, code: result.code })
+    return
+  }
+  res.status(201).json({ ok: true, userId: result.userId, email: result.email })
+})
+
+/** Verificación pública de token (US-002). */
 app.get('/api/invites/verify', async (req, res) => {
   const token = typeof req.query.token === 'string' ? req.query.token : ''
   if (!token) {
