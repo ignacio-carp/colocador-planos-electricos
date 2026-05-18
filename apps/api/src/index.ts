@@ -544,18 +544,23 @@ app.post(
 )
 
 /** Verificación pública de token (US-002 puede extender). */
-app.get('/api/invites/verify', (req, res) => {
+app.get('/api/invites/verify', async (req, res) => {
   const token = typeof req.query.token === 'string' ? req.query.token : ''
   if (!token) {
     res.status(400).json({ valid: false, error: 'token is required' })
     return
   }
-  const row = findInviteByRawToken(token)
-  if (!row) {
-    res.status(404).json({ valid: false, error: 'invalid_or_expired_token' })
-    return
+  try {
+    const row = await findInviteByRawToken(token)
+    if (!row) {
+      res.status(404).json({ valid: false, error: 'invalid_or_expired_token' })
+      return
+    }
+    res.json({ valid: true, email: row.email_normalized })
+  } catch (e) {
+    console.error(e)
+    res.status(500).json({ valid: false, error: 'verification_failed' })
   }
-  res.json({ valid: true })
 })
 
 /** US-001 + T-06: administrador envía invitación por correo (Resend). */
@@ -571,10 +576,12 @@ app.post(
       res.status(400).json({ error: 'valid email is required' })
       return
     }
-    if (findPendingInviteByEmail(email)) {
+    const existing = await findPendingInviteByEmail(email)
+    if (existing) {
       res.status(409).json({
         error: 'Ya existe una invitación pendiente para este correo.',
         code: 'INVITE_PENDING',
+        invitationId: existing.id,
       })
       return
     }
@@ -587,16 +594,23 @@ app.post(
       user.email ||
       'Un administrador'
 
-    const row = createInvitationRecord({
-      email,
-      token,
-      invitedByUserId: user.id,
-      ttlMs: INVITE_TTL_MS,
-    })
+    let row
+    try {
+      row = await createInvitationRecord({
+        email,
+        token,
+        invitedByUserId: user.id,
+        ttlMs: INVITE_TTL_MS,
+      })
+    } catch (e) {
+      console.error(e)
+      res.status(500).json({ error: 'Could not create invitation' })
+      return
+    }
 
     const sent = await sendInvitationEmail({ to: email, inviteUrl, inviterDisplay })
     if (!sent.ok) {
-      removeInvitationById(row.id)
+      await removeInvitationById(row.id)
       if (sent.code === 'MISSING_API_KEY' || sent.code === 'MISSING_FROM') {
         res.status(503).json({
           error: 'Email provider not configured (RESEND_API_KEY / EMAIL_FROM).',

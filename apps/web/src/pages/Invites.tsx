@@ -37,11 +37,20 @@ export default function Invites({ onNavigate }: { onNavigate: (path: string) => 
       invitationId?: string
     }
     setPending(false)
+    if (res.status === 409 && body.code === 'INVITE_PENDING') {
+      setError(body.error ?? 'Ya hay una invitación pendiente para este correo.')
+      return
+    }
     if (!res.ok) {
       setError(body.error ?? `HTTP ${res.status}`)
       return
     }
-    setMessage('Invitación enviada. El arquitecto debe recibir el correo con el enlace.')
+    setEmail('')
+    setMessage(
+      body.invitationId
+        ? `Invitación enviada (id ${body.invitationId}). El arquitecto recibirá el correo con el enlace.`
+        : 'Invitación enviada. El arquitecto debe recibir el correo con el enlace.',
+    )
   }
 
   return (
