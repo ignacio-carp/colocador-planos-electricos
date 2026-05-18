@@ -24,15 +24,23 @@ cp .env.example .env
 
 ## Levantar en modo local (sin Docker)
 
-1. Instalar dependencias:
+1. Configurar `.env` en la raíz (`cp .env.example .env`) con las claves del proyecto Supabase.
+
+2. Token de la CLI (una vez): copiar `.supabase/access-token.example` → `.supabase/access-token` y pegar tu token `sbp_...` de [Account → Access Tokens](https://supabase.com/dashboard/account/tokens). El archivo está en `.gitignore`.
+
+3. Arranque automático (login CLI, sincroniza `apps/api/.env` y `apps/web/.env`, enlaza proyecto, levanta API + web):
 
 ```bash
 npm install
+npm run dev
 ```
 
-2. Iniciar apps:
+Solo preparar entorno sin servidores: `npm run dev:setup`. Login CLI aislado: `npm run supabase:login`.
+
+4. Manual (dos terminales):
 
 ```bash
+npm run env:sync
 npm run dev:api
 npm run dev:web
 ```

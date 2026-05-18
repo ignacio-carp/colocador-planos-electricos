@@ -3,6 +3,7 @@
 .env
 .env.*
 !.env.example
+.supabase/access-token
 node_modules/
 *.log
 npm-debug.log*
