@@ -19,6 +19,12 @@ import {
   removeInvitationById,
 } from './invitesStore'
 import { createJob, findJob, listAllJobs, listJobsForOwner } from './jobsStore'
+import {
+  applyDwgQuotaHeaders,
+  assertDwgUploadWithinQuota,
+  checkJobCreationQuota,
+  QuotaExceededError,
+} from './quota'
 import { runJobPipeline } from './jobsPipeline'
 import { getMetricsSnapshot } from './metrics'
 import { correlationMiddleware } from './middleware/correlation'
@@ -70,6 +76,10 @@ function signedUrlTtlSeconds(): number {
   return Number.isFinite(n) && n > 60 && n <= 60 * 60 * 24 ? Math.floor(n) : 3600
 }
 
+function respondQuotaExceeded(res: express.Response, err: QuotaExceededError): void {
+  res.status(413).json({ error: err.message, code: err.code })
+}
+
 function assertJobAccess(
   userId: string,
   role: ReturnType<typeof getAppRole>,
@@ -102,6 +112,15 @@ app.post('/api/jobs', requireAuth, requireRole('architect'), (req, res) => {
   if (!title) {
     res.status(400).json({ error: 'title is required' })
     return
+  }
+  try {
+    checkJobCreationQuota(user.id)
+  } catch (e) {
+    if (e instanceof QuotaExceededError) {
+      respondQuotaExceeded(res, e)
+      return
+    }
+    throw e
   }
   const job = createJob(user.id, title)
   res.status(201).json(job)
@@ -193,12 +212,34 @@ app.post(
       return
     }
     let contentType: string
+    const uploadBody = req.body as { contentType?: string; sizeBytes?: number }
     try {
-      contentType = String((req.body as { contentType?: string })?.contentType ?? '').trim()
+      contentType = String(uploadBody.contentType ?? '').trim()
       assertAllowedDwgContentType(contentType)
     } catch (e) {
       res.status(400).json({ error: e instanceof Error ? e.message : 'Invalid content type' })
       return
+    }
+
+    const optionalSize = uploadBody.sizeBytes
+    if (optionalSize !== undefined) {
+      if (typeof optionalSize !== 'number' || !Number.isFinite(optionalSize) || optionalSize < 1) {
+        res.status(400).json({ error: 'sizeBytes must be a positive number' })
+        return
+      }
+      try {
+        assertDwgUploadWithinQuota({
+          sizeBytes: optionalSize,
+          userId: user.id,
+          jobId: job.id,
+        })
+      } catch (e) {
+        if (e instanceof QuotaExceededError) {
+          respondQuotaExceeded(res, e)
+          return
+        }
+        throw e
+      }
     }
 
     const objectPath = buildDwgObjectPath(job.owner_user_id, job.id)
@@ -212,6 +253,7 @@ app.post(
         res.status(502).json({ error: 'Could not create signed upload URL' })
         return
       }
+      applyDwgQuotaHeaders(res.setHeader.bind(res))
       res.status(200).json({
         bucket: DWG_INPUT_BUCKET,
         objectPath: data.path,
@@ -271,6 +313,20 @@ app.post(
     }
 
     try {
+      assertDwgUploadWithinQuota({
+        sizeBytes,
+        userId: user.id,
+        jobId: job.id,
+      })
+    } catch (e) {
+      if (e instanceof QuotaExceededError) {
+        respondQuotaExceeded(res, e)
+        return
+      }
+      throw e
+    }
+
+    try {
       const sb = getSupabaseServiceRole()
       const row = await insertFileRow(sb, {
         job_id: job.id,
@@ -281,6 +337,7 @@ app.post(
         content_type: String(body.contentType).split(';')[0]?.trim() ?? null,
         size_bytes: Math.floor(sizeBytes),
       })
+      applyDwgQuotaHeaders(res.setHeader.bind(res))
       res.status(201).json({ file: row })
     } catch (e) {
       const msg = e instanceof Error ? e.message : String(e)
