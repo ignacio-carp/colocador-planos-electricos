@@ -4,7 +4,13 @@ import { getAppRole } from '../lib/roles'
 
 const apiBase = import.meta.env.VITE_API_URL ?? 'http://localhost:3001'
 
-type Job = { id: string; owner_user_id: string; title: string }
+type Job = {
+  id: string
+  owner_user_id: string
+  title: string
+  status?: string
+  error?: { code: string; message: string; correlation_id: string }
+}
 
 export default function Jobs({ onNavigate }: { onNavigate: (path: string) => void }) {
   const { session } = useAuth()
@@ -13,6 +19,7 @@ export default function Jobs({ onNavigate }: { onNavigate: (path: string) => voi
   const [error, setError] = useState<string | null>(null)
   const [title, setTitle] = useState('')
   const [pending, setPending] = useState(false)
+  const [processingId, setProcessingId] = useState<string | null>(null)
   const [busyJobId, setBusyJobId] = useState<string | null>(null)
   const fileRef = useRef<HTMLInputElement>(null)
   const [pickJobId, setPickJobId] = useState<string | null>(null)
@@ -56,6 +63,26 @@ export default function Jobs({ onNavigate }: { onNavigate: (path: string) => voi
       return
     }
     setTitle('')
+    await load()
+  }
+
+  async function processJob(jobId: string) {
+    if (!session) return
+    setProcessingId(jobId)
+    setError(null)
+    const res = await fetch(`${apiBase}/api/jobs/${encodeURIComponent(jobId)}/process`, {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${session.access_token}`,
+        'X-Correlation-Id': crypto.randomUUID(),
+      },
+    })
+    const body = (await res.json().catch(() => ({}))) as { error?: string }
+    setProcessingId(null)
+    if (!res.ok) {
+      setError(body.error ?? `HTTP ${res.status}`)
+      return
+    }
     await load()
   }
 
@@ -189,18 +216,38 @@ export default function Jobs({ onNavigate }: { onNavigate: (path: string) => voi
         <ul className="mt-2 space-y-2 text-sm">
           {jobs.map((j) => (
             <li key={j.id} className="flex flex-wrap items-center justify-between gap-2 border-b border-slate-100 pb-2">
-              <span>{j.title}</span>
-              <div className="flex flex-wrap items-center gap-2">
+              <div className="min-w-0 flex-1">
+                <div className="font-medium">{j.title}</div>
+                <div className="mt-0.5 text-xs text-slate-500">
+                  Estado: {j.status ?? 'pending'}
+                  {j.error ? (
+                    <span className="ml-2 text-red-600">
+                      {j.error.code} — correlation: {j.error.correlation_id}
+                    </span>
+                  ) : null}
+                </div>
+              </div>
+              <div className="flex shrink-0 flex-wrap items-center gap-2">
                 <span className="font-mono text-xs text-slate-500">{j.owner_user_id.slice(0, 8)}…</span>
                 {role === 'architect' && j.owner_user_id === session?.user.id ? (
-                  <button
-                    type="button"
-                    disabled={busyJobId === j.id}
-                    className="rounded border border-slate-300 px-2 py-1 text-xs text-slate-800 disabled:opacity-50"
-                    onClick={() => openPicker(j.id)}
-                  >
-                    {busyJobId === j.id ? 'Subiendo…' : 'Subir .dwg'}
-                  </button>
+                  <>
+                    <button
+                      type="button"
+                      disabled={busyJobId === j.id}
+                      className="rounded border border-slate-300 px-2 py-1 text-xs text-slate-800 disabled:opacity-50"
+                      onClick={() => openPicker(j.id)}
+                    >
+                      {busyJobId === j.id ? 'Subiendo…' : 'Subir .dwg'}
+                    </button>
+                    <button
+                      type="button"
+                      disabled={processingId === j.id || j.status === 'processing'}
+                      className="rounded border border-slate-300 px-2 py-1 text-xs text-slate-800 disabled:opacity-50"
+                      onClick={() => void processJob(j.id)}
+                    >
+                      {processingId === j.id ? 'Procesando…' : 'Procesar'}
+                    </button>
+                  </>
                 ) : null}
                 {role === 'architect' || role === 'administrator' ? (
                   <button
