@@ -1,6 +1,10 @@
 import React, { useState } from 'react'
 import { useAuth } from '../context/AuthContext'
 
+function showActivatedBanner(): boolean {
+  return new URLSearchParams(window.location.search).get('activated') === '1'
+}
+
 export default function Login({ onNavigate }: { onNavigate: (path: string) => void }) {
   const { signInWithPassword } = useAuth()
   const [email, setEmail] = useState('')
@@ -24,7 +28,13 @@ export default function Login({ onNavigate }: { onNavigate: (path: string) => vo
   return (
     <div className="mx-auto max-w-md rounded-lg border border-slate-200 bg-white p-8 shadow-sm">
       <h1 className="text-xl font-semibold text-slate-900">Iniciar sesión</h1>
-      <p className="mt-2 text-sm text-slate-600">Supabase Auth (email y contraseña).</p>
+      {showActivatedBanner() ? (
+        <p className="mt-2 rounded border border-green-200 bg-green-50 p-3 text-sm text-green-900">
+          Cuenta activada. Inicia sesión con tu correo y contraseña.
+        </p>
+      ) : (
+        <p className="mt-2 text-sm text-slate-600">Supabase Auth (email y contraseña).</p>
+      )}
       <form className="mt-6 space-y-4" onSubmit={onSubmit}>
         <div>
           <label className="block text-sm font-medium text-slate-700" htmlFor="email">
