@@ -9,6 +9,7 @@ import ForgotPassword from './pages/ForgotPassword'
 import ResetPassword from './pages/ResetPassword'
 import Dashboard from './pages/Dashboard'
 import Jobs from './pages/Jobs'
+import JobsNew from './pages/JobsNew'
 import Invites from './pages/Invites'
 import InviteAccept from './pages/InviteAccept'
 
@@ -45,8 +46,8 @@ function AppRoutes() {
   const showProtected = !loading && session
 
   return (
-    <main className="min-h-screen bg-slate-50">
-      <div className="mx-auto max-w-3xl px-6 py-16">
+    <main className="min-h-screen bg-[#f8f9fa]">
+      <div className="mx-auto max-w-4xl px-6 py-16">
         {pathname === '/' ? (
           <div>
             <h1 className="text-3xl font-semibold text-slate-900">VanguardIA</h1>
@@ -82,6 +83,7 @@ function AppRoutes() {
         {pathname === '/reset-password' ? <ResetPassword onNavigate={navigate} /> : null}
         {pathname === '/dashboard' && showProtected ? <Dashboard onNavigate={navigate} /> : null}
         {pathname === '/jobs' && showProtected ? <Jobs onNavigate={navigate} /> : null}
+        {pathname === '/jobs/new' && showProtected ? <JobsNew onNavigate={navigate} /> : null}
         {pathname === '/invites' && showProtected && role === 'administrator' ? (
           <Invites onNavigate={navigate} />
         ) : null}

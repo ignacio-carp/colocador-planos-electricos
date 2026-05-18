@@ -13,6 +13,8 @@ export type JobRow = {
   owner_user_id: string
   title: string
   status: JobStatus
+  /** ISO 8601 — US-004 list/detail display */
+  created_at: string
   error?: JobErrorPayload
 }
 
@@ -36,6 +38,7 @@ export function createJob(ownerUserId: string, title: string): JobRow {
     owner_user_id: ownerUserId,
     title,
     status: 'pending',
+    created_at: new Date().toISOString(),
   }
   jobs.push(row)
   return row
