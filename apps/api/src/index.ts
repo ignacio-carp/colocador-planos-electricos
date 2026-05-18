@@ -158,7 +158,7 @@ app.get('/api/jobs', requireAuth, requireArchitectOrAdmin, (req, res) => {
   const { user } = req as AuthedRequest
   const role = getAppRole(user)
   if (!role) {
-    res.status(403).json({ error: 'Missing role', hint: 'Set user_metadata.role in Supabase' })
+    res.status(403).json({ error: 'Missing role', hint: 'Set app_metadata.role in Supabase' })
     return
   }
   if (role === 'administrator') {
