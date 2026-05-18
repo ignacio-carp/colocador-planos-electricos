@@ -7,6 +7,14 @@ import {
   recordStepLatency,
 } from './metrics'
 import { PIPELINE_CONTRACT_VERSION } from './pipelineContracts'
+import {
+  buildStubCadGenerationInput,
+  buildStubNormativeInferenceOutput,
+  buildStubVisionLayoutOutput,
+  registerMockOutputDwg,
+} from './pipelineStubs'
+import { DWG_OUTPUT_BUCKET } from './dwgStorage'
+import { getSupabaseServiceRole, isStorageConfigured } from './supabaseService'
 
 const IA_MAX_ATTEMPTS = 3
 
@@ -43,10 +51,14 @@ async function runTimedStep(
 }
 
 /**
- * When `CAD_IA_SIMULATE_FAILURE=true`, every IA attempt fails until retries are
- * exhausted — job ends in `error` with correlation_id in logs and payload (US-007).
+ * When `CAD_IA_SIMULATE_FAILURE=true`, inference attempts fail until retries are exhausted
+ * — job ends in `error` with correlation_id in logs and payload.
  */
-async function runIaWithRetries(jobId: string, correlationId: string): Promise<void> {
+async function runInferWithRetries(
+  jobId: string,
+  correlationId: string,
+  step: string,
+): Promise<void> {
   const simulateFailure = process.env.CAD_IA_SIMULATE_FAILURE === 'true'
   let lastMessage = 'IA provider error'
 
@@ -56,7 +68,7 @@ async function runIaWithRetries(jobId: string, correlationId: string): Promise<v
       job_id: jobId,
       correlation_id: correlationId,
       contract_version: PIPELINE_CONTRACT_VERSION,
-      step: 'ia_generate',
+      step,
       attempt,
       max_attempts: IA_MAX_ATTEMPTS,
     })
@@ -80,7 +92,7 @@ async function runIaWithRetries(jobId: string, correlationId: string): Promise<v
       event: 'ia_attempt_failed',
       job_id: jobId,
       correlation_id: correlationId,
-      step: 'ia_generate',
+      step,
       attempt,
       max_attempts: IA_MAX_ATTEMPTS,
       error: lastMessage,
@@ -112,23 +124,101 @@ export async function runJobPipeline(jobId: string, correlationId: string): Prom
 
   patchJob(jobId, { status: 'processing' })
 
+  let lastExecutedStep = 'ingest'
   try {
     await runTimedStep(jobId, correlationId, 'ingest', () => sleep(5))
-    await runTimedStep(jobId, correlationId, 'normativa', () => sleep(5))
-    await runTimedStep(jobId, correlationId, 'ia_generate', () => runIaWithRetries(jobId, correlationId))
-    await runTimedStep(jobId, correlationId, 'cad_export', () => sleep(5))
+
+    lastExecutedStep = 'vision_layout'
+    let visionResult: ReturnType<typeof buildStubVisionLayoutOutput> | undefined
+    await runTimedStep(jobId, correlationId, 'vision_layout', async () => {
+      visionResult = buildStubVisionLayoutOutput(jobId, correlationId)
+      logStructured('info', {
+        event: 'pipeline_us007_stub',
+        job_id: jobId,
+        correlation_id: correlationId,
+        contract_version: PIPELINE_CONTRACT_VERSION,
+        rooms: (visionResult.layout_interpretation as { rooms?: unknown[] }).rooms?.length ?? 0,
+      })
+    })
+    const visionLocked = visionResult
+    if (!visionLocked) {
+      throw new Error('Vision layout step produced no output')
+    }
+
+    lastExecutedStep = 'normative_inference'
+    let normativeResult: ReturnType<typeof buildStubNormativeInferenceOutput> | undefined
+    await runTimedStep(jobId, correlationId, 'normative_inference', async () => {
+      await runInferWithRetries(jobId, correlationId, 'normative_inference')
+      normativeResult = buildStubNormativeInferenceOutput(jobId, correlationId, visionLocked)
+      logStructured('info', {
+        event: 'pipeline_us008_stub',
+        job_id: jobId,
+        correlation_id: correlationId,
+        contract_version: PIPELINE_CONTRACT_VERSION,
+        outlets: Number((normativeResult as { outlet_placements?: unknown[] }).outlet_placements?.length ?? 0),
+      })
+    })
+    const normativeLocked = normativeResult
+    if (!normativeLocked) {
+      throw new Error('Normative inference step produced no output')
+    }
+
+    lastExecutedStep = 'cad_generation'
+    await runTimedStep(jobId, correlationId, 'cad_generation', async () => {
+      const { cadInput, outputObjectPath } = buildStubCadGenerationInput({
+        jobId,
+        ownerUserId: job.owner_user_id,
+        correlationId,
+        visionOutput: visionLocked,
+        normativeOutput: normativeLocked,
+      })
+      logStructured('info', {
+        event: 'pipeline_us009_stub',
+        job_id: jobId,
+        correlation_id: correlationId,
+        contract_version: PIPELINE_CONTRACT_VERSION,
+        output_hint: cadInput.output_dwg as { storage_path_hint?: string } | undefined,
+      })
+      if (isStorageConfigured()) {
+        try {
+          const supabase = getSupabaseServiceRole()
+          await registerMockOutputDwg(supabase, {
+            jobId,
+            ownerUserId: job.owner_user_id,
+            objectPath: outputObjectPath,
+          })
+          logStructured('info', {
+            event: 'pipeline_us009_registered',
+            job_id: jobId,
+            correlation_id: correlationId,
+            contract_version: PIPELINE_CONTRACT_VERSION,
+            bucket: DWG_OUTPUT_BUCKET,
+            output_object_path: outputObjectPath,
+          })
+        } catch (e) {
+          const message = e instanceof Error ? e.message : 'registration failed'
+          logStructured('warn', {
+            event: 'pipeline_us009_register_skipped',
+            job_id: jobId,
+            correlation_id: correlationId,
+            contract_version: PIPELINE_CONTRACT_VERSION,
+            error: message,
+          })
+        }
+      }
+    })
 
     const done = patchJob(jobId, { status: 'completed', error: undefined })
-  logStructured('info', {
-    event: 'pipeline_complete',
-    job_id: jobId,
-    correlation_id: correlationId,
-    contract_version: PIPELINE_CONTRACT_VERSION,
-  })
+    logStructured('info', {
+      event: 'pipeline_complete',
+      job_id: jobId,
+      correlation_id: correlationId,
+      contract_version: PIPELINE_CONTRACT_VERSION,
+    })
     return done
   } catch (e) {
     const message = e instanceof Error ? e.message : 'Unknown pipeline error'
-    incrementPipelineError('ia_generate')
+    incrementPipelineError(lastExecutedStep)
     const error = {
       code: 'IA_PROVIDER_EXHAUSTED',
       message,
@@ -140,7 +230,7 @@ export async function runJobPipeline(jobId: string, correlationId: string): Prom
       job_id: jobId,
       correlation_id: correlationId,
       contract_version: PIPELINE_CONTRACT_VERSION,
-      step: 'ia_generate',
+      step: lastExecutedStep,
       error: message,
     })
     return failed

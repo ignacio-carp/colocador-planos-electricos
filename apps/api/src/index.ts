@@ -129,8 +129,8 @@ app.post('/api/jobs', requireAuth, requireRole('architect'), (req, res) => {
 
 /**
  * T-07: ejecuta pipeline MVP (sincrónico). Propaga `X-Correlation-Id` del request;
- * logs JSON incluyen job_id + correlation_id. Para simular fallo IA tras reintentos:
- * `CAD_IA_SIMULATE_FAILURE=true`.
+ * logs JSON incluyen job_id + correlation_id. Para simular fallo de inferencia (US-008)
+ * tras reintentos: `CAD_IA_SIMULATE_FAILURE=true`.
  */
 app.post(
   '/api/jobs/:jobId/process',
