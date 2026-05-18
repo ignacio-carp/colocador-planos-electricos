@@ -5,6 +5,12 @@ import { getAppRole } from '../lib/roles'
 
 const apiBase = import.meta.env.VITE_API_URL ?? 'http://localhost:3001'
 
+/** Align with API `jobsStore` JobStatus plus legacy/Spanish labels if ever exposed. */
+function canDownloadProcessedDwg(status?: string): boolean {
+  const s = (status ?? '').toLowerCase()
+  return s === 'completed' || s === 'procesado'
+}
+
 type Job = {
   id: string
   owner_user_id: string
@@ -24,6 +30,7 @@ export default function Jobs({ onNavigate }: { onNavigate: (path: string) => voi
   const [processingId, setProcessingId] = useState<string | null>(null)
   const fileRef = useRef<HTMLInputElement>(null)
   const [pickJobId, setPickJobId] = useState<string | null>(null)
+  const [downloadingId, setDownloadingId] = useState<string | null>(null)
   const [dwgRegistry, setDwgRegistry] = useState<Record<string, DwgRegistryState>>({})
   const [uploadProgress, setUploadProgress] = useState<{ jobId: string; label: string } | null>(null)
 
@@ -171,18 +178,56 @@ export default function Jobs({ onNavigate }: { onNavigate: (path: string) => voi
     await load()
   }
 
-  async function tryDownload(jobId: string) {
+  async function downloadProcessedDwg(jobId: string) {
     if (!session) return
+    setDownloadingId(jobId)
     setError(null)
-    const res = await fetch(`${apiBase}/api/jobs/${encodeURIComponent(jobId)}/download`, {
-      headers: { Authorization: `Bearer ${session.access_token}` },
-    })
-    const body = (await res.json().catch(() => ({}))) as { signedUrl?: string; error?: string; hint?: string }
-    if (!res.ok) {
-      setError(body.error ?? body.hint ?? `HTTP ${res.status}`)
-      return
+    try {
+      const res = await fetch(`${apiBase}/api/jobs/${encodeURIComponent(jobId)}/download`, {
+        headers: { Authorization: `Bearer ${session.access_token}` },
+      })
+      const body = (await res.json().catch(() => ({}))) as {
+        signedUrl?: string
+        streamUrl?: string
+        error?: string
+        hint?: string
+      }
+      if (!res.ok) {
+        setError(body.error ?? body.hint ?? `HTTP ${res.status}`)
+        return
+      }
+      if (body.signedUrl) {
+        window.open(body.signedUrl, '_blank', 'noopener,noreferrer')
+        return
+      }
+      const streamPath =
+        body.streamUrl && body.streamUrl.startsWith('/')
+          ? body.streamUrl
+          : `/api/jobs/${encodeURIComponent(jobId)}/dwg-output/stream`
+      const streamRes = await fetch(`${apiBase}${streamPath}`, {
+        headers: { Authorization: `Bearer ${session.access_token}` },
+      })
+      if (!streamRes.ok) {
+        const errBody = (await streamRes.json().catch(() => ({}))) as { error?: string }
+        setError(errBody.error ?? `Descarga HTTP ${streamRes.status}`)
+        return
+      }
+      const blob = await streamRes.blob()
+      const dispo = streamRes.headers.get('Content-Disposition')
+      const filenameMatch = dispo?.match(/filename="([^"]+)"/)
+      const filename = filenameMatch?.[1] ?? `job-${jobId}-output.dwg`
+      const url = URL.createObjectURL(blob)
+      const a = document.createElement('a')
+      a.href = url
+      a.download = filename
+      a.rel = 'noopener'
+      document.body.appendChild(a)
+      a.click()
+      a.remove()
+      URL.revokeObjectURL(url)
+    } finally {
+      setDownloadingId(null)
     }
-    if (body.signedUrl) window.open(body.signedUrl, '_blank', 'noopener,noreferrer')
   }
 
   function dwgBadge(state: DwgRegistryState | undefined) {
@@ -306,13 +351,16 @@ export default function Jobs({ onNavigate }: { onNavigate: (path: string) => voi
                   </>
                 ) : null}
                 {role === 'architect' || role === 'administrator' ? (
-                  <button
-                    type="button"
-                    className="rounded border border-[#737783] px-2 py-1 text-xs text-[#191c1d]"
-                    onClick={() => void tryDownload(j.id)}
-                  >
-                    Descarga firmada
-                  </button>
+                  canDownloadProcessedDwg(j.status) ? (
+                    <button
+                      type="button"
+                      disabled={downloadingId === j.id || Boolean(uploadProgress)}
+                      className="rounded border border-[#00346f]/40 px-2 py-1 text-xs font-semibold text-[#00346f] hover:bg-[#00346f]/5 disabled:opacity-50"
+                      onClick={() => void downloadProcessedDwg(j.id)}
+                    >
+                      {downloadingId === j.id ? 'Descargando…' : 'Descargar .dwg'}
+                    </button>
+                  ) : null
                 ) : null}
               </div>
             </li>
