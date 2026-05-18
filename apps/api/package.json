@@ -9,7 +9,7 @@
     "lint": "eslint .",
     "format": "prettier -c \"src/**/*.ts\" \"test/**/*.ts\" \"tsconfig.json\" \"eslint.config.js\"",
     "typecheck": "tsc -p tsconfig.json --noEmit",
-    "test": "node --import tsx --test \"test/**/*.test.ts\" \"src/**/*.test.ts\""
+    "test": "node --import tsx --test $(find test src -name '*.test.ts' 2>/dev/null)"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.49.8",
