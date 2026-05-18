@@ -1,0 +1,50 @@
+{
+  "_comment": "Encadenamiento US-008 → US-009 (fragmento cad-generation-input).",
+  "cad_generation_input": {
+    "contract_version": "1.0.0",
+    "job_id": "a1b2c3d4-e5f6-7890-abcd-ef1234567890",
+    "correlation_id": "corr-demo-t11-001",
+    "story_id": "US-009",
+    "feature_key": "cad.layer_output",
+    "dwg": {
+      "storage_path": "jobs/a1b2c3d4/source/plano.dwg",
+      "checksum_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    "normative_result": {
+      "story_id": "US-008",
+      "contract_version": "1.0.0",
+      "normative_rules_version": "cambre-normative-2026.05.1",
+      "outlet_placements": [
+        {
+          "id": "outlet-living-01",
+          "room_id": "room-living-01",
+          "position": { "x": 800, "y": 300, "unit": "drawing_units" },
+          "outlet_type": "double",
+          "mounting": "wall",
+          "height_mm": 300,
+          "rationale": "Toma general salón según regla CAMBRE-LIV-01",
+          "rule_ids": ["CAMBRE-LIV-01"]
+        },
+        {
+          "id": "outlet-kitchen-01",
+          "room_id": "room-kitchen-01",
+          "position": { "x": 6000, "y": 400, "unit": "drawing_units" },
+          "outlet_type": "dedicated_appliance",
+          "mounting": "wall",
+          "height_mm": 1100,
+          "rationale": "Encimera — distancia mínima fregadero",
+          "rule_ids": ["CAMBRE-KIT-03"]
+        }
+      ]
+    },
+    "output_layer": {
+      "name": "Cambre_Electrical",
+      "block_name": "CAMBRE_OUTLET",
+      "color_aci": 3
+    },
+    "output_dwg": {
+      "storage_path_hint": "jobs/a1b2c3d4/output/plano-result.dwg",
+      "preserve_source_layers": true
+    }
+  }
+}

@@ -1,0 +1,84 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://cambre.local/schemas/pipeline/vision-layout-input.json",
+  "title": "VisionLayoutInput",
+  "description": "US-007 — Entrada al paso de interpretación visual del plano (IA visión).",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "contract_version",
+    "job_id",
+    "correlation_id",
+    "story_id",
+    "dwg",
+    "render"
+  ],
+  "properties": {
+    "contract_version": {
+      "type": "string",
+      "pattern": "^(0|[1-9]\\d*)\\.(0|[1-9]\\d*)\\.(0|[1-9]\\d*)(?:-[0-9A-Za-z-]+(?:\\.[0-9A-Za-z-]+)*)?(?:\\+[0-9A-Za-z-]+(?:\\.[0-9A-Za-z-]+)*)?$",
+      "description": "Versión del contrato de pipeline (semver). MVP: 1.0.0"
+    },
+    "job_id": {
+      "type": "string",
+      "format": "uuid"
+    },
+    "correlation_id": {
+      "type": "string",
+      "minLength": 8,
+      "maxLength": 128
+    },
+    "story_id": {
+      "type": "string",
+      "const": "US-007"
+    },
+    "feature_key": {
+      "type": "string",
+      "const": "ai.layout_interpretation"
+    },
+    "dwg": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["storage_path", "checksum_sha256"],
+      "properties": {
+        "storage_path": {
+          "type": "string",
+          "description": "Ruta o URI del DWG original en object storage"
+        },
+        "checksum_sha256": {
+          "type": "string",
+          "pattern": "^[a-f0-9]{64}$"
+        },
+        "file_name": { "type": "string" },
+        "size_bytes": { "type": "integer", "minimum": 1 }
+      }
+    },
+    "render": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["format", "storage_path", "width_px", "height_px"],
+      "properties": {
+        "format": {
+          "type": "string",
+          "enum": ["png", "jpeg", "svg"]
+        },
+        "storage_path": {
+          "type": "string",
+          "description": "Imagen o vector temporal derivado del DWG para el modelo de visión"
+        },
+        "width_px": { "type": "integer", "minimum": 1 },
+        "height_px": { "type": "integer", "minimum": 1 },
+        "dpi": { "type": "number", "minimum": 72 },
+        "units": {
+          "type": "string",
+          "enum": ["mm", "cm", "m", "unitless"],
+          "default": "mm"
+        }
+      }
+    },
+    "locale": {
+      "type": "string",
+      "default": "es-ES"
+    }
+  }
+}

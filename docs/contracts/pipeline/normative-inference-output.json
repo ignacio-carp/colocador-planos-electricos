@@ -1,0 +1,99 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://cambre.local/schemas/pipeline/normative-inference-output.json",
+  "title": "NormativeInferenceOutput",
+  "description": "US-008 — Salida con ubicaciones/instrucciones de tomas para US-009.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "contract_version",
+    "job_id",
+    "correlation_id",
+    "story_id",
+    "normative_rules_version",
+    "outlet_placements",
+    "completed_at"
+  ],
+  "properties": {
+    "contract_version": {
+      "type": "string",
+      "pattern": "^(0|[1-9]\\d*)\\.(0|[1-9]\\d*)\\.(0|[1-9]\\d*)(?:-[0-9A-Za-z-]+(?:\\.[0-9A-Za-z-]+)*)?(?:\\+[0-9A-Za-z-]+(?:\\.[0-9A-Za-z-]+)*)?$"
+    },
+    "job_id": { "type": "string", "format": "uuid" },
+    "correlation_id": { "type": "string", "minLength": 8, "maxLength": 128 },
+    "story_id": { "type": "string", "const": "US-008" },
+    "normative_rules_version": { "type": "string" },
+    "provider": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["name", "model"],
+      "properties": {
+        "name": { "type": "string", "enum": ["openai", "anthropic", "rules_engine"] },
+        "model": { "type": "string" },
+        "request_id": { "type": "string" }
+      }
+    },
+    "outlet_placements": {
+      "type": "array",
+      "minItems": 1,
+      "items": { "$ref": "#/definitions/OutletPlacement" }
+    },
+    "conflicts_resolved": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["rule_id", "resolution"],
+        "properties": {
+          "rule_id": { "type": "string" },
+          "resolution": { "type": "string" }
+        }
+      }
+    },
+    "warnings": {
+      "type": "array",
+      "items": { "type": "string" }
+    },
+    "completed_at": { "type": "string", "format": "date-time" }
+  },
+  "definitions": {
+    "OutletPlacement": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "room_id", "position", "outlet_type"],
+      "properties": {
+        "id": { "type": "string", "pattern": "^outlet-[a-z0-9-]+$" },
+        "room_id": { "type": "string" },
+        "position": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["x", "y"],
+          "properties": {
+            "x": { "type": "number" },
+            "y": { "type": "number" },
+            "z": { "type": "number", "description": "Cota en mm si aplica" },
+            "unit": {
+              "type": "string",
+              "enum": ["mm", "drawing_units"],
+              "default": "drawing_units"
+            }
+          }
+        },
+        "outlet_type": {
+          "type": "string",
+          "enum": ["standard", "double", "switch", "dedicated_appliance", "emergency"]
+        },
+        "mounting": {
+          "type": "string",
+          "enum": ["wall", "floor", "ceiling"],
+          "default": "wall"
+        },
+        "height_mm": { "type": "number", "minimum": 0 },
+        "rationale": { "type": "string", "description": "Breve justificación normativa (auditoría)" },
+        "rule_ids": {
+          "type": "array",
+          "items": { "type": "string" }
+        }
+      }
+    }
+  }
+}

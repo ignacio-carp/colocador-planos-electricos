@@ -1,0 +1,141 @@
+{
+  "_comment": "Demuestra que la salida US-007 alimenta US-008: bloque superior = vision-layout-output; bloque inferior = campos añadidos para normative-inference-input.",
+  "us007_vision_layout_output": {
+    "contract_version": "1.0.0",
+    "job_id": "a1b2c3d4-e5f6-7890-abcd-ef1234567890",
+    "correlation_id": "corr-demo-t11-001",
+    "story_id": "US-007",
+    "provider": {
+      "name": "openai",
+      "model": "gpt-4o",
+      "request_id": "chatcmpl-demo-vision-001"
+    },
+    "layout_interpretation": {
+      "coordinate_system": "drawing_origin_bottom_left",
+      "scale": { "pixels_per_meter": 120.5, "known": true },
+      "rooms": [
+        {
+          "id": "room-living-01",
+          "label": "Salón",
+          "room_type": "living",
+          "polygon": {
+            "vertices": [
+              { "x": 0, "y": 0, "unit": "drawing_units" },
+              { "x": 5200, "y": 0, "unit": "drawing_units" },
+              { "x": 5200, "y": 4100, "unit": "drawing_units" },
+              { "x": 0, "y": 4100, "unit": "drawing_units" }
+            ]
+          },
+          "area_m2": 21.32
+        },
+        {
+          "id": "room-kitchen-01",
+          "label": "Cocina",
+          "room_type": "kitchen",
+          "polygon": {
+            "vertices": [
+              { "x": 5200, "y": 0, "unit": "drawing_units" },
+              { "x": 7800, "y": 0, "unit": "drawing_units" },
+              { "x": 7800, "y": 2800, "unit": "drawing_units" },
+              { "x": 5200, "y": 2800, "unit": "drawing_units" }
+            ]
+          },
+          "area_m2": 7.28
+        }
+      ],
+      "walls": [
+        {
+          "id": "wall-01",
+          "start": { "x": 0, "y": 0 },
+          "end": { "x": 7800, "y": 0 },
+          "is_exterior": true
+        }
+      ],
+      "openings": [
+        {
+          "id": "door-01",
+          "kind": "door",
+          "center": { "x": 5200, "y": 1400 },
+          "width_mm": 900,
+          "wall_id": "wall-interior-01"
+        }
+      ]
+    },
+    "confidence": { "overall": 0.87, "scale_detected": true },
+    "warnings": [],
+    "completed_at": "2026-05-18T10:15:00.000Z"
+  },
+  "us008_normative_inference_input": {
+    "contract_version": "1.0.0",
+    "job_id": "a1b2c3d4-e5f6-7890-abcd-ef1234567890",
+    "correlation_id": "corr-demo-t11-001",
+    "story_id": "US-008",
+    "feature_key": "ai.normative_inference",
+    "source_vision": {
+      "story_id": "US-007",
+      "contract_version": "1.0.0",
+      "provider": {
+        "name": "openai",
+        "model": "gpt-4o",
+        "request_id": "chatcmpl-demo-vision-001"
+      },
+      "completed_at": "2026-05-18T10:15:00.000Z"
+    },
+    "layout_interpretation": {
+      "coordinate_system": "drawing_origin_bottom_left",
+      "scale": { "pixels_per_meter": 120.5, "known": true },
+      "rooms": [
+        {
+          "id": "room-living-01",
+          "label": "Salón",
+          "room_type": "living",
+          "polygon": {
+            "vertices": [
+              { "x": 0, "y": 0, "unit": "drawing_units" },
+              { "x": 5200, "y": 0, "unit": "drawing_units" },
+              { "x": 5200, "y": 4100, "unit": "drawing_units" },
+              { "x": 0, "y": 4100, "unit": "drawing_units" }
+            ]
+          },
+          "area_m2": 21.32
+        },
+        {
+          "id": "room-kitchen-01",
+          "label": "Cocina",
+          "room_type": "kitchen",
+          "polygon": {
+            "vertices": [
+              { "x": 5200, "y": 0, "unit": "drawing_units" },
+              { "x": 7800, "y": 0, "unit": "drawing_units" },
+              { "x": 7800, "y": 2800, "unit": "drawing_units" },
+              { "x": 5200, "y": 2800, "unit": "drawing_units" }
+            ]
+          },
+          "area_m2": 7.28
+        }
+      ],
+      "walls": [
+        {
+          "id": "wall-01",
+          "start": { "x": 0, "y": 0 },
+          "end": { "x": 7800, "y": 0 },
+          "is_exterior": true
+        }
+      ],
+      "openings": [
+        {
+          "id": "door-01",
+          "kind": "door",
+          "center": { "x": 5200, "y": 1400 },
+          "width_mm": 900,
+          "wall_id": "wall-interior-01"
+        }
+      ]
+    },
+    "normative_rules_version": "cambre-normative-2026.05.1",
+    "job_context": {
+      "project_type": "residential",
+      "country_code": "ES"
+    }
+  }
+}
