@@ -19,7 +19,7 @@ export default function Login({ onNavigate }: { onNavigate: (path: string) => vo
     const { error: signError } = await signInWithPassword(email, password)
     setPending(false)
     if (signError) {
-      setError(signError.message)
+      setError('Credenciales incorrectas. Verifica tu correo y contraseña.')
       return
     }
     onNavigate('/dashboard')

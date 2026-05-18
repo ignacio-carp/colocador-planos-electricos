@@ -2,6 +2,7 @@ import React, { useEffect } from 'react'
 import { AuthProvider, useAuth } from './context/AuthContext'
 import { usePathname } from './hooks/usePathname'
 import { getAppRole } from './lib/roles'
+import { resolveAuthRedirect } from './lib/routeGuards'
 import Health from './pages/Health'
 import Login from './pages/Login'
 import ForgotPassword from './pages/ForgotPassword'
@@ -10,8 +11,6 @@ import Dashboard from './pages/Dashboard'
 import Jobs from './pages/Jobs'
 import Invites from './pages/Invites'
 import InviteAccept from './pages/InviteAccept'
-
-const AUTH_REQUIRED = new Set(['/dashboard', '/jobs', '/invites'])
 
 function AppRoutes() {
   const { pathname, navigate } = usePathname()
@@ -23,6 +22,7 @@ function AppRoutes() {
     else if (pathname === '/login') document.title = 'Login'
     else if (pathname === '/dashboard') document.title = 'Dashboard'
     else if (pathname === '/jobs') document.title = 'Jobs'
+    else if (pathname === '/jobs/new') document.title = 'Nuevo análisis'
     else if (pathname === '/invites') document.title = 'Invites'
     else if (pathname === '/invite') document.title = 'Invitación'
     else document.title = 'VanguardIA'
@@ -30,17 +30,19 @@ function AppRoutes() {
 
   useEffect(() => {
     if (loading) return
-    if (AUTH_REQUIRED.has(pathname) && !session) {
-      navigate('/login')
-    }
-    if ((pathname === '/login' || pathname === '/forgot-password') && session) {
-      navigate('/dashboard')
-    }
-  }, [loading, pathname, session, navigate])
+    const redirect = resolveAuthRedirect({
+      pathname,
+      hasSession: Boolean(session),
+      role,
+    })
+    if (redirect && redirect !== pathname) navigate(redirect)
+  }, [loading, pathname, session, role, navigate])
 
   if (pathname === '/healthz') {
     return <Health />
   }
+
+  const showProtected = !loading && session
 
   return (
     <main className="min-h-screen bg-slate-50">
@@ -78,28 +80,15 @@ function AppRoutes() {
         {pathname === '/login' ? <Login onNavigate={navigate} /> : null}
         {pathname === '/forgot-password' ? <ForgotPassword onNavigate={navigate} /> : null}
         {pathname === '/reset-password' ? <ResetPassword onNavigate={navigate} /> : null}
-        {pathname === '/dashboard' ? (
-          loading ? (
-            <p className="text-slate-600">Cargando…</p>
-          ) : session ? (
-            <Dashboard onNavigate={navigate} />
-          ) : null
-        ) : null}
-        {pathname === '/jobs' ? (
-          loading ? (
-            <p className="text-slate-600">Cargando…</p>
-          ) : session ? (
-            <Jobs onNavigate={navigate} />
-          ) : null
-        ) : null}
-        {pathname === '/invites' ? (
-          loading ? (
-            <p className="text-slate-600">Cargando…</p>
-          ) : session ? (
-            <Invites onNavigate={navigate} />
-          ) : null
+        {pathname === '/dashboard' && showProtected ? <Dashboard onNavigate={navigate} /> : null}
+        {pathname === '/jobs' && showProtected ? <Jobs onNavigate={navigate} /> : null}
+        {pathname === '/invites' && showProtected && role === 'administrator' ? (
+          <Invites onNavigate={navigate} />
         ) : null}
         {pathname === '/invite' ? <InviteAccept onNavigate={navigate} /> : null}
+        {loading && pathname !== '/login' && pathname !== '/invite' && pathname !== '/' ? (
+          <p className="text-slate-600">Cargando sesión…</p>
+        ) : null}
       </div>
     </main>
   )
