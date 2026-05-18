@@ -9,6 +9,7 @@ import ResetPassword from './pages/ResetPassword'
 import Dashboard from './pages/Dashboard'
 import Jobs from './pages/Jobs'
 import Invites from './pages/Invites'
+import InviteAccept from './pages/InviteAccept'
 
 const AUTH_REQUIRED = new Set(['/dashboard', '/jobs', '/invites'])
 
@@ -23,6 +24,7 @@ function AppRoutes() {
     else if (pathname === '/dashboard') document.title = 'Dashboard'
     else if (pathname === '/jobs') document.title = 'Jobs'
     else if (pathname === '/invites') document.title = 'Invites'
+    else if (pathname === '/invite') document.title = 'Invitación'
     else document.title = 'VanguardIA'
   }, [pathname])
 
@@ -97,6 +99,7 @@ function AppRoutes() {
             <Invites onNavigate={navigate} />
           ) : null
         ) : null}
+        {pathname === '/invite' ? <InviteAccept onNavigate={navigate} /> : null}
       </div>
     </main>
   )
