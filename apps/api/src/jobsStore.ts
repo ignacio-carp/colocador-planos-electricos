@@ -1,11 +1,17 @@
 import { randomUUID } from 'node:crypto'
+import { assertJobStatusTransition } from './jobStatus'
 
-export type JobStatus = 'pending' | 'processing' | 'completed' | 'error'
+export type JobStatus = 'pendiente' | 'procesando' | 'procesado' | 'error'
 
 export type JobErrorPayload = {
   code: string
   message: string
   correlation_id: string
+}
+
+export type JobPipelineMetadata = {
+  normative_rules_version?: string
+  cad_worker_inspect?: Record<string, unknown>
 }
 
 export type JobRow = {
@@ -16,6 +22,7 @@ export type JobRow = {
   /** ISO 8601 — US-004 list/detail display */
   created_at: string
   error?: JobErrorPayload
+  pipeline_metadata?: JobPipelineMetadata
 }
 
 const jobs: JobRow[] = []
@@ -37,7 +44,7 @@ export function createJob(ownerUserId: string, title: string): JobRow {
     id: randomUUID(),
     owner_user_id: ownerUserId,
     title,
-    status: 'pending',
+    status: 'pendiente',
     created_at: new Date().toISOString(),
   }
   jobs.push(row)
@@ -47,6 +54,16 @@ export function createJob(ownerUserId: string, title: string): JobRow {
 export function patchJob(id: string, patch: Partial<JobRow>): JobRow | undefined {
   const idx = jobs.findIndex((j) => j.id === id)
   if (idx === -1) return undefined
+
+  if (patch.status !== undefined && patch.status !== jobs[idx].status) {
+    assertJobStatusTransition(jobs[idx].status, patch.status)
+  }
+
   jobs[idx] = { ...jobs[idx], ...patch }
   return jobs[idx]
+}
+
+/** Test helper — reset in-memory store. */
+export function clearJobsForTests(): void {
+  jobs.length = 0
 }

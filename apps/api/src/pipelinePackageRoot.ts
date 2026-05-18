@@ -15,3 +15,14 @@ export function pipelineContractsDirectory(startDir: string = process.cwd()): st
     dir = parent
   }
 }
+
+/** Monorepo root (contains rules/, docs/, apps/). */
+export function repoRootDirectory(startDir: string = process.cwd()): string {
+  let dir = startDir
+  for (;;) {
+    if (existsSync(join(dir, 'rules', 'cambre-normative', 'manifest.json'))) return dir
+    const parent = dirname(dir)
+    if (parent === dir) throw new Error('Could not locate repository root.')
+    dir = parent
+  }
+}

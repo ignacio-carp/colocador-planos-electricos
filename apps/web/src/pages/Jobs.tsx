@@ -91,13 +91,16 @@ export default function Jobs({ onNavigate }: { onNavigate: (path: string) => voi
     if (!session) return
     setProcessingId(jobId)
     setError(null)
-    const res = await fetch(`${apiBase}/api/jobs/${encodeURIComponent(jobId)}/process`, {
-      method: 'POST',
-      headers: {
-        Authorization: `Bearer ${session.access_token}`,
-        'X-Correlation-Id': crypto.randomUUID(),
+    const res = await fetch(
+      `${apiBase}/api/jobs/${encodeURIComponent(jobId)}/process?sync=1`,
+      {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${session.access_token}`,
+          'X-Correlation-Id': crypto.randomUUID(),
+        },
       },
-    })
+    )
     const body = (await res.json().catch(() => ({}))) as { error?: string }
     setProcessingId(null)
     if (!res.ok) {
@@ -342,7 +345,12 @@ export default function Jobs({ onNavigate }: { onNavigate: (path: string) => voi
                     </button>
                     <button
                       type="button"
-                      disabled={processingId === j.id || j.status === 'processing' || Boolean(uploadProgress)}
+                      disabled={
+                        processingId === j.id ||
+                        j.status === 'procesando' ||
+                        j.status === 'processing' ||
+                        Boolean(uploadProgress)
+                      }
                       className="rounded border border-[#737783] px-2 py-1 text-xs text-[#191c1d] disabled:opacity-50"
                       onClick={() => void processJob(j.id)}
                     >

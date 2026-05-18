@@ -1,0 +1,10 @@
+{
+  "active_version": "cambre-normative-2026.05.1",
+  "versions": [
+    {
+      "version": "cambre-normative-2026.05.1",
+      "path": "2026.05.1/rules.json",
+      "description": "MVP normative rules stub for Cambre electrical outlets"
+    }
+  ]
+}

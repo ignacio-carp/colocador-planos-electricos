@@ -29,7 +29,8 @@ import {
   checkJobCreationQuota,
   QuotaExceededError,
 } from './quota'
-import { runJobPipeline } from './jobsPipeline'
+import { enqueueJobPipeline } from './jobQueue'
+import { drainPipelineQueueOnce, pipelineWorkerEnabled, startPipelineWorker } from './pipelineWorker'
 import { getMetricsSnapshot } from './metrics'
 import { correlationMiddleware } from './middleware/correlation'
 import { requireAuth, type AuthedRequest } from './middleware/requireAuth'
@@ -124,9 +125,8 @@ app.post('/api/jobs', requireAuth, requireRole('architect'), (req, res) => {
 })
 
 /**
- * T-07: ejecuta pipeline MVP (sincrónico). Propaga `X-Correlation-Id` del request;
- * logs JSON incluyen job_id + correlation_id. Para simular fallo de inferencia (US-008)
- * tras reintentos: `CAD_IA_SIMULATE_FAILURE=true`.
+ * S-01: encola pipeline (async). Worker `PIPELINE_WORKER_ENABLED` o drain manual en tests.
+ * `?sync=1` ejecuta un ciclo de worker en la misma request (dev/legacy).
  */
 app.post(
   '/api/jobs/:jobId/process',
@@ -149,16 +149,37 @@ app.post(
       res.status(403).json({ error: 'Forbidden', code: 'NOT_JOB_OWNER' })
       return
     }
-    if (job.status === 'processing') {
+    if (job.status === 'procesando') {
       res.status(409).json({ error: 'Job already processing' })
       return
     }
-    const result = await runJobPipeline(jobId, correlationId)
-    if (!result) {
-      res.status(404).json({ error: 'Job not found' })
+    if (job.status === 'procesado') {
+      res.status(409).json({ error: 'Job already processed' })
       return
     }
-    res.status(200).json(result)
+    const msg = enqueueJobPipeline(jobId, correlationId)
+    if (!msg) {
+      res.status(409).json({ error: 'Cannot enqueue job in current state' })
+      return
+    }
+    const sync =
+      req.query.sync === '1' ||
+      req.query.sync === 'true' ||
+      process.env.PIPELINE_SYNC_PROCESS === 'true'
+    if (sync) {
+      await drainPipelineQueueOnce()
+      const updated = findJob(jobId)
+      if (!updated) {
+        res.status(404).json({ error: 'Job not found' })
+        return
+      }
+      res.status(200).json(updated)
+      return
+    }
+    if (pipelineWorkerEnabled()) {
+      void drainPipelineQueueOnce()
+    }
+    res.status(202).json({ queued: true, jobId, correlationId, queueId: msg.id })
   },
 )
 
@@ -335,7 +356,12 @@ app.post(
         size_bytes: Math.floor(sizeBytes),
       })
       applyDwgQuotaHeaders(res.setHeader.bind(res))
-      res.status(201).json({ file: row })
+      const correlationId = req.correlationId
+      const queued = enqueueJobPipeline(job.id, correlationId)
+      if (pipelineWorkerEnabled() && queued) {
+        void drainPipelineQueueOnce()
+      }
+      res.status(201).json({ file: row, pipelineQueued: Boolean(queued) })
     } catch (e) {
       const msg = e instanceof Error ? e.message : String(e)
       if (msg.includes('duplicate') || msg.includes('unique')) {
@@ -651,4 +677,5 @@ const port = Number(process.env.API_PORT ?? 3001)
 
 app.listen(port, () => {
   console.log(`api listening on http://localhost:${port}`)
+  startPipelineWorker()
 })
