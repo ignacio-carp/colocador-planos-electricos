@@ -1,5 +1,6 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react'
 import { useAuth } from '../context/AuthContext'
+import { formatJobCreatedAt, hasRegisteredDwgInput } from '../lib/jobPresentation'
 import { getAppRole } from '../lib/roles'
 
 const apiBase = import.meta.env.VITE_API_URL ?? 'http://localhost:3001'
@@ -15,21 +16,23 @@ type Job = {
   owner_user_id: string
   title: string
   status?: string
+  created_at?: string
   error?: { code: string; message: string; correlation_id: string }
 }
+
+type DwgRegistryState = 'pending' | 'uploaded' | 'unknown'
 
 export default function Jobs({ onNavigate }: { onNavigate: (path: string) => void }) {
   const { session } = useAuth()
   const role = getAppRole(session?.user)
   const [jobs, setJobs] = useState<Job[]>([])
   const [error, setError] = useState<string | null>(null)
-  const [title, setTitle] = useState('')
-  const [pending, setPending] = useState(false)
   const [processingId, setProcessingId] = useState<string | null>(null)
-  const [busyJobId, setBusyJobId] = useState<string | null>(null)
   const fileRef = useRef<HTMLInputElement>(null)
   const [pickJobId, setPickJobId] = useState<string | null>(null)
   const [downloadingId, setDownloadingId] = useState<string | null>(null)
+  const [dwgRegistry, setDwgRegistry] = useState<Record<string, DwgRegistryState>>({})
+  const [uploadProgress, setUploadProgress] = useState<{ jobId: string; label: string } | null>(null)
 
   const load = useCallback(async () => {
     if (!session) return
@@ -50,28 +53,39 @@ export default function Jobs({ onNavigate }: { onNavigate: (path: string) => voi
     void load()
   }, [load])
 
-  async function createJob(e: React.FormEvent) {
-    e.preventDefault()
-    if (!session) return
-    setPending(true)
-    setError(null)
-    const res = await fetch(`${apiBase}/api/jobs`, {
-      method: 'POST',
-      headers: {
-        Authorization: `Bearer ${session.access_token}`,
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({ title }),
-    })
-    const errBody = (await res.json().catch(() => ({}))) as { error?: string }
-    setPending(false)
-    if (!res.ok) {
-      setError(errBody.error ?? `HTTP ${res.status}`)
+  useEffect(() => {
+    if (!session || role !== 'architect') {
+      setDwgRegistry({})
       return
     }
-    setTitle('')
-    await load()
-  }
+    const mine = jobs.filter((j) => j.owner_user_id === session.user.id)
+    if (mine.length === 0) {
+      setDwgRegistry({})
+      return
+    }
+    let cancelled = false
+    ;(async () => {
+      const results = await Promise.all(
+        mine.map(async (j) => {
+          try {
+            const res = await fetch(`${apiBase}/api/jobs/${encodeURIComponent(j.id)}/files`, {
+              headers: { Authorization: `Bearer ${session.access_token}` },
+            })
+            if (!res.ok) return [j.id, 'unknown' as const] as const
+            const body = (await res.json().catch(() => ({}))) as { files?: { kind: string }[] }
+            const uploaded = hasRegisteredDwgInput(body.files ?? [])
+            return [j.id, uploaded ? ('uploaded' as const) : ('pending' as const)] as const
+          } catch {
+            return [j.id, 'unknown' as const] as const
+          }
+        }),
+      )
+      if (!cancelled) setDwgRegistry(Object.fromEntries(results) as Record<string, DwgRegistryState>)
+    })()
+    return () => {
+      cancelled = true
+    }
+  }, [session, role, jobs])
 
   async function processJob(jobId: string) {
     if (!session) return
@@ -108,18 +122,18 @@ export default function Jobs({ onNavigate }: { onNavigate: (path: string) => voi
       setError('Solo archivos .dwg')
       return
     }
-    setBusyJobId(jobId)
     setError(null)
     try {
       const contentType =
         file.type && file.type.trim() !== '' ? file.type : 'application/octet-stream'
+      setUploadProgress({ jobId, label: 'Obteniendo URL firmada…' })
       const sur = await fetch(`${apiBase}/api/jobs/${encodeURIComponent(jobId)}/dwg-input/signed-upload-url`, {
         method: 'POST',
         headers: {
           Authorization: `Bearer ${session.access_token}`,
           'Content-Type': 'application/json',
         },
-        body: JSON.stringify({ contentType }),
+        body: JSON.stringify({ contentType, sizeBytes: file.size }),
       })
       const suBody = (await sur.json().catch(() => ({}))) as {
         signedUrl?: string
@@ -130,6 +144,7 @@ export default function Jobs({ onNavigate }: { onNavigate: (path: string) => voi
         setError(suBody.error ?? `Upload URL HTTP ${sur.status}`)
         return
       }
+      setUploadProgress({ jobId, label: 'Subiendo archivo al almacenamiento seguro…' })
       const put = await fetch(suBody.signedUrl!, {
         method: 'PUT',
         headers: { 'Content-Type': contentType },
@@ -139,6 +154,7 @@ export default function Jobs({ onNavigate }: { onNavigate: (path: string) => voi
         setError(`Fallo al subir a Storage (HTTP ${put.status})`)
         return
       }
+      setUploadProgress({ jobId, label: 'Registrando archivo en el trabajo…' })
       const reg = await fetch(`${apiBase}/api/jobs/${encodeURIComponent(jobId)}/dwg-input/register`, {
         method: 'POST',
         headers: {
@@ -157,7 +173,7 @@ export default function Jobs({ onNavigate }: { onNavigate: (path: string) => voi
         return
       }
     } finally {
-      setBusyJobId(null)
+      setUploadProgress(null)
     }
     await load()
   }
@@ -214,6 +230,30 @@ export default function Jobs({ onNavigate }: { onNavigate: (path: string) => voi
     }
   }
 
+  function dwgBadge(state: DwgRegistryState | undefined) {
+    if (state === 'uploaded') {
+      return (
+        <span className="rounded-full bg-emerald-50 px-2 py-0.5 text-xs font-medium text-[#10B981] ring-1 ring-[#10B981]/25">
+          DWG cargado
+        </span>
+      )
+    }
+    if (state === 'pending') {
+      return (
+        <span className="rounded-full bg-[#edeeef] px-2 py-0.5 text-xs font-medium text-[#424751]">
+          DWG pendiente
+        </span>
+      )
+    }
+    return (
+      <span className="rounded-full bg-amber-50 px-2 py-0.5 text-xs text-amber-900 ring-1 ring-amber-200/80">
+        DWG — sin datos
+      </span>
+    )
+  }
+
+  const uploadingThis = (jid: string) => uploadProgress?.jobId === jid
+
   return (
     <div className="space-y-6">
       <input
@@ -223,71 +263,87 @@ export default function Jobs({ onNavigate }: { onNavigate: (path: string) => voi
         className="hidden"
         onChange={onFilePicked}
       />
-      <div className="flex items-center justify-between">
-        <h1 className="text-xl font-semibold text-slate-900">Jobs</h1>
-        <button type="button" className="text-sm text-slate-900 underline" onClick={() => onNavigate('/dashboard')}>
-          Volver
-        </button>
-      </div>
-      {role === 'architect' ? (
-        <form onSubmit={createJob} className="rounded border border-slate-200 bg-white p-4">
-          <h2 className="text-sm font-medium text-slate-800">Crear job (solo arquitecto, US-005)</h2>
-          <div className="mt-2 flex gap-2">
-            <input
-              className="flex-1 rounded border border-slate-300 px-3 py-2 text-sm"
-              placeholder="Título"
-              value={title}
-              onChange={(e) => setTitle(e.target.value)}
-            />
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <h1 className="text-xl font-semibold text-[#191c1d]">Trabajos</h1>
+        <div className="flex flex-wrap items-center gap-3">
+          {role === 'architect' ? (
             <button
-              type="submit"
-              disabled={pending || !title.trim()}
-              className="rounded bg-slate-900 px-3 py-2 text-sm text-white disabled:opacity-50"
+              type="button"
+              className="rounded bg-[#00346f] px-3 py-1.5 text-sm font-semibold text-white hover:bg-[#004a99]"
+              onClick={() => onNavigate('/jobs/new')}
             >
-              Crear
+              Nuevo análisis
             </button>
-          </div>
-        </form>
-      ) : role === 'administrator' ? (
-        <p className="rounded border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900">
-          Como administrador no puedes crear jobs vía API (US-005). Solo listado global.
+          ) : null}
+          <button
+            type="button"
+            className="text-sm font-semibold text-[#00346f] underline decoration-[#00346f]/30 underline-offset-2"
+            onClick={() => onNavigate('/dashboard')}
+          >
+            Volver al panel
+          </button>
+        </div>
+      </div>
+
+      {role === 'administrator' ? (
+        <p className="rounded-lg border border-[#c2c6d3] bg-[#f3f4f5] p-3 text-sm text-[#424751]">
+          Como administrador ves todos los trabajos del sistema. La creación de trabajos está reservada a cuentas de
+          arquitecto.
         </p>
-      ) : (
-        <p className="text-sm text-amber-800">Asigna rol en Supabase para usar esta página.</p>
-      )}
-      {error ? <p className="text-sm text-red-600">{error}</p> : null}
-      <div className="rounded border border-slate-200 bg-white p-4">
-        <h2 className="text-sm font-medium text-slate-800">Listado</h2>
-        <ul className="mt-2 space-y-2 text-sm">
+      ) : role !== 'architect' ? (
+        <p className="text-sm text-amber-800">Asigná rol en Supabase para usar esta página.</p>
+      ) : null}
+
+      {error ? <p className="text-sm text-[#ba1a1a]">{error}</p> : null}
+
+      <div className="rounded-lg border border-[#E2E8F0] bg-white p-5 shadow-[0px_10px_25px_rgba(0,52,111,0.06)]">
+        <h2 className="text-sm font-semibold uppercase tracking-wide text-[#424751]">Listado</h2>
+        <ul className="mt-3 space-y-3">
           {jobs.map((j) => (
-            <li key={j.id} className="flex flex-wrap items-center justify-between gap-2 border-b border-slate-100 pb-2">
+            <li
+              key={j.id}
+              className="flex flex-wrap items-start justify-between gap-3 border-b border-[#E2E8F0] pb-3 last:border-0 last:pb-0"
+            >
               <div className="min-w-0 flex-1">
-                <div className="font-medium">{j.title}</div>
-                <div className="mt-0.5 text-xs text-slate-500">
-                  Estado: {j.status ?? 'pending'}
-                  {j.error ? (
-                    <span className="ml-2 text-red-600">
-                      {j.error.code} — correlation: {j.error.correlation_id}
+                <div className="font-medium text-[#191c1d]">{j.title}</div>
+                <div className="mt-1.5 flex flex-wrap items-center gap-2 text-xs text-[#424751]">
+                  <span className="rounded-full bg-[#e7e8e9] px-2 py-0.5 font-mono text-[11px] text-[#191c1d]">
+                    {j.status ?? 'pending'}
+                  </span>
+                  {formatJobCreatedAt(j.created_at) ? (
+                    <span className="font-mono text-[11px]">{formatJobCreatedAt(j.created_at)}</span>
+                  ) : null}
+                  {role === 'administrator' ? (
+                    <span className="font-mono text-[11px]" title={j.owner_user_id}>
+                      dueño {j.owner_user_id.slice(0, 8)}…
                     </span>
                   ) : null}
+                  {role === 'architect' && j.owner_user_id === session?.user.id ? dwgBadge(dwgRegistry[j.id]) : null}
                 </div>
+                {uploadingThis(j.id) ? (
+                  <p className="mt-2 font-mono text-[11px] text-[#00346f]">{uploadProgress?.label}</p>
+                ) : null}
+                {j.error ? (
+                  <p className="mt-2 text-xs text-[#ba1a1a]">
+                    {j.error.code} — correlation: {j.error.correlation_id}
+                  </p>
+                ) : null}
               </div>
               <div className="flex shrink-0 flex-wrap items-center gap-2">
-                <span className="font-mono text-xs text-slate-500">{j.owner_user_id.slice(0, 8)}…</span>
                 {role === 'architect' && j.owner_user_id === session?.user.id ? (
                   <>
                     <button
                       type="button"
-                      disabled={busyJobId === j.id}
-                      className="rounded border border-slate-300 px-2 py-1 text-xs text-slate-800 disabled:opacity-50"
+                      disabled={Boolean(uploadProgress)}
+                      className="rounded border border-[#00346f]/40 px-2 py-1 text-xs font-semibold text-[#00346f] hover:bg-[#00346f]/5 disabled:opacity-50"
                       onClick={() => openPicker(j.id)}
                     >
-                      {busyJobId === j.id ? 'Subiendo…' : 'Subir .dwg'}
+                      {uploadingThis(j.id) ? 'Subiendo…' : 'Subir .dwg'}
                     </button>
                     <button
                       type="button"
-                      disabled={processingId === j.id || j.status === 'processing'}
-                      className="rounded border border-slate-300 px-2 py-1 text-xs text-slate-800 disabled:opacity-50"
+                      disabled={processingId === j.id || j.status === 'processing' || Boolean(uploadProgress)}
+                      className="rounded border border-[#737783] px-2 py-1 text-xs text-[#191c1d] disabled:opacity-50"
                       onClick={() => void processJob(j.id)}
                     >
                       {processingId === j.id ? 'Procesando…' : 'Procesar'}
@@ -298,8 +354,8 @@ export default function Jobs({ onNavigate }: { onNavigate: (path: string) => voi
                   canDownloadProcessedDwg(j.status) ? (
                     <button
                       type="button"
-                      disabled={downloadingId === j.id}
-                      className="rounded border border-slate-300 px-2 py-1 text-xs text-slate-800 disabled:opacity-50"
+                      disabled={downloadingId === j.id || Boolean(uploadProgress)}
+                      className="rounded border border-[#00346f]/40 px-2 py-1 text-xs font-semibold text-[#00346f] hover:bg-[#00346f]/5 disabled:opacity-50"
                       onClick={() => void downloadProcessedDwg(j.id)}
                     >
                       {downloadingId === j.id ? 'Descargando…' : 'Descargar .dwg'}
@@ -309,7 +365,23 @@ export default function Jobs({ onNavigate }: { onNavigate: (path: string) => voi
               </div>
             </li>
           ))}
-          {jobs.length === 0 ? <li className="text-slate-500">Sin jobs.</li> : null}
+          {jobs.length === 0 ? (
+            <li className="py-6 text-center text-sm text-[#424751]">
+              Sin trabajos.
+              {role === 'architect' ? (
+                <>
+                  {' '}
+                  <button
+                    type="button"
+                    className="font-semibold text-[#00346f] underline decoration-[#00346f]/30"
+                    onClick={() => onNavigate('/jobs/new')}
+                  >
+                    Crear nuevo análisis
+                  </button>
+                </>
+              ) : null}
+            </li>
+          ) : null}
         </ul>
       </div>
     </div>
