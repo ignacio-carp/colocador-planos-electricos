@@ -6,6 +6,7 @@
     "dev": "tsx watch src/index.ts",
     "build": "tsc -p tsconfig.json",
     "start": "node dist/index.js",
+    "bootstrap:admin": "tsx src/bootstrapAdmin.ts",
     "lint": "eslint .",
     "format": "prettier -c \"src/**/*.ts\" \"test/**/*.ts\" \"tsconfig.json\" \"eslint.config.js\"",
     "typecheck": "tsc -p tsconfig.json --noEmit",
