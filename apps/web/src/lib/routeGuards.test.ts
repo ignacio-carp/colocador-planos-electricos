@@ -5,6 +5,7 @@ describe('routeGuards', () => {
   it('requires auth for dashboard and jobs', () => {
     expect(isAuthRequiredPath('/dashboard')).toBe(true)
     expect(isAuthRequiredPath('/jobs')).toBe(true)
+    expect(isAuthRequiredPath('/jobs/new')).toBe(true)
     expect(isAuthRequiredPath('/')).toBe(false)
   })
 
@@ -28,5 +29,12 @@ describe('routeGuards', () => {
     expect(
       resolveAuthRedirect({ pathname: '/invites', hasSession: true, role: 'administrator' }),
     ).toBeNull()
+  })
+
+  it('restricts /jobs/new to architects (US-005)', () => {
+    expect(
+      resolveAuthRedirect({ pathname: '/jobs/new', hasSession: true, role: 'administrator' }),
+    ).toBe('/dashboard')
+    expect(resolveAuthRedirect({ pathname: '/jobs/new', hasSession: true, role: 'architect' })).toBeNull()
   })
 })
