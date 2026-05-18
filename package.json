@@ -11,7 +11,8 @@
     "lint": "npm -ws run lint",
     "format": "npm -ws run format",
     "typecheck": "npm -ws run typecheck",
-    "build": "npm -ws run build"
+    "build": "npm -ws run build",
+    "test": "npm run test --workspaces --if-present"
   },
   "engines": {
     "node": ">=20"

@@ -9,11 +9,20 @@ description = "Skeleton CAD worker (MVP) — provides CLI entrypoint and healthc
 requires-python = ">=3.12"
 dependencies = []
 
+[project.optional-dependencies]
+dev = [
+  "pytest>=8",
+  "ruff>=0.8",
+]
+
 [project.scripts]
 cad-worker = "cad_worker.cli:main"
 
 [tool.setuptools]
 package-dir = {"" = "src"}
+
+[tool.setuptools.packages.find]
+where = ["src"]
 
 [tool.ruff]
 line-length = 100
