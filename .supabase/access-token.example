@@ -1,0 +1,3 @@
+# Personal access token from https://supabase.com/dashboard/account/tokens
+# Copy this file to access-token (same directory) and paste your sbp_... token on one line.
+# Never commit access-token — it is gitignored.

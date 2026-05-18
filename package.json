@@ -7,7 +7,10 @@
   "scripts": {
     "dev:web": "npm --workspace web run dev",
     "dev:api": "npm --workspace api run dev",
-    "dev": "npm run dev:web & npm run dev:api",
+    "dev": "bash scripts/dev.sh",
+    "dev:setup": "bash scripts/dev.sh --setup-only",
+    "supabase:login": "bash scripts/supabase-login.sh",
+    "env:sync": "bash scripts/sync-dev-env.sh",
     "lint": "npm -ws run lint",
     "format": "npm -ws run format",
     "typecheck": "npm -ws run typecheck",
