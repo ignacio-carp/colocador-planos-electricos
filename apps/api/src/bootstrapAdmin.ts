@@ -1,4 +1,5 @@
-import 'dotenv/config'
+import { loadEnv } from './loadEnv'
+loadEnv()
 import { createClient, type SupabaseClient, type User } from '@supabase/supabase-js'
 
 const ADMIN_ROLE = 'administrator'

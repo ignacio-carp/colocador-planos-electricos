@@ -1,6 +1,9 @@
-import 'dotenv/config'
+import { loadEnv } from './loadEnv'
+loadEnv()
+
 import cors from 'cors'
 import express from 'express'
+import { getCorsOptions } from './corsConfig'
 import { sendInvitationEmail } from './email/sendInvitationEmail'
 import {
   assertAllowedDwgContentType,
@@ -35,6 +38,7 @@ import { getAppRole } from './roles'
 import { getSupabaseServiceRole, isStorageConfigured } from './supabaseService'
 
 const app = express()
+app.use(cors(getCorsOptions()))
 app.use(express.json())
 app.use(correlationMiddleware)
 
@@ -51,14 +55,6 @@ const INVITE_TTL_MS = Number(process.env.INVITE_TOKEN_TTL_MS ?? 7 * 24 * 60 * 60
 function isValidEmail(email: string): boolean {
   return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)
 }
-
-const corsOrigin = process.env.CORS_ORIGIN?.split(',').map((s) => s.trim()) ?? true
-app.use(
-  cors({
-    origin: corsOrigin,
-    credentials: true,
-  }),
-)
 
 function requireStorage(req: express.Request, res: express.Response, next: express.NextFunction) {
   if (!isStorageConfigured()) {
