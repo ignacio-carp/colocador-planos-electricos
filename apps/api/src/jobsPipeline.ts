@@ -1,5 +1,12 @@
+import { mkdtempSync, writeFileSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
+import { cadWorkerDisabled, inspectDwgFile } from './cadWorkerBridge'
+import { DWG_INPUT_BUCKET } from './dwgStorage'
+import { findLatestInputForJob } from './filesStore'
 import { logStructured } from './logger'
 import { findJob, patchJob, type JobRow } from './jobsStore'
+import { resolveActiveNormativeRulesVersion } from './normativeRules'
 import {
   incrementPipelineError,
   recordIaCostUsd,
@@ -17,6 +24,50 @@ import { DWG_OUTPUT_BUCKET } from './dwgStorage'
 import { getSupabaseServiceRole, isStorageConfigured } from './supabaseService'
 
 const IA_MAX_ATTEMPTS = 3
+
+async function runCadWorkerInspectForJob(
+  jobId: string,
+  correlationId: string,
+): Promise<Record<string, unknown>> {
+  const fixture = process.env.CAD_WORKER_FIXTURE_DWG?.trim()
+  if (fixture) {
+    const result = await inspectDwgFile(fixture)
+    logStructured('info', {
+      event: 'cad_worker_inspect',
+      job_id: jobId,
+      correlation_id: correlationId,
+      source: 'fixture',
+      entity_count: result.entity_count,
+    })
+    return result as Record<string, unknown>
+  }
+
+  if (isStorageConfigured()) {
+    const supabase = getSupabaseServiceRole()
+    const input = await findLatestInputForJob(supabase, jobId)
+    if (input?.bucket_id === DWG_INPUT_BUCKET && input.object_path) {
+      const { data, error } = await supabase.storage.from(input.bucket_id).download(input.object_path)
+      if (error || !data) {
+        throw new Error(error?.message ?? 'Could not download input DWG for inspect')
+      }
+      const dir = mkdtempSync(join(tmpdir(), 'cambre-cad-'))
+      const localPath = join(dir, 'input.dwg')
+      const buf = Buffer.from(await data.arrayBuffer())
+      writeFileSync(localPath, buf)
+      const result = await inspectDwgFile(localPath)
+      logStructured('info', {
+        event: 'cad_worker_inspect',
+        job_id: jobId,
+        correlation_id: correlationId,
+        source: 'storage',
+        entity_count: result.entity_count,
+      })
+      return result as Record<string, unknown>
+    }
+  }
+
+  throw new Error('No CAD_WORKER_FIXTURE_DWG and no input file in storage')
+}
 
 function sleep(ms: number): Promise<void> {
   return new Promise((r) => setTimeout(r, ms))
@@ -122,7 +173,7 @@ export async function runJobPipeline(jobId: string, correlationId: string): Prom
     return undefined
   }
 
-  patchJob(jobId, { status: 'processing' })
+  patchJob(jobId, { status: 'procesando' })
 
   let lastExecutedStep = 'ingest'
   try {
@@ -148,6 +199,13 @@ export async function runJobPipeline(jobId: string, correlationId: string): Prom
     lastExecutedStep = 'normative_inference'
     let normativeResult: ReturnType<typeof buildStubNormativeInferenceOutput> | undefined
     await runTimedStep(jobId, correlationId, 'normative_inference', async () => {
+      const rulesVersion = resolveActiveNormativeRulesVersion()
+      patchJob(jobId, {
+        pipeline_metadata: {
+          ...findJob(jobId)?.pipeline_metadata,
+          normative_rules_version: rulesVersion,
+        },
+      })
       await runInferWithRetries(jobId, correlationId, 'normative_inference')
       normativeResult = buildStubNormativeInferenceOutput(jobId, correlationId, visionLocked)
       logStructured('info', {
@@ -165,6 +223,29 @@ export async function runJobPipeline(jobId: string, correlationId: string): Prom
 
     lastExecutedStep = 'cad_generation'
     await runTimedStep(jobId, correlationId, 'cad_generation', async () => {
+      let cadInspect: Record<string, unknown> | undefined
+      if (!cadWorkerDisabled()) {
+        try {
+          cadInspect = await runCadWorkerInspectForJob(jobId, correlationId)
+        } catch (e) {
+          const message = e instanceof Error ? e.message : String(e)
+          logStructured('warn', {
+            event: 'cad_worker_inspect_skipped',
+            job_id: jobId,
+            correlation_id: correlationId,
+            error: message,
+          })
+        }
+      }
+      if (cadInspect) {
+        patchJob(jobId, {
+          pipeline_metadata: {
+            ...findJob(jobId)?.pipeline_metadata,
+            cad_worker_inspect: cadInspect,
+          },
+        })
+      }
+
       const { cadInput, outputObjectPath } = buildStubCadGenerationInput({
         jobId,
         ownerUserId: job.owner_user_id,
@@ -208,7 +289,7 @@ export async function runJobPipeline(jobId: string, correlationId: string): Prom
       }
     })
 
-    const done = patchJob(jobId, { status: 'completed', error: undefined })
+    const done = patchJob(jobId, { status: 'procesado', error: undefined })
     logStructured('info', {
       event: 'pipeline_complete',
       job_id: jobId,

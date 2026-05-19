@@ -4,6 +4,8 @@ import os
 import sys
 from datetime import datetime, timezone
 
+from cad_worker.inspect_dwg import inspect_cmd
+
 
 def _health_payload() -> dict[str, object]:
     return {
@@ -47,12 +49,18 @@ def main(argv: list[str] | None = None) -> None:
     )
     p_log.add_argument("--job-id", required=True, dest="job_id")
 
+    p_inspect = subparsers.add_parser("inspect", help="Inspect DWG/DXF; JSON on stdout.")
+    p_inspect.add_argument("--input", required=True, help="Path to .dwg or .dxf file")
+    p_inspect.add_argument("--json", action="store_true", help="Emit JSON (default)")
+
     args = parser.parse_args(argv)
 
     if args.command == "health":
         raise SystemExit(health_cmd())
     if args.command == "pipeline-log":
         raise SystemExit(pipeline_log_cmd(args.job_id))
+    if args.command == "inspect":
+        raise SystemExit(inspect_cmd(args.input))
 
     raise SystemExit(2)
 

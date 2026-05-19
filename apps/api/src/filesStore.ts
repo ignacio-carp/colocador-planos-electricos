@@ -57,6 +57,22 @@ export async function listFilesForJob(
   return (data ?? []) as FileRow[]
 }
 
+export async function findLatestInputForJob(
+  supabase: SupabaseClient,
+  jobId: string,
+): Promise<FileRow | null> {
+  const { data, error } = await supabase
+    .from('files')
+    .select('*')
+    .eq('job_id', jobId)
+    .eq('kind', 'input_dwg')
+    .order('created_at', { ascending: false })
+    .limit(1)
+    .maybeSingle()
+  if (error) throw new Error(error.message)
+  return (data as FileRow | null) ?? null
+}
+
 export async function findLatestOutputForJob(
   supabase: SupabaseClient,
   jobId: string,

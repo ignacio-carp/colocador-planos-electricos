@@ -3,6 +3,7 @@ import type { SupabaseClient } from '@supabase/supabase-js'
 import { buildDwgObjectPath, DWG_OUTPUT_BUCKET } from './dwgStorage'
 import { insertFileRow } from './filesStore'
 import { PIPELINE_CONTRACT_VERSION } from './pipelineContracts'
+import { resolveActiveNormativeRulesVersion } from './normativeRules'
 import {
   assertValidCadGenerationInput,
   assertValidNormativeInferenceOutput,
@@ -101,7 +102,7 @@ export function buildStubNormativeInferenceOutput(
   const rooms = interpretation?.rooms
   const roomId = typeof rooms?.[0]?.id === 'string' ? rooms[0].id : `room-${deterministicHex(jobId, 4)}`
 
-  const rulesVersion = 'cambre-normative-stub-2026.05.18'
+  const rulesVersion = resolveActiveNormativeRulesVersion()
   const outletSlug = deterministicHex(`${jobId}|outlet`, 6)
   const doc = {
     contract_version: PIPELINE_CONTRACT_VERSION,

@@ -63,7 +63,7 @@ describe('runJobPipeline', () => {
     const job = createJob('aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa', 'pipeline ok')
     const result = await runJobPipeline(job.id, 'corr-pipeline-pass-xyz')
     assert.ok(result)
-    assert.equal(result?.status, 'completed')
+    assert.equal(result?.status, 'procesado')
     assert.ok(!result?.error)
   })
 

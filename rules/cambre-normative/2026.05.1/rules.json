@@ -1,0 +1,10 @@
+{
+  "version": "cambre-normative-2026.05.1",
+  "title": "Cambre normative rules (MVP stub)",
+  "rules": [
+    {
+      "id": "RULE-STUB-ELEC-ROOM",
+      "summary": "At least one standard wall outlet per interpreted room (MVP stub)."
+    }
+  ]
+}
