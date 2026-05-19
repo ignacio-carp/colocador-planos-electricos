@@ -51,35 +51,127 @@ El script es idempotente: si el usuario no existe, crea un usuario confirmado pa
 
 4. Inicia sesión con ese usuario. La API leerá primero `app_metadata.role`; con rol `administrator` el usuario queda operativo para invitar (dependencia US-001).
 
-## Levantar en modo local (sin Docker)
+## Desarrollo local
 
-1. Configurar `.env` en la raíz (`cp .env.example .env`) con las claves del proyecto Supabase.
+### 1. Prerrequisitos
 
-2. Token de la CLI (una vez): copiar `.supabase/access-token.example` → `.supabase/access-token` y pegar tu token `sbp_...` de [Account → Access Tokens](https://supabase.com/dashboard/account/tokens). El archivo está en `.gitignore`.
+| Herramienta | Versión |
+|-------------|---------|
+| Node.js | 20+ |
+| npm | 10+ (incluido con Node) |
+| Python | 3.12+ (solo si vas a probar `cad-worker` / pipeline CAD) |
+| [Supabase CLI](https://supabase.com/docs/guides/cli) | Para migraciones y `db push` |
 
-3. Arranque automático (login CLI, sincroniza `apps/api/.env` y `apps/web/.env`, enlaza proyecto, levanta API + web):
+### 2. Configuración inicial (una vez)
 
 ```bash
+git clone git@github.com:juanchiriera/colocador-planos-electricos.git
+cd colocador-planos-electricos
 npm install
-npm run dev
+cp .env.example .env
 ```
 
-Solo preparar entorno sin servidores: `npm run dev:setup`. Login CLI aislado: `npm run supabase:login`.
+Completa en `.env` (raíz) al menos:
 
-4. Manual (dos terminales):
+| Variable | Uso |
+|----------|-----|
+| `SUPABASE_URL` | Proyecto Supabase |
+| `SUPABASE_ANON_KEY` | Clave anon (web + API) |
+| `SUPABASE_SERVICE_ROLE_KEY` | Solo servidor (storage, invitaciones, pipeline) |
+| `VITE_API_URL` | `http://localhost:3001` en local |
+| `CORS_ORIGIN` | Orígenes del front local (p. ej. `http://localhost:5173,http://localhost:5174`) |
+| `PUBLIC_WEB_URL` | URL del front para enlaces en correos |
+| `RESEND_API_KEY` / `EMAIL_FROM` | Invitaciones (ver `docs/adr/ADR-002-transactional-email-provider.md`) |
+
+Token de Supabase CLI (una vez): copiar `.supabase/access-token.example` → `.supabase/access-token` con un token `sbp_...` de [Account → Access Tokens](https://supabase.com/dashboard/account/tokens). Está en `.gitignore`.
+
+### 3. Base de datos (migraciones)
+
+Enlaza el proyecto remoto y aplica migraciones pendientes:
+
+```bash
+npm run supabase:login    # o: bash scripts/supabase-login.sh
+npm run dev:setup         # login + link + sync .env (sin levantar servidores)
+# Si el link falló manualmente:
+# supabase link --project-ref <ref-desde-dashboard>
+supabase db push
+```
+
+Comprueba estado:
+
+```bash
+supabase migration list
+```
+
+### 4. Sincronizar variables a las apps
 
 ```bash
 npm run env:sync
-npm run dev:api
-npm run dev:web
 ```
 
-3. Worker (en otra terminal):
+Genera `apps/api/.env` y `apps/web/.env` desde la raíz. Edita siempre `.env` en la raíz y vuelve a ejecutar `env:sync`.
+
+### 5. Primer administrador (opcional en DB vacía)
+
+Ver sección [Bootstrap seguro del primer Administrador](#bootstrap-seguro-del-primer-administrador-us-001).
+
+### 6. Arrancar la aplicación
+
+**Opción A — todo en uno (recomendado):**
+
+```bash
+npm run dev
+```
+
+Hace login Supabase (si aplica), `env:sync`, link y levanta API (`3001`) + web (Vite, `5173` o `5174`).
+
+**Opción B — terminales separadas:**
+
+```bash
+npm run env:sync
+npm run dev:api    # http://localhost:3001
+npm run dev:web    # http://localhost:5173
+```
+
+**Opción C — solo preparar entorno:**
+
+```bash
+npm run dev:setup
+```
+
+### 7. Worker Python (opcional, paso CAD real)
+
+El pipeline puede correr sin worker (stubs). Para inspección DWG con ezdxf:
 
 ```bash
 cd services/cad-worker
-python -m pip install -e .
+python3 -m venv .venv
+source .venv/bin/activate
+pip install -e ".[dev]"
 python -m cad_worker health
+python -m cad_worker inspect --input /ruta/a/archivo.dxf --json
+```
+
+En la API puedes fijar `CAD_WORKER_PYTHON` a la ruta del intérprete del venv (`.../cad-worker/.venv/bin/python3`).
+
+### 8. URLs y flujo de prueba
+
+| Servicio | URL / comando |
+|----------|----------------|
+| Web | http://localhost:5173 (o el puerto que indique Vite) |
+| API health | http://localhost:3001/healthz |
+| Subir DWG | Tras login como arquitecto → trabajos → subir `.dwg` |
+
+Con `PIPELINE_WORKER_ENABLED` activo (por defecto fuera de tests), al registrar el archivo el job pasa a `procesando` sin pulsar «Procesar». El botón «Procesar» usa `?sync=1` para esperar el resultado en la misma petición.
+
+### 9. Verificación local (equivalente a CI)
+
+```bash
+npm run lint
+npm run typecheck
+npm run test
+npm run build
+./scripts/run-golden-pipeline.sh
 ```
 
 ## Salud (healthchecks)
@@ -108,7 +200,142 @@ cd services/cad-worker && pip install -e ".[dev]" && ruff check src tests && pyt
 
 **Artefactos de build:** no se publican todavía desde CI; puede añadirse un upload cuando haya un flujo de release.
 
-**Despliegue (placeholder):** hosting del front (p. ej. Vercel), API y worker (p. ej. Fly.io / Render) **pendiente de decisión**. Resumen breve en `docs/ci.md`.
+## Despliegue en Vercel
+
+Arquitectura objetivo en producción:
+
+| Componente | Dónde | Notas |
+|------------|-------|--------|
+| **Web** (`apps/web`) | Vercel | SPA estática (Vite). Ya enlazado al repo: [colocador-planos-electricos.vercel.app](https://colocador-planos-electricos.vercel.app) |
+| **API** (`apps/api`) | Vercel (2.º proyecto) o Render/Fly | Express + worker de pipeline en proceso. Ver limitaciones abajo |
+| **Supabase** | Supabase Cloud | Auth, Postgres, Storage |
+| **cad-worker** | No en Vercel | Python + ezdxf; host con contenedor/VM o desactivar con `CAD_WORKER_DISABLED=true` en API serverless |
+
+### Prerrequisitos
+
+- Cuenta [Vercel](https://vercel.com) con acceso al repositorio de GitHub.
+- Proyecto Supabase en producción con migraciones aplicadas (`supabase db push` desde tu máquina).
+- [Vercel CLI](https://vercel.com/docs/cli) (opcional): `npm i -g vercel`.
+
+### A. Frontend (proyecto Vercel «web»)
+
+En [Vercel Dashboard](https://vercel.com) → proyecto del repo → **Settings → General**:
+
+| Ajuste | Valor |
+|--------|--------|
+| Root Directory | `apps/web` |
+| Framework Preset | Vite |
+| Build Command | `npm run build` (se ejecuta dentro de `apps/web`; si falla por workspaces, usa Install en raíz — ver nota) |
+| Output Directory | `dist` |
+| Install Command | `cd ../.. && npm ci` *(monorepo: instalar desde la raíz)* |
+
+Si el preset no detecta el monorepo, crea el proyecto con **Root Directory** vacío y override:
+
+- **Install Command:** `npm ci`
+- **Build Command:** `npm run build --workspace=web`
+- **Output Directory:** `apps/web/dist`
+
+**Environment Variables** (Production y Preview):
+
+| Variable | Ejemplo / notas |
+|----------|-----------------|
+| `VITE_SUPABASE_URL` | `https://<ref>.supabase.co` |
+| `VITE_SUPABASE_ANON_KEY` | Anon key del proyecto |
+| `VITE_API_URL` | URL pública de la API desplegada (sin barra final) |
+
+Tras el primer deploy, en **Supabase → Authentication → URL configuration** añade la URL de Vercel (producción y preview) como redirect / site URL según uses magic links o recovery.
+
+**CLI (preview):**
+
+```bash
+cd apps/web
+vercel link          # elegir el proyecto web
+vercel env pull .env.local
+vercel               # preview
+vercel --prod        # producción
+```
+
+### B. API (segundo proyecto Vercel o host Node)
+
+La API es un servidor Express que arranca un **worker en background** (`PIPELINE_WORKER_ENABLED`) para procesar la cola del pipeline. En **serverless puro** ese worker no es fiable (el proceso puede congelarse entre invocaciones).
+
+Opciones:
+
+1. **Recomendado para MVP completo:** desplegar `apps/api` en [Render](https://render.com), [Fly.io](https://fly.io) o Railway como **Web Service** (proceso siempre activo), con `npm run build && npm start`.
+2. **Vercel:** segundo proyecto apuntando al mismo repo, con **Fluid Compute** / runtime Node y tiempo de ejecución ampliado, o desactivar el worker en servidor (`PIPELINE_WORKER_DISABLED=true`) y encolar solo vía endpoints (limitado).
+
+Si usas **segundo proyecto en Vercel** (Root Directory `apps/api`):
+
+| Ajuste | Valor |
+|--------|--------|
+| Install Command | `cd ../.. && npm ci` |
+| Build Command | `npm run build --workspace=api` |
+| Output Directory | `apps/api/dist` *(si usas build estático; para Express suele usarse un entry serverless — ver nota)* |
+
+Para Express en Vercel hoy el equipo suele usar un **host Node de larga duración** hasta adaptar un entry `@vercel/node`. Mientras tanto, en Render/Fly:
+
+```bash
+# Build
+npm ci
+npm run build --workspace=api
+
+# Start (en el host)
+cd apps/api && node dist/index.js
+```
+
+**Variables de entorno (API — Production):**
+
+| Variable | Obligatoria | Notas |
+|----------|-------------|--------|
+| `SUPABASE_URL` | Sí | |
+| `SUPABASE_ANON_KEY` | Sí | |
+| `SUPABASE_SERVICE_ROLE_KEY` | Sí | Server only |
+| `CORS_ORIGIN` | Sí | URL del front en Vercel (coma si hay preview + prod) |
+| `PUBLIC_WEB_URL` | Sí | Misma URL pública del front |
+| `RESEND_API_KEY` | Sí* | *Si usas invitaciones por email |
+| `EMAIL_FROM` | Sí* | Dominio verificado en Resend |
+| `BOOTSTRAP_ADMIN_EMAIL` | Setup | Solo para `npm run bootstrap:admin` (ejecutar en CI o local, no en runtime) |
+| `SIGNED_URL_TTL_SECONDS` | No | Default `3600` |
+| `PIPELINE_WORKER_ENABLED` | No | `true` en host Node; `false` en serverless experimental |
+| `CAD_WORKER_DISABLED` | No | `true` si no hay Python/ezdxf en el host de la API |
+
+Tras desplegar la API, actualiza en el proyecto **web** de Vercel:
+
+- `VITE_API_URL` = URL pública de la API (p. ej. `https://cambre-api.onrender.com` o la URL del 2.º proyecto Vercel).
+
+Vuelve a desplegar el front para que el build incorpore la variable.
+
+### C. Supabase (producción)
+
+Desde tu máquina, con el proyecto enlazado:
+
+```bash
+supabase db push
+npm --workspace api run bootstrap:admin   # solo si aún no hay admin
+```
+
+Configura en Supabase Dashboard:
+
+- **Storage:** buckets `job-dwg-input` y `job-dwg-output` (migración T-05).
+- **Auth:** Site URL y redirects con la URL de Vercel.
+- **SMTP / Auth templates** si usas invitaciones y recovery.
+
+### D. cad-worker (fuera de Vercel)
+
+No desplegar `services/cad-worker` en Vercel (binarios ezdxf, timeouts). Alternativas:
+
+- Contenedor en el mismo host que la API, con `CAD_WORKER_PYTHON` apuntando al venv.
+- `CAD_WORKER_DISABLED=true` en la API: el pipeline sigue con stubs; sin inspección DWG real.
+
+### E. Checklist post-deploy
+
+1. `GET <api>/healthz` → `200`.
+2. Abrir el front en Vercel → login Supabase.
+3. Como admin: invitar arquitecto (email real + Resend configurado).
+4. Como arquitecto: crear trabajo, subir `.dwg`, ver estado `procesando` → `procesado`, descargar resultado.
+5. Revisar logs del host de la API si el pipeline falla (`correlation_id` en respuesta de error).
+
+Más contexto histórico en [`docs/ci.md`](docs/ci.md).
 
 ## Secretos de GitHub (Actions / despliegue)
 
