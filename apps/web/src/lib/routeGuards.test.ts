@@ -5,8 +5,15 @@ describe('routeGuards', () => {
   it('requires auth for dashboard and jobs', () => {
     expect(isAuthRequiredPath('/dashboard')).toBe(true)
     expect(isAuthRequiredPath('/jobs')).toBe(true)
+    expect(isAuthRequiredPath('/jobs/abc-123')).toBe(true)
     expect(isAuthRequiredPath('/jobs/new')).toBe(true)
     expect(isAuthRequiredPath('/')).toBe(false)
+  })
+
+  it('redirects legacy /jobs list to dashboard', () => {
+    expect(
+      resolveAuthRedirect({ pathname: '/jobs', hasSession: true, role: 'architect' }),
+    ).toBe('/dashboard')
   })
 
   it('redirects unauthenticated users from protected routes', () => {

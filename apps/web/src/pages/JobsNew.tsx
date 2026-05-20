@@ -1,5 +1,8 @@
 import React, { useState } from 'react'
+import { AppShell } from '../components/AppShell'
+import { Icon } from '../components/Icon'
 import { useAuth } from '../context/AuthContext'
+import { jobDetailPath } from '../lib/routes'
 
 const apiBase = import.meta.env.VITE_API_URL ?? 'http://localhost:3001'
 
@@ -24,63 +27,64 @@ export default function JobsNew({ onNavigate }: { onNavigate: (path: string) => 
       },
       body: JSON.stringify({ title: t }),
     })
-    const errBody = (await res.json().catch(() => ({}))) as { error?: string }
+    const body = (await res.json().catch(() => ({}))) as { id?: string; error?: string }
     setPending(false)
     if (!res.ok) {
-      setError(errBody.error ?? `HTTP ${res.status}`)
+      setError(body.error ?? `HTTP ${res.status}`)
       return
     }
-    setTitle('')
-    onNavigate('/jobs')
+    if (body.id) {
+      onNavigate(jobDetailPath(body.id))
+      return
+    }
+    onNavigate('/dashboard')
   }
 
   return (
-    <div className="space-y-6">
-      <div className="flex flex-wrap items-center justify-between gap-3">
-        <h1 className="text-xl font-semibold text-[#191c1d]">Nuevo análisis</h1>
+    <AppShell activeNav="dashboard" onNavigate={onNavigate} headerTitle="Nuevo proyecto">
+      <div className="mx-auto max-w-xl">
         <button
           type="button"
-          className="text-sm font-semibold text-[#00346f] underline decoration-[#00346f]/30 underline-offset-2 hover:decoration-[#00346f]"
-          onClick={() => onNavigate('/jobs')}
+          className="text-technical-label mb-6 flex items-center gap-2 tracking-widest text-on-surface-variant uppercase hover:text-primary"
+          onClick={() => onNavigate('/dashboard')}
         >
-          Volver a trabajos
+          <Icon name="arrow_back" className="text-[18px]" />
+          Volver a proyectos
         </button>
+
+        <form
+          onSubmit={(e) => void handleSubmit(e)}
+          className="rounded-xl border border-outline-variant bg-surface-container-lowest p-8 shadow-[var(--shadow-ambient)]"
+        >
+          <h1 className="text-headline-md text-primary">Crear proyecto</h1>
+          <p className="text-body-sm mt-2 text-on-surface-variant">
+            Definí un nombre para el trabajo. Después podrás subir el plano DWG y ejecutar el análisis.
+          </p>
+          <label className="mt-6 block space-y-2">
+            <span className="text-button text-on-surface">Título del proyecto</span>
+            <input
+              className="input-field pl-4"
+              placeholder="Ej. Planta baja — revisión luminaria"
+              value={title}
+              onChange={(e) => setTitle(e.target.value)}
+              autoComplete="off"
+            />
+          </label>
+          {error ? (
+            <p className="mt-4 rounded-lg bg-error-container px-3 py-2 text-body-sm text-on-error-container" role="alert">
+              {error}
+            </p>
+          ) : null}
+          <div className="mt-8 flex flex-wrap gap-3">
+            <button type="submit" disabled={pending || !title.trim()} className="btn-primary">
+              {pending ? 'Creando…' : 'Crear proyecto'}
+            </button>
+            <button type="button" className="btn-secondary-outline" onClick={() => onNavigate('/dashboard')}>
+              Cancelar
+            </button>
+          </div>
+        </form>
       </div>
-      <form
-        onSubmit={(e) => void handleSubmit(e)}
-        className="rounded-lg border border-[#E2E8F0] bg-white p-6 shadow-[0px_10px_25px_rgba(0,52,111,0.06)]"
-      >
-        <p className="text-sm text-[#424751]">
-          Creá un trabajo nuevo para subir el plano DWG y ejecutar el pipeline de análisis.
-        </p>
-        <label className="mt-5 block">
-          <span className="text-sm font-medium text-[#191c1d]">Título del trabajo</span>
-          <input
-            className="mt-1.5 w-full rounded border border-[#c2c6d3] px-3 py-2 text-sm text-[#191c1d] outline-none focus:border-[#00346f] focus:ring-2 focus:ring-[#00346f]/50"
-            placeholder="Ej. Planta baja — revisión luminaria"
-            value={title}
-            onChange={(e) => setTitle(e.target.value)}
-            autoComplete="off"
-          />
-        </label>
-        {error ? <p className="mt-3 text-sm text-[#ba1a1a]">{error}</p> : null}
-        <div className="mt-6 flex flex-wrap gap-3">
-          <button
-            type="submit"
-            disabled={pending || !title.trim()}
-            className="rounded bg-[#00346f] px-4 py-2 text-sm font-semibold text-white hover:bg-[#004a99] disabled:opacity-50"
-          >
-            {pending ? 'Creando…' : 'Crear trabajo'}
-          </button>
-          <button
-            type="button"
-            className="rounded border border-[#00346f] bg-transparent px-4 py-2 text-sm font-semibold text-[#00346f] hover:bg-[#00346f]/5"
-            onClick={() => onNavigate('/dashboard')}
-          >
-            Cancelar
-          </button>
-        </div>
-      </form>
-    </div>
+    </AppShell>
   )
 }

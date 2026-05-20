@@ -1,4 +1,5 @@
 import type { AppRole } from './roles'
+import { isJobDetailPath } from './routes'
 
 const AUTH_REQUIRED = new Set(['/dashboard', '/jobs', '/invites', '/jobs/new'])
 
@@ -7,7 +8,9 @@ const ADMIN_ONLY = new Set(['/invites'])
 const ARCHITECT_ONLY = new Set(['/jobs/new'])
 
 export function isAuthRequiredPath(pathname: string): boolean {
-  return AUTH_REQUIRED.has(pathname)
+  if (AUTH_REQUIRED.has(pathname)) return true
+  if (isJobDetailPath(pathname)) return true
+  return false
 }
 
 export function isAdminOnlyPath(pathname: string): boolean {
@@ -28,6 +31,8 @@ export function resolveAuthRedirect(params: {
   }
 
   if (pathname === '/login' || pathname === '/forgot-password') return '/dashboard'
+
+  if (pathname === '/jobs') return '/dashboard'
 
   if (isAuthRequiredPath(pathname) && !role) return '/login'
 

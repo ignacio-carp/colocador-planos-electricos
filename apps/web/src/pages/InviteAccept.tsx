@@ -1,4 +1,5 @@
 import React, { useEffect, useState } from 'react'
+import { AuthShell } from '../components/AuthShell'
 
 const apiBase = import.meta.env.VITE_API_URL ?? 'http://localhost:3001'
 
@@ -59,75 +60,79 @@ export default function InviteAccept({ onNavigate }: { onNavigate: (path: string
   }
 
   return (
-    <div className="mx-auto max-w-md space-y-4">
-      <h1 className="text-xl font-semibold text-slate-900">Activar cuenta</h1>
-      {verify === 'loading' ? <p className="text-sm text-slate-600">Verificando enlace…</p> : null}
-      {verify === 'invalid' ? (
-        <p className="rounded border border-red-200 bg-red-50 p-4 text-sm text-red-900">
-          Enlace inválido o caducado. Solicita una nueva invitación al administrador.
-        </p>
-      ) : null}
-      {verify === 'valid' ? (
-        <form onSubmit={submit} className="space-y-4 rounded border border-slate-200 bg-white p-6 shadow-sm">
-          <p className="text-sm text-slate-700">Completa tu perfil para activar tu cuenta de arquitecto.</p>
-          <div>
-            <label className="block text-sm font-medium text-slate-800" htmlFor="fullName">
-              Nombre completo
+    <AuthShell>
+      <div className="rounded-xl border border-outline-variant bg-surface-container-lowest p-8 shadow-[var(--shadow-ambient)]">
+        <h1 className="text-headline-md text-on-surface">Activar cuenta</h1>
+        {verify === 'loading' ? (
+          <p className="text-body-sm mt-4 text-on-surface-variant">Verificando enlace…</p>
+        ) : null}
+        {verify === 'invalid' ? (
+          <p className="mt-4 rounded-lg bg-error-container px-4 py-3 text-body-sm text-on-error-container">
+            Enlace inválido o caducado. Solicitá una nueva invitación al administrador.
+          </p>
+        ) : null}
+        {verify === 'valid' ? (
+          <form onSubmit={(e) => void submit(e)} className="mt-6 space-y-4">
+            <p className="text-body-sm text-on-surface-variant">
+              Completá tu perfil para activar tu cuenta de arquitecto.
+            </p>
+            <label className="block space-y-2" htmlFor="fullName">
+              <span className="text-button text-on-surface">Nombre completo</span>
+              <input
+                id="fullName"
+                type="text"
+                required
+                minLength={2}
+                autoComplete="name"
+                value={fullName}
+                onChange={(e) => setFullName(e.target.value)}
+                className="input-field pl-4"
+              />
             </label>
-            <input
-              id="fullName"
-              type="text"
-              required
-              minLength={2}
-              autoComplete="name"
-              value={fullName}
-              onChange={(e) => setFullName(e.target.value)}
-              className="mt-1 w-full rounded border border-slate-300 px-3 py-2 text-sm"
-            />
-          </div>
-          <div>
-            <label className="block text-sm font-medium text-slate-800" htmlFor="password">
-              Contraseña
+            <label className="block space-y-2" htmlFor="password">
+              <span className="text-button text-on-surface">Contraseña</span>
+              <input
+                id="password"
+                type="password"
+                required
+                minLength={8}
+                autoComplete="new-password"
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+                className="input-field pl-4"
+              />
             </label>
-            <input
-              id="password"
-              type="password"
-              required
-              minLength={8}
-              autoComplete="new-password"
-              value={password}
-              onChange={(e) => setPassword(e.target.value)}
-              className="mt-1 w-full rounded border border-slate-300 px-3 py-2 text-sm"
-            />
-          </div>
-          <div>
-            <label className="block text-sm font-medium text-slate-800" htmlFor="confirmPassword">
-              Confirmar contraseña
+            <label className="block space-y-2" htmlFor="confirmPassword">
+              <span className="text-button text-on-surface">Confirmar contraseña</span>
+              <input
+                id="confirmPassword"
+                type="password"
+                required
+                minLength={8}
+                autoComplete="new-password"
+                value={confirmPassword}
+                onChange={(e) => setConfirmPassword(e.target.value)}
+                className="input-field pl-4"
+              />
             </label>
-            <input
-              id="confirmPassword"
-              type="password"
-              required
-              minLength={8}
-              autoComplete="new-password"
-              value={confirmPassword}
-              onChange={(e) => setConfirmPassword(e.target.value)}
-              className="mt-1 w-full rounded border border-slate-300 px-3 py-2 text-sm"
-            />
-          </div>
-          {error ? <p className="text-sm text-red-600">{error}</p> : null}
-          <button
-            type="submit"
-            disabled={pending}
-            className="w-full rounded bg-slate-900 px-4 py-2 text-sm text-white disabled:opacity-50"
-          >
-            {pending ? 'Activando…' : 'Activar cuenta'}
-          </button>
-        </form>
-      ) : null}
-      <button type="button" className="text-sm text-slate-900 underline" onClick={() => onNavigate('/')}>
-        Ir al inicio
-      </button>
-    </div>
+            {error ? (
+              <p className="rounded-lg bg-error-container px-3 py-2 text-body-sm text-on-error-container" role="alert">
+                {error}
+              </p>
+            ) : null}
+            <button type="submit" disabled={pending} className="btn-primary w-full py-4">
+              {pending ? 'Activando…' : 'Activar cuenta'}
+            </button>
+          </form>
+        ) : null}
+        <button
+          type="button"
+          className="text-button mt-6 font-semibold text-primary hover:underline"
+          onClick={() => onNavigate('/login')}
+        >
+          Ir al inicio de sesión
+        </button>
+      </div>
+    </AuthShell>
   )
 }

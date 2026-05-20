@@ -1,4 +1,6 @@
 import React, { useEffect, useState } from 'react'
+import { AuthShell } from '../components/AuthShell'
+import { Icon } from '../components/Icon'
 import { getSupabaseBrowserClient } from '../lib/supabaseBrowser'
 
 /**
@@ -40,42 +42,52 @@ export default function ResetPassword({ onNavigate }: { onNavigate: (path: strin
 
   if (!ready) {
     return (
-      <div className="mx-auto max-w-md rounded-lg border border-slate-200 bg-white p-8 text-center text-slate-600">
-        <p>Abre esta página desde el enlace del correo de recuperación.</p>
-        <button type="button" className="mt-4 text-slate-900 underline" onClick={() => onNavigate('/login')}>
-          Ir al login
-        </button>
-      </div>
+      <AuthShell showBrand={false}>
+        <div className="rounded-xl border border-outline-variant bg-surface-container-lowest p-8 text-center shadow-[var(--shadow-ambient)]">
+          <p className="text-body-sm text-on-surface-variant">
+            Abrí esta página desde el enlace del correo de recuperación.
+          </p>
+          <button type="button" className="btn-primary mt-6" onClick={() => onNavigate('/login')}>
+            Ir al inicio de sesión
+          </button>
+        </div>
+      </AuthShell>
     )
   }
 
   return (
-    <div className="mx-auto max-w-md rounded-lg border border-slate-200 bg-white p-8 shadow-sm">
-      <h1 className="text-xl font-semibold text-slate-900">Nueva contraseña</h1>
-      <form className="mt-6 space-y-4" onSubmit={onSubmit}>
-        <div>
-          <label className="block text-sm font-medium text-slate-700" htmlFor="new-password">
-            Contraseña nueva
+    <AuthShell showBrand={false}>
+      <div className="rounded-xl border border-outline-variant bg-surface-container-lowest p-8 shadow-[var(--shadow-ambient)]">
+        <h1 className="text-headline-md text-on-surface">Nueva contraseña</h1>
+        <form className="mt-6 space-y-6" onSubmit={(e) => void onSubmit(e)}>
+          <label className="block space-y-2" htmlFor="new-password">
+            <span className="text-button text-on-surface">Contraseña nueva</span>
+            <div className="relative">
+              <Icon
+                name="lock"
+                className="pointer-events-none absolute top-1/2 left-3 -translate-y-1/2 text-[20px] text-outline"
+              />
+              <input
+                id="new-password"
+                type="password"
+                required
+                minLength={6}
+                className="input-field"
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+              />
+            </div>
           </label>
-          <input
-            id="new-password"
-            type="password"
-            required
-            minLength={6}
-            className="mt-1 w-full rounded border border-slate-300 px-3 py-2 text-slate-900"
-            value={password}
-            onChange={(e) => setPassword(e.target.value)}
-          />
-        </div>
-        {error ? <p className="text-sm text-red-600">{error}</p> : null}
-        <button
-          type="submit"
-          disabled={pending}
-          className="w-full rounded bg-slate-900 px-4 py-2 text-white disabled:opacity-50"
-        >
-          {pending ? 'Guardando…' : 'Guardar'}
-        </button>
-      </form>
-    </div>
+          {error ? (
+            <p className="rounded-lg bg-error-container px-3 py-2 text-body-sm text-on-error-container" role="alert">
+              {error}
+            </p>
+          ) : null}
+          <button type="submit" disabled={pending} className="btn-primary w-full py-4">
+            {pending ? 'Guardando…' : 'Guardar contraseña'}
+          </button>
+        </form>
+      </div>
+    </AuthShell>
   )
 }
