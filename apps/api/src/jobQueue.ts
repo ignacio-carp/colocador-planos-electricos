@@ -29,8 +29,8 @@ function jobIsTerminal(status: JobStatus): boolean {
 /**
  * Enqueue pipeline run for a job (idempotent per job_id while queued/processing).
  */
-export function enqueueJobPipeline(jobId: string, correlationId: string): QueueMessage | null {
-  const job = findJob(jobId)
+export async function enqueueJobPipeline(jobId: string, correlationId: string): Promise<QueueMessage | null> {
+  const job = await findJob(jobId)
   if (!job) return null
 
   const status = normalizeJobStatus(job.status)

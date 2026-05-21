@@ -12,26 +12,26 @@ describe('jobQueue S-01', () => {
     delete process.env.CAD_IA_SIMULATE_FAILURE
   })
 
-  it('enqueue is idempotent while queued', () => {
-    const job = createJob('aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa', 'q1')
-    const a = enqueueJobPipeline(job.id, 'corr-1')
-    const b = enqueueJobPipeline(job.id, 'corr-2')
+  it('enqueue is idempotent while queued', async () => {
+    const job = await createJob('aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa', 'q1')
+    const a = await enqueueJobPipeline(job.id, 'corr-1')
+    const b = await enqueueJobPipeline(job.id, 'corr-2')
     assert.ok(a)
     assert.equal(a?.id, b?.id)
   })
 
-  it('does not enqueue terminal jobs', () => {
-    const job = createJob('bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb', 'done')
-    patchJob(job.id, { status: 'procesando' })
-    patchJob(job.id, { status: 'procesado' })
-    assert.equal(enqueueJobPipeline(job.id, 'c'), null)
+  it('does not enqueue terminal jobs', async () => {
+    const job = await createJob('bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb', 'done')
+    await patchJob(job.id, { status: 'procesando' })
+    await patchJob(job.id, { status: 'procesado' })
+    assert.equal(await enqueueJobPipeline(job.id, 'c'), null)
   })
 
   it('worker drains queue to procesado', async () => {
-    const job = createJob('cccccccc-cccc-4ccc-8ccc-cccccccccccc', 'run')
-    enqueueJobPipeline(job.id, 'corr-worker')
+    const job = await createJob('cccccccc-cccc-4ccc-8ccc-cccccccccccc', 'run')
+    await enqueueJobPipeline(job.id, 'corr-worker')
     await drainPipelineQueueOnce()
-    const updated = findJob(job.id)
+    const updated = await findJob(job.id)
     assert.equal(updated?.status, 'procesado')
   })
 })

@@ -23,7 +23,7 @@ async function processOneMessage(): Promise<void> {
   const msg = claimNextQueueMessage()
   if (!msg) return
 
-  const job = findJob(msg.job_id)
+  const job = await findJob(msg.job_id)
   if (!job) {
     markQueueMessageFailed(msg.job_id, 'job_not_found')
     logStructured('warn', {

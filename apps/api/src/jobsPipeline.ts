@@ -162,7 +162,7 @@ async function runInferWithRetries(
  * job_id + correlation_id per step for support tracing.
  */
 export async function runJobPipeline(jobId: string, correlationId: string): Promise<JobRow | undefined> {
-  const job = findJob(jobId)
+  const job = await findJob(jobId)
   if (!job) {
     logStructured('error', {
       event: 'pipeline_job_missing',
@@ -173,7 +173,7 @@ export async function runJobPipeline(jobId: string, correlationId: string): Prom
     return undefined
   }
 
-  patchJob(jobId, { status: 'procesando' })
+  await patchJob(jobId, { status: 'procesando' })
 
   let lastExecutedStep = 'ingest'
   try {
@@ -200,9 +200,9 @@ export async function runJobPipeline(jobId: string, correlationId: string): Prom
     let normativeResult: ReturnType<typeof buildStubNormativeInferenceOutput> | undefined
     await runTimedStep(jobId, correlationId, 'normative_inference', async () => {
       const rulesVersion = resolveActiveNormativeRulesVersion()
-      patchJob(jobId, {
+      await patchJob(jobId, {
         pipeline_metadata: {
-          ...findJob(jobId)?.pipeline_metadata,
+          ...(await findJob(jobId))?.pipeline_metadata,
           normative_rules_version: rulesVersion,
         },
       })
@@ -238,9 +238,9 @@ export async function runJobPipeline(jobId: string, correlationId: string): Prom
         }
       }
       if (cadInspect) {
-        patchJob(jobId, {
+        await patchJob(jobId, {
           pipeline_metadata: {
-            ...findJob(jobId)?.pipeline_metadata,
+            ...(await findJob(jobId))?.pipeline_metadata,
             cad_worker_inspect: cadInspect,
           },
         })
@@ -289,7 +289,7 @@ export async function runJobPipeline(jobId: string, correlationId: string): Prom
       }
     })
 
-    const done = patchJob(jobId, { status: 'procesado', error: undefined })
+    const done = await patchJob(jobId, { status: 'procesado', error: undefined })
     logStructured('info', {
       event: 'pipeline_complete',
       job_id: jobId,
@@ -305,7 +305,7 @@ export async function runJobPipeline(jobId: string, correlationId: string): Prom
       message,
       correlation_id: correlationId,
     }
-    const failed = patchJob(jobId, { status: 'error', error })
+    const failed = await patchJob(jobId, { status: 'error', error })
     logStructured('error', {
       event: 'pipeline_error',
       job_id: jobId,
