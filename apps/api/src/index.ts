@@ -22,7 +22,7 @@ import {
   generateInviteToken,
   removeInvitationById,
 } from './invitesStore'
-import { createJob, findJob, listAllJobs, listJobsForOwner } from './jobsStore'
+import { createJob, findJob, listAllJobs, listJobsForOwner, type JobRow } from './jobsStore'
 import {
   applyDwgQuotaHeaders,
   assertDwgUploadWithinQuota,
@@ -78,11 +78,7 @@ function respondQuotaExceeded(res: express.Response, err: QuotaExceededError): v
   res.status(413).json({ error: err.message, code: err.code })
 }
 
-function assertJobAccess(
-  userId: string,
-  role: ReturnType<typeof getAppRole>,
-  job: NonNullable<ReturnType<typeof findJob>>,
-): boolean {
+function assertJobAccess(userId: string, role: ReturnType<typeof getAppRole>, job: JobRow): boolean {
   if (!role) return false
   if (role === 'administrator') return true
   return job.owner_user_id === userId
@@ -104,7 +100,7 @@ app.get('/api/me', requireAuth, (req, res) => {
 })
 
 /** US-005: solo arquitecto puede crear jobs vía API; administrador recibe 403. */
-app.post('/api/jobs', requireAuth, requireRole('architect'), (req, res) => {
+app.post('/api/jobs', requireAuth, requireRole('architect'), async (req, res) => {
   const { user } = req as AuthedRequest
   const title = String((req.body as { title?: string })?.title ?? '').trim()
   if (!title) {
@@ -120,8 +116,13 @@ app.post('/api/jobs', requireAuth, requireRole('architect'), (req, res) => {
     }
     throw e
   }
-  const job = createJob(user.id, title)
-  res.status(201).json(job)
+  try {
+    const job = await createJob(user.id, title)
+    res.status(201).json(job)
+  } catch (e) {
+    console.error(e)
+    res.status(500).json({ error: 'Could not create job' })
+  }
 })
 
 /**
@@ -140,7 +141,7 @@ app.post(
       res.status(400).json({ error: 'Missing jobId' })
       return
     }
-    const job = findJob(jobId)
+    const job = await findJob(jobId)
     if (!job) {
       res.status(404).json({ error: 'Job not found' })
       return
@@ -157,7 +158,7 @@ app.post(
       res.status(409).json({ error: 'Job already processed' })
       return
     }
-    const msg = enqueueJobPipeline(jobId, correlationId)
+    const msg = await enqueueJobPipeline(jobId, correlationId)
     if (!msg) {
       res.status(409).json({ error: 'Cannot enqueue job in current state' })
       return
@@ -168,7 +169,7 @@ app.post(
       process.env.PIPELINE_SYNC_PROCESS === 'true'
     if (sync) {
       await drainPipelineQueueOnce()
-      const updated = findJob(jobId)
+      const updated = await findJob(jobId)
       if (!updated) {
         res.status(404).json({ error: 'Job not found' })
         return
@@ -191,18 +192,23 @@ app.get('/api/metrics', requireAuth, requireRole('administrator'), (_req, res) =
 /**
  * US-004 / US-010: listado respeta rol — arquitecto solo ve sus jobs; admin ve todos con dueño.
  */
-app.get('/api/jobs', requireAuth, requireArchitectOrAdmin, (req, res) => {
+app.get('/api/jobs', requireAuth, requireArchitectOrAdmin, async (req, res) => {
   const { user } = req as AuthedRequest
   const role = getAppRole(user)
   if (!role) {
     res.status(403).json({ error: 'Missing role', hint: 'Set app_metadata.role in Supabase' })
     return
   }
-  if (role === 'administrator') {
-    res.json({ jobs: listAllJobs() })
-    return
+  try {
+    if (role === 'administrator') {
+      res.json({ jobs: await listAllJobs() })
+      return
+    }
+    res.json({ jobs: await listJobsForOwner(user.id) })
+  } catch (e) {
+    console.error(e)
+    res.status(500).json({ error: 'Could not list jobs' })
   }
-  res.json({ jobs: listJobsForOwner(user.id) })
 })
 
 /**
@@ -220,7 +226,7 @@ app.post(
       res.status(400).json({ error: 'Missing jobId' })
       return
     }
-    const job = findJob(jobId)
+    const job = await findJob(jobId)
     if (!job) {
       res.status(404).json({ error: 'Job not found' })
       return
@@ -302,7 +308,7 @@ app.post(
       res.status(400).json({ error: 'Missing jobId' })
       return
     }
-    const job = findJob(jobId)
+    const job = await findJob(jobId)
     if (!job) {
       res.status(404).json({ error: 'Job not found' })
       return
@@ -357,7 +363,7 @@ app.post(
       })
       applyDwgQuotaHeaders(res.setHeader.bind(res))
       const correlationId = req.correlationId
-      const queued = enqueueJobPipeline(job.id, correlationId)
+      const queued = await enqueueJobPipeline(job.id, correlationId)
       if (pipelineWorkerEnabled() && queued) {
         void drainPipelineQueueOnce()
       }
@@ -387,7 +393,7 @@ app.get('/api/jobs/:jobId/files', requireAuth, requireStorage, requireArchitectO
     res.status(400).json({ error: 'Missing jobId' })
     return
   }
-  const job = findJob(jobId)
+  const job = await findJob(jobId)
   if (!job) {
     res.status(404).json({ error: 'Job not found' })
     return
@@ -421,7 +427,7 @@ app.get('/api/jobs/:jobId/download', requireAuth, requireStorage, requireArchite
     res.status(400).json({ error: 'Missing jobId' })
     return
   }
-  const job = findJob(jobId)
+  const job = await findJob(jobId)
   if (!job) {
     res.status(404).json({ error: 'Job not found' })
     return
@@ -479,7 +485,7 @@ app.get(
       res.status(400).json({ error: 'Missing jobId' })
       return
     }
-    const job = findJob(jobId)
+    const job = await findJob(jobId)
     if (!job) {
       res.status(404).json({ error: 'Job not found' })
       return
@@ -525,7 +531,7 @@ app.post(
       res.status(400).json({ error: 'Missing jobId' })
       return
     }
-    const job = findJob(jobId)
+    const job = await findJob(jobId)
     if (!job) {
       res.status(404).json({ error: 'Job not found' })
       return

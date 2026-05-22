@@ -5,6 +5,7 @@ import {
   markInvitationAccepted,
   type InvitationRow,
 } from './invitesStore'
+import { upsertProfile } from './profilesStore'
 import { getSupabaseServiceRole, isStorageConfigured } from './supabaseService'
 
 const ARCHITECT_ROLE = 'architect'
@@ -106,6 +107,11 @@ export async function acceptInvitation(
     }
 
     await markInvitationAccepted(invite.id)
+    try {
+      await upsertProfile(data.user.id, { display_name: input.fullName.trim() })
+    } catch (profileErr) {
+      console.error(profileErr)
+    }
     return { ok: true, userId: data.user.id, email: normalizedEmail }
   } catch (e) {
     console.error(e)

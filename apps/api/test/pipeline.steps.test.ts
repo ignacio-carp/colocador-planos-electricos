@@ -60,7 +60,7 @@ describe('runJobPipeline', () => {
   })
 
   it('completes with vision → normative → cad steps when inference succeeds', async () => {
-    const job = createJob('aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa', 'pipeline ok')
+    const job = await createJob('aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa', 'pipeline ok')
     const result = await runJobPipeline(job.id, 'corr-pipeline-pass-xyz')
     assert.ok(result)
     assert.equal(result?.status, 'procesado')
@@ -69,7 +69,7 @@ describe('runJobPipeline', () => {
 
   it('fails normative_inference when CAD_IA_SIMULATE_FAILURE=true', async () => {
     process.env.CAD_IA_SIMULATE_FAILURE = 'true'
-    const job = createJob('bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb', 'pipeline fail')
+    const job = await createJob('bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb', 'pipeline fail')
     const result = await runJobPipeline(job.id, 'corr-pipeline-fail-uvw')
     assert.ok(result)
     assert.equal(result?.status, 'error')

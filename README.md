@@ -87,6 +87,16 @@ Token de Supabase CLI (una vez): copiar `.supabase/access-token.example` → `.s
 
 ### 3. Base de datos (migraciones)
 
+Esquema principal en `supabase/migrations/`:
+
+| Tabla | Uso |
+|-------|-----|
+| `invitations` | Invitaciones US-001 |
+| `profiles` | Extensión de `auth.users` (nombre, datos profesionales TBD) |
+| `jobs` | Trabajos del arquitecto (`job_status`: ver [docs/db/job_status.md](docs/db/job_status.md)) |
+| `files` | Metadatos DWG en Storage |
+| `job_pipeline_queue` | Cola async del pipeline (S-01) |
+
 Enlaza el proyecto remoto y aplica migraciones pendientes:
 
 ```bash
