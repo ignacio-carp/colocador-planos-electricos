@@ -34,6 +34,42 @@ comment on column public.jobs.status is 'Canonical job_status (Spanish text, not
 
 comment on table public.profiles is 'Extension of auth.users for professional metadata (US-002 fields TBD).';
 
+-- Jobs created while the API used in-memory jobsStore left files/queue rows without matching job rows.
+insert into public.jobs (id, owner_user_id, title, status, created_at, updated_at)
+select
+  f.job_id,
+  (array_agg(f.owner_user_id order by f.created_at))[1],
+  'Job (backfill pre-T02)',
+  'pendiente',
+  min(f.created_at),
+  now()
+from public.files as f
+where f.job_id is not null
+group by f.job_id
+on conflict (id) do nothing;
+
+insert into public.jobs (id, owner_user_id, title, status, created_at, updated_at)
+select
+  q.job_id,
+  (
+    select f.owner_user_id
+    from public.files as f
+    where f.job_id = q.job_id
+    limit 1
+  ),
+  'Job (backfill pre-T02)',
+  'pendiente',
+  q.created_at,
+  now()
+from public.job_pipeline_queue as q
+where not exists (select 1 from public.jobs as j where j.id = q.job_id)
+  and exists (
+    select 1
+    from public.files as f
+    where f.job_id = q.job_id
+  )
+on conflict (id) do nothing;
+
 -- Link existing pipeline queue and file rows to jobs (requires job rows to exist for each job_id).
 alter table public.job_pipeline_queue
 drop constraint if exists job_pipeline_queue_job_id_fkey;
