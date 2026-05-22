@@ -15,6 +15,16 @@ export type CadWorkerInspectResult = {
   code?: string
 }
 
+export type CadWorkerApplyLayerResult = {
+  ok: boolean
+  input?: string
+  output?: string
+  layer?: string
+  outlets_added?: number
+  error?: string
+  code?: string
+}
+
 export class CadWorkerError extends Error {
   constructor(
     readonly code: string,
@@ -140,4 +150,95 @@ export function inspectDwgFile(inputPath: string): Promise<CadWorkerInspectResul
       resolve(parsed)
     })
   })
+}
+
+function spawnCadWorkerJson(
+  args: string[],
+): Promise<Record<string, unknown>> {
+  if (cadWorkerDisabled()) {
+    return Promise.reject(new CadWorkerError('CAD_WORKER_DISABLED', 'CAD worker disabled'))
+  }
+
+  const timeoutMs = cadWorkerTimeoutMs()
+  const py = pythonExecutable()
+  const cwd = cadWorkerCwd()
+
+  return new Promise((resolve, reject) => {
+    const child = spawn(py, ['-m', 'cad_worker', ...args], {
+      cwd,
+      env: { ...process.env },
+      stdio: ['ignore', 'pipe', 'pipe'],
+    })
+
+    let stdout = ''
+    let stderr = ''
+    child.stdout?.on('data', (c: Buffer) => {
+      stdout += c.toString()
+    })
+    child.stderr?.on('data', (c: Buffer) => {
+      stderr += c.toString()
+    })
+
+    const timer = setTimeout(() => {
+      child.kill('SIGKILL')
+    }, timeoutMs)
+
+    child.on('error', (err) => {
+      clearTimeout(timer)
+      reject(new CadWorkerError('CAD_WORKER_SPAWN_FAILED', err.message))
+    })
+
+    child.on('close', (exitCode) => {
+      clearTimeout(timer)
+      const code = exitCode ?? 1
+      const trimmed = stdout.trim()
+      if (!trimmed) {
+        reject(
+          new CadWorkerError(
+            'CAD_WORKER_EMPTY_OUTPUT',
+            stderr.trim() || `cad-worker exited with ${code}`,
+            code,
+          ),
+        )
+        return
+      }
+      let parsed: Record<string, unknown>
+      try {
+        parsed = JSON.parse(trimmed) as Record<string, unknown>
+      } catch {
+        reject(new CadWorkerError('CAD_WORKER_INVALID_JSON', trimmed.slice(0, 500), code))
+        return
+      }
+      if (code !== 0 || parsed.ok === false) {
+        reject(
+          mapExitCodeToError(
+            typeof parsed.code === 'string' ? parsed.code : undefined,
+            typeof parsed.error === 'string' ? parsed.error : stderr.trim() || `exit ${code}`,
+            code,
+          ),
+        )
+        return
+      }
+      resolve(parsed)
+    })
+  })
+}
+
+/** US-009 — copy input DWG and add Cambre_Electrical from outlet_placements JSON. */
+export async function applyElectricalLayer(
+  inputPath: string,
+  outputPath: string,
+  placements: unknown[],
+): Promise<CadWorkerApplyLayerResult> {
+  const placementsJson = JSON.stringify(placements)
+  const parsed = await spawnCadWorkerJson([
+    'apply-electrical-layer',
+    '--input',
+    inputPath,
+    '--output',
+    outputPath,
+    '--placements-json',
+    placementsJson,
+  ])
+  return parsed as CadWorkerApplyLayerResult
 }

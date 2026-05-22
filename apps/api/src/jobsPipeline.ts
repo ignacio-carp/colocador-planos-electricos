@@ -1,7 +1,15 @@
 import { mkdtempSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { cadWorkerDisabled, inspectDwgFile } from './cadWorkerBridge'
+import { applyElectricalLayer, cadWorkerDisabled, inspectDwgFile } from './cadWorkerBridge'
+import { OpenAiClientError } from './openaiClient'
+import {
+  buildLiveNormativeInferenceOutput,
+  buildLiveVisionFallback,
+  buildLiveVisionLayoutOutput,
+} from './pipelineLive'
+import { getPipelineMode, openaiConfigured } from './pipelineMode'
+import { registerOutputDwgFromLocalFile } from './pipelineCadOutput'
 import { DWG_INPUT_BUCKET } from './dwgStorage'
 import { findLatestInputForJob } from './filesStore'
 import { logStructured } from './logger'
@@ -109,8 +117,10 @@ async function runInferWithRetries(
   jobId: string,
   correlationId: string,
   step: string,
+  work: () => Promise<void>,
 ): Promise<void> {
-  const simulateFailure = process.env.CAD_IA_SIMULATE_FAILURE === 'true'
+  const simulateFailure =
+    process.env.CAD_IA_SIMULATE_FAILURE === 'true' && getPipelineMode() === 'stub'
   let lastMessage = 'IA provider error'
 
   for (let attempt = 1; attempt <= IA_MAX_ATTEMPTS; attempt++) {
@@ -124,21 +134,28 @@ async function runInferWithRetries(
       max_attempts: IA_MAX_ATTEMPTS,
     })
 
-    await sleep(5)
-
-    const ok = !simulateFailure
-    if (ok) {
-      recordIaCostUsd(jobId, 0.002 * attempt)
-      logStructured('info', {
-        event: 'ia_attempt_success',
-        job_id: jobId,
-        correlation_id: correlationId,
-        attempt,
-      })
-      return
+    if (!simulateFailure) {
+      try {
+        await work()
+        recordIaCostUsd(jobId, 0.002 * attempt)
+        logStructured('info', {
+          event: 'ia_attempt_success',
+          job_id: jobId,
+          correlation_id: correlationId,
+          attempt,
+          step,
+        })
+        return
+      } catch (e) {
+        lastMessage = e instanceof Error ? e.message : 'IA provider error'
+        if (e instanceof OpenAiClientError && e.code === 'OPENAI_RATE_LIMIT') {
+          lastMessage = e.message
+        }
+      }
+    } else {
+      await sleep(5)
+      lastMessage = 'IA provider transient failure (simulated)'
     }
-
-    lastMessage = 'IA provider transient failure'
     logStructured('warn', {
       event: 'ia_attempt_failed',
       job_id: jobId,
@@ -175,21 +192,61 @@ export async function runJobPipeline(jobId: string, correlationId: string): Prom
 
   await patchJob(jobId, { status: 'procesando' })
 
+  const pipelineMode = getPipelineMode()
+  if (pipelineMode === 'live' && !openaiConfigured()) {
+    throw new OpenAiClientError(
+      'OPENAI_NOT_CONFIGURED',
+      'CAD_PIPELINE_MODE=live requires OPENAI_API_KEY',
+    )
+  }
+
   let lastExecutedStep = 'ingest'
   try {
     await runTimedStep(jobId, correlationId, 'ingest', () => sleep(5))
 
+    let cadInspectForVision: Record<string, unknown> | undefined
+    if (!cadWorkerDisabled()) {
+      try {
+        cadInspectForVision = await runCadWorkerInspectForJob(jobId, correlationId)
+      } catch (e) {
+        const message = e instanceof Error ? e.message : String(e)
+        logStructured('warn', {
+          event: 'cad_worker_inspect_skipped',
+          job_id: jobId,
+          correlation_id: correlationId,
+          error: message,
+        })
+      }
+    }
+
     lastExecutedStep = 'vision_layout'
     let visionResult: ReturnType<typeof buildStubVisionLayoutOutput> | undefined
     await runTimedStep(jobId, correlationId, 'vision_layout', async () => {
-      visionResult = buildStubVisionLayoutOutput(jobId, correlationId)
-      logStructured('info', {
-        event: 'pipeline_us007_stub',
-        job_id: jobId,
-        correlation_id: correlationId,
-        contract_version: PIPELINE_CONTRACT_VERSION,
-        rooms: (visionResult.layout_interpretation as { rooms?: unknown[] }).rooms?.length ?? 0,
-      })
+      if (pipelineMode === 'live' && cadInspectForVision) {
+        visionResult = await buildLiveVisionLayoutOutput(jobId, correlationId, cadInspectForVision)
+        logStructured('info', {
+          event: 'pipeline_us007_live',
+          job_id: jobId,
+          correlation_id: correlationId,
+          contract_version: PIPELINE_CONTRACT_VERSION,
+        })
+      } else if (pipelineMode === 'live') {
+        visionResult = buildLiveVisionFallback(jobId, correlationId)
+        logStructured('warn', {
+          event: 'pipeline_us007_live_fallback_stub',
+          job_id: jobId,
+          correlation_id: correlationId,
+        })
+      } else {
+        visionResult = buildStubVisionLayoutOutput(jobId, correlationId)
+        logStructured('info', {
+          event: 'pipeline_us007_stub',
+          job_id: jobId,
+          correlation_id: correlationId,
+          contract_version: PIPELINE_CONTRACT_VERSION,
+          rooms: (visionResult.layout_interpretation as { rooms?: unknown[] }).rooms?.length ?? 0,
+        })
+      }
     })
     const visionLocked = visionResult
     if (!visionLocked) {
@@ -206,10 +263,22 @@ export async function runJobPipeline(jobId: string, correlationId: string): Prom
           normative_rules_version: rulesVersion,
         },
       })
-      await runInferWithRetries(jobId, correlationId, 'normative_inference')
-      normativeResult = buildStubNormativeInferenceOutput(jobId, correlationId, visionLocked)
+      await runInferWithRetries(jobId, correlationId, 'normative_inference', async () => {
+        if (pipelineMode === 'live') {
+          normativeResult = await buildLiveNormativeInferenceOutput(
+            jobId,
+            correlationId,
+            visionLocked,
+          )
+        } else {
+          normativeResult = buildStubNormativeInferenceOutput(jobId, correlationId, visionLocked)
+        }
+      })
+      if (!normativeResult) {
+        normativeResult = buildStubNormativeInferenceOutput(jobId, correlationId, visionLocked)
+      }
       logStructured('info', {
-        event: 'pipeline_us008_stub',
+        event: pipelineMode === 'live' ? 'pipeline_us008_live' : 'pipeline_us008_stub',
         job_id: jobId,
         correlation_id: correlationId,
         contract_version: PIPELINE_CONTRACT_VERSION,
@@ -223,25 +292,13 @@ export async function runJobPipeline(jobId: string, correlationId: string): Prom
 
     lastExecutedStep = 'cad_generation'
     await runTimedStep(jobId, correlationId, 'cad_generation', async () => {
-      let cadInspect: Record<string, unknown> | undefined
-      if (!cadWorkerDisabled()) {
-        try {
-          cadInspect = await runCadWorkerInspectForJob(jobId, correlationId)
-        } catch (e) {
-          const message = e instanceof Error ? e.message : String(e)
-          logStructured('warn', {
-            event: 'cad_worker_inspect_skipped',
-            job_id: jobId,
-            correlation_id: correlationId,
-            error: message,
-          })
-        }
-      }
+      const cadInspect = cadInspectForVision
       if (cadInspect) {
         await patchJob(jobId, {
           pipeline_metadata: {
             ...(await findJob(jobId))?.pipeline_metadata,
             cad_worker_inspect: cadInspect,
+            pipeline_mode: pipelineMode,
           },
         })
       }
@@ -253,38 +310,80 @@ export async function runJobPipeline(jobId: string, correlationId: string): Prom
         visionOutput: visionLocked,
         normativeOutput: normativeLocked,
       })
-      logStructured('info', {
-        event: 'pipeline_us009_stub',
-        job_id: jobId,
-        correlation_id: correlationId,
-        contract_version: PIPELINE_CONTRACT_VERSION,
-        output_hint: cadInput.output_dwg as { storage_path_hint?: string } | undefined,
-      })
-      if (isStorageConfigured()) {
-        try {
-          const supabase = getSupabaseServiceRole()
-          await registerMockOutputDwg(supabase, {
-            jobId,
-            ownerUserId: job.owner_user_id,
-            objectPath: outputObjectPath,
-          })
-          logStructured('info', {
-            event: 'pipeline_us009_registered',
-            job_id: jobId,
-            correlation_id: correlationId,
-            contract_version: PIPELINE_CONTRACT_VERSION,
-            bucket: DWG_OUTPUT_BUCKET,
-            output_object_path: outputObjectPath,
-          })
-        } catch (e) {
-          const message = e instanceof Error ? e.message : 'registration failed'
-          logStructured('warn', {
-            event: 'pipeline_us009_register_skipped',
-            job_id: jobId,
-            correlation_id: correlationId,
-            contract_version: PIPELINE_CONTRACT_VERSION,
-            error: message,
-          })
+      const placements = (normativeLocked as { outlet_placements?: unknown[] }).outlet_placements ?? []
+      let usedLiveCad = false
+
+      if (
+        pipelineMode === 'live' &&
+        !cadWorkerDisabled() &&
+        isStorageConfigured() &&
+        placements.length > 0
+      ) {
+        const supabase = getSupabaseServiceRole()
+        const input = await findLatestInputForJob(supabase, jobId)
+        if (input?.bucket_id === DWG_INPUT_BUCKET && input.object_path) {
+          const { data, error } = await supabase.storage
+            .from(input.bucket_id)
+            .download(input.object_path)
+          if (!error && data) {
+            const dir = mkdtempSync(join(tmpdir(), 'cambre-cad-out-'))
+            const localIn = join(dir, 'input.dwg')
+            const localOut = join(dir, 'output.dwg')
+            writeFileSync(localIn, Buffer.from(await data.arrayBuffer()))
+            await applyElectricalLayer(localIn, localOut, placements)
+            await registerOutputDwgFromLocalFile(supabase, {
+              jobId,
+              ownerUserId: job.owner_user_id,
+              objectPath: outputObjectPath,
+              localPath: localOut,
+            })
+            usedLiveCad = true
+            logStructured('info', {
+              event: 'pipeline_us009_live',
+              job_id: jobId,
+              correlation_id: correlationId,
+              contract_version: PIPELINE_CONTRACT_VERSION,
+              output_object_path: outputObjectPath,
+              outlets: placements.length,
+            })
+          }
+        }
+      }
+
+      if (!usedLiveCad) {
+        logStructured('info', {
+          event: 'pipeline_us009_stub',
+          job_id: jobId,
+          correlation_id: correlationId,
+          contract_version: PIPELINE_CONTRACT_VERSION,
+          output_hint: cadInput.output_dwg as { storage_path_hint?: string } | undefined,
+        })
+        if (isStorageConfigured()) {
+          try {
+            const supabase = getSupabaseServiceRole()
+            await registerMockOutputDwg(supabase, {
+              jobId,
+              ownerUserId: job.owner_user_id,
+              objectPath: outputObjectPath,
+            })
+            logStructured('info', {
+              event: 'pipeline_us009_registered',
+              job_id: jobId,
+              correlation_id: correlationId,
+              contract_version: PIPELINE_CONTRACT_VERSION,
+              bucket: DWG_OUTPUT_BUCKET,
+              output_object_path: outputObjectPath,
+            })
+          } catch (e) {
+            const message = e instanceof Error ? e.message : 'registration failed'
+            logStructured('warn', {
+              event: 'pipeline_us009_register_skipped',
+              job_id: jobId,
+              correlation_id: correlationId,
+              contract_version: PIPELINE_CONTRACT_VERSION,
+              error: message,
+            })
+          }
         }
       }
     })

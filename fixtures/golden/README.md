@@ -3,7 +3,7 @@
 ## Contenido
 
 - `pipeline-stub-normative.snapshot.json` — salida esperada del stub US-008 para un `job_id` fijo (determinista).
-- Los DWG reales de Cambre se incorporarán cuando negocio entregue planos acordados.
+- `dwg/` — colocar aquí planos `.dwg` acordados con Cambre (N5). Mientras esté vacío, CI usa solo snapshot JSON.
 
 ## Checklist obtención planos reales
 

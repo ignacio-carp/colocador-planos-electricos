@@ -1,0 +1,408 @@
+<!DOCTYPE html>
+
+<html class="light" lang="en"><head>
+<meta charset="utf-8"/>
+<meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+<title>Project Management Portal - BluePrint Admin</title>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&amp;family=Hanken+Grotesk:wght@600;700&amp;family=JetBrains+Mono:wght@500&amp;family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+<script id="tailwind-config">
+        tailwind.config = {
+          darkMode: "class",
+          theme: {
+            extend: {
+              "colors": {
+                      "on-primary-fixed-variant": "#00458f",
+                      "brand-red": "#C81C2E",
+                      "secondary-container": "#e6dfce",
+                      "on-secondary-fixed-variant": "#4a473a",
+                      "primary-fixed-dim": "#abc7ff",
+                      "error-container": "#ffdad6",
+                      "surface-container": "#edeeef",
+                      "tertiary-fixed-dim": "#c8c6c5",
+                      "outline": "#737783",
+                      "tertiary-container": "#4c4c4c",
+                      "on-error": "#ffffff",
+                      "surface-variant": "#e1e3e4",
+                      "on-primary-fixed": "#001b3f",
+                      "inverse-surface": "#2e3132",
+                      "on-tertiary": "#ffffff",
+                      "background": "#f8f9fa",
+                      "success": "#10B981",
+                      "on-tertiary-container": "#bebcbc",
+                      "on-tertiary-fixed-variant": "#474746",
+                      "on-secondary-container": "#666355",
+                      "on-error-container": "#93000a",
+                      "surface": "#f8f9fa",
+                      "tertiary": "#363535",
+                      "secondary-fixed": "#e8e2d1",
+                      "primary": "#00346f",
+                      "surface-container-lowest": "#ffffff",
+                      "tertiary-fixed": "#e5e2e1",
+                      "on-primary-container": "#9bbdff",
+                      "blueprint-blue": "#003366",
+                      "surface-container-high": "#e7e8e9",
+                      "inverse-primary": "#abc7ff",
+                      "on-primary": "#ffffff",
+                      "on-secondary": "#ffffff",
+                      "surface-tint": "#255dad",
+                      "surface-dim": "#d9dadb",
+                      "secondary": "#625e51",
+                      "outline-variant": "#c2c6d3",
+                      "surface-container-highest": "#e1e3e4",
+                      "surface-border": "#E2E8F0",
+                      "on-background": "#191c1d",
+                      "surface-bright": "#f8f9fa",
+                      "surface-container-low": "#f3f4f5",
+                      "primary-container": "#004a99",
+                      "on-surface-variant": "#424751",
+                      "secondary-fixed-dim": "#ccc6b5",
+                      "on-secondary-fixed": "#1e1c11",
+                      "on-surface": "#191c1d",
+                      "inverse-on-surface": "#f0f1f2",
+                      "on-tertiary-fixed": "#1b1c1c",
+                      "error": "#ba1a1a",
+                      "primary-fixed": "#d7e2ff"
+              },
+              "borderRadius": {
+                      "DEFAULT": "0.125rem",
+                      "lg": "0.25rem",
+                      "xl": "0.5rem",
+                      "full": "0.75rem"
+              },
+              "spacing": {
+                      "container-max": "1440px",
+                      "section-padding": "32px",
+                      "card-gap": "16px",
+                      "gutter": "24px",
+                      "base": "8px",
+                      "sidebar-width": "260px"
+              },
+              "fontFamily": {
+                      "headline-lg": ["Hanken Grotesk"],
+                      "body-sm": ["Inter"],
+                      "display-lg": ["Hanken Grotesk"],
+                      "button": ["Inter"],
+                      "technical-label": ["JetBrains Mono"],
+                      "body-lg": ["Inter"],
+                      "headline-md": ["Hanken Grotesk"],
+                      "body-md": ["Inter"]
+              },
+              "fontSize": {
+                      "headline-lg": ["32px", {"lineHeight": "1.2", "fontWeight": "600"}],
+                      "body-sm": ["14px", {"lineHeight": "1.5", "fontWeight": "400"}],
+                      "display-lg": ["48px", {"lineHeight": "1.1", "letterSpacing": "-0.02em", "fontWeight": "700"}],
+                      "button": ["14px", {"lineHeight": "1", "letterSpacing": "0.01em", "fontWeight": "600"}],
+                      "technical-label": ["12px", {"lineHeight": "1.2", "letterSpacing": "0.05em", "fontWeight": "500"}],
+                      "body-lg": ["18px", {"lineHeight": "1.6", "fontWeight": "400"}],
+                      "headline-md": ["24px", {"lineHeight": "1.3", "fontWeight": "600"}],
+                      "body-md": ["16px", {"lineHeight": "1.5", "fontWeight": "400"}]
+              }
+            },
+          },
+        }
+      </script>
+<style>
+        .material-symbols-outlined {
+            font-variation-settings: 'FILL' 0, 'wght' 400, 'GRAD' 0, 'opsz' 24;
+        }
+        body {
+            background-color: #f8f9fa;
+        }
+    </style>
+</head>
+<body class="bg-background text-on-surface font-body-md">
+<!-- Predicted Component: SideNavBar -->
+<aside class="fixed left-0 top-0 h-screen w-[260px] bg-surface-container-lowest border-r border-outline-variant flex flex-col h-full py-8 px-4 z-50">
+<div class="mb-10 px-2">
+<h1 class="text-headline-md font-headline-md font-bold text-primary">BluePrint Admin</h1>
+<p class="text-technical-label font-technical-label text-on-surface-variant uppercase tracking-wider mt-1">Technical Division</p>
+</div>
+<nav class="flex-1 space-y-1">
+<!-- Dashboard Tab (Inactive) -->
+<a class="flex items-center gap-3 px-4 py-3 text-on-surface-variant hover:bg-surface-container-low transition-colors duration-200 group active:scale-[0.98] transition-transform" href="#">
+<span class="material-symbols-outlined text-outline" data-icon="dashboard">dashboard</span>
+<span class="text-body-sm font-body-sm">Dashboard</span>
+</a>
+<!-- Projects Tab (Active based on intent) -->
+<a class="flex items-center gap-3 px-4 py-3 bg-primary-container text-on-primary-container rounded-lg font-bold group active:scale-[0.98] transition-transform" href="#">
+<span class="material-symbols-outlined" data-icon="account_tree">account_tree</span>
+<span class="text-body-sm font-body-sm">Projects</span>
+</a>
+<!-- File Manager Tab (Inactive) -->
+<a class="flex items-center gap-3 px-4 py-3 text-on-surface-variant hover:bg-surface-container-low transition-colors duration-200 group active:scale-[0.98] transition-transform" href="#">
+<span class="material-symbols-outlined text-outline" data-icon="folder_open">folder_open</span>
+<span class="text-body-sm font-body-sm">File Manager</span>
+</a>
+<!-- Settings Tab (Inactive) -->
+<a class="flex items-center gap-3 px-4 py-3 text-on-surface-variant hover:bg-surface-container-low transition-colors duration-200 group active:scale-[0.98] transition-transform" href="#">
+<span class="material-symbols-outlined text-outline" data-icon="settings">settings</span>
+<span class="text-body-sm font-body-sm">Settings</span>
+</a>
+</nav>
+<div class="mt-auto border-t border-outline-variant pt-6 px-2">
+<div class="flex items-center gap-3 mb-6">
+<img alt="Architect user avatar" class="w-10 h-10 rounded-full bg-surface-container-high border border-outline-variant" data-alt="A professional portrait of a technical architect in a clean, high-key office environment. The image uses a soft, corporate aesthetic with neutral tones and focused lighting. The architect is wearing modern business casual attire, reflecting a sophisticated and reliable professional persona within a minimalist design framework." src="https://lh3.googleusercontent.com/aida-public/AB6AXuD3PfvSUezi_Mldbyoj5Ez7BMJ_YvhMbUDnx9Ti_0rxYTSmTBwMH10zj_OQr51uTGu2eExGhWqRMsRMAemNbZ3lmwR_adS1XLy58RhBWVDmN7Dqsa5u7_MekwB13BTZGtiNnJaQ4xrikgW-Lue8QGQpU0rh50v5IlkUhBiYm201MfXpud9hvKvV2gqss3IhcZ-Pax31P5n1bu8cLk2d1mLPMAbjdYjWqzbhvIoPkbm7CaRp2oueldI-77xbGmTcap-VXpE4ymjfRMM3"/>
+<div class="overflow-hidden">
+<p class="text-body-sm font-bold text-on-surface truncate">Alex Chen</p>
+<p class="text-technical-label font-technical-label text-on-surface-variant truncate">Senior Engineer</p>
+</div>
+</div>
+<button class="w-full bg-primary text-on-primary font-button text-button py-3 rounded mb-4 active:opacity-80 transition-opacity">NEW_PROJECT</button>
+<div class="space-y-1">
+<a class="flex items-center gap-3 px-4 py-2 text-on-surface-variant hover:bg-surface-container-low transition-colors text-body-sm font-body-sm" href="#">
+<span class="material-symbols-outlined" data-icon="help">help</span>
+                    Support
+                </a>
+<a class="flex items-center gap-3 px-4 py-2 text-brand-red hover:bg-error-container/20 transition-colors text-body-sm font-body-sm" href="#">
+<span class="material-symbols-outlined" data-icon="logout">logout</span>
+                    Logout
+                </a>
+</div>
+</div>
+</aside>
+<!-- Predicted Component: TopAppBar -->
+<header class="fixed top-0 right-0 left-0 h-16 pl-[284px] pr-8 bg-surface-container-lowest border-b border-outline-variant flex justify-between items-center z-40">
+<div class="flex items-center gap-8">
+<h2 class="text-headline-md font-headline-md font-bold text-primary">Project Management Portal</h2>
+<nav class="hidden md:flex items-center gap-6">
+<a class="text-on-surface-variant hover:text-primary transition-colors text-button font-button" href="#">Global View</a>
+<a class="text-primary font-bold border-b-2 border-primary pb-1 text-button font-button" href="#">Network Status</a>
+</nav>
+</div>
+<div class="flex items-center gap-4">
+<div class="relative flex items-center">
+<span class="material-symbols-outlined absolute left-3 text-outline" data-icon="search">search</span>
+<input class="pl-10 pr-4 py-2 bg-surface-container-low border border-outline-variant rounded-lg text-body-sm focus:ring-2 focus:ring-primary/50 focus:outline-none w-64" placeholder="Search resources..." type="text"/>
+</div>
+<div class="flex items-center gap-2">
+<button class="p-2 text-on-surface-variant hover:text-primary transition-colors">
+<span class="material-symbols-outlined" data-icon="notifications">notifications</span>
+</button>
+<button class="p-2 text-on-surface-variant hover:text-primary transition-colors">
+<span class="material-symbols-outlined" data-icon="help_outline">help_outline</span>
+</button>
+</div>
+<button class="ml-2 bg-secondary-container text-on-secondary-container font-button text-button px-4 py-2 rounded-lg hover:brightness-95 transition-all">
+                EXPORT_DWG
+            </button>
+</div>
+</header>
+<!-- Main Content Canvas -->
+<main class="pt-24 pl-[284px] pr-8 pb-12 max-w-container-max mx-auto">
+<!-- Project Header -->
+<section class="mb-8 flex justify-between items-end">
+<div>
+<div class="flex items-center gap-2 text-on-surface-variant mb-2">
+<span class="material-symbols-outlined text-[18px]" data-icon="arrow_back">arrow_back</span>
+<span class="text-technical-label font-technical-label uppercase tracking-widest">Back to Projects / ID-4092</span>
+</div>
+<h1 class="text-display-lg font-display-lg text-primary">Skyline Residences - Phase II</h1>
+<p class="text-body-lg text-on-surface-variant mt-2">Structural optimization and CAD conversion portal.</p>
+</div>
+<div class="flex gap-3">
+<div class="px-4 py-2 bg-surface-container-high rounded-lg flex items-center gap-2 border border-outline-variant">
+<span class="material-symbols-outlined text-success" data-icon="check_circle" style="font-variation-settings: 'FILL' 1;">check_circle</span>
+<span class="text-technical-label font-technical-label font-bold">ACTIVE</span>
+</div>
+<div class="px-4 py-2 bg-surface-container-high rounded-lg border border-outline-variant">
+<span class="text-technical-label font-technical-label">Last edit: 2h ago</span>
+</div>
+</div>
+</section>
+<div class="grid grid-cols-12 gap-gutter">
+<!-- Drag and Drop Zone -->
+<div class="col-span-12 lg:col-span-4 flex flex-col gap-gutter">
+<div class="bg-surface-container-lowest border-2 border-dashed border-outline-variant rounded-xl p-8 flex flex-col items-center justify-center text-center transition-colors hover:border-primary/40 group h-full min-h-[320px]">
+<div class="w-16 h-16 bg-primary-fixed rounded-full flex items-center justify-center mb-6 group-hover:scale-110 transition-transform">
+<span class="material-symbols-outlined text-primary text-3xl" data-icon="cloud_upload">cloud_upload</span>
+</div>
+<h3 class="text-headline-md font-headline-md text-on-surface mb-2">Upload DWG Files</h3>
+<p class="text-body-sm text-on-surface-variant max-w-[240px] mb-6">Drag and drop your engineering drawings here or click to browse files.</p>
+<button class="bg-primary text-on-primary px-8 py-3 rounded-lg font-button text-button hover:shadow-lg transition-shadow">Select Files</button>
+<p class="mt-4 text-technical-label font-technical-label text-outline uppercase">Max file size: 500MB</p>
+</div>
+</div>
+<!-- Stats/Bento Element -->
+<div class="col-span-12 lg:col-span-8">
+<div class="grid grid-cols-3 gap-card-gap mb-gutter">
+<div class="bg-surface-container-lowest border border-surface-border p-6 rounded-xl flex flex-col">
+<span class="text-technical-label font-technical-label text-on-surface-variant uppercase mb-2">Total Files</span>
+<span class="text-headline-lg font-headline-lg text-primary">128</span>
+</div>
+<div class="bg-surface-container-lowest border border-surface-border p-6 rounded-xl flex flex-col">
+<span class="text-technical-label font-technical-label text-on-surface-variant uppercase mb-2">Processed</span>
+<span class="text-headline-lg font-headline-lg text-success">114</span>
+</div>
+<div class="bg-surface-container-lowest border border-surface-border p-6 rounded-xl flex flex-col">
+<span class="text-technical-label font-technical-label text-on-surface-variant uppercase mb-2">Pending</span>
+<span class="text-headline-lg font-headline-lg text-brand-red">14</span>
+</div>
+</div>
+<!-- File List Table -->
+<div class="bg-surface-container-lowest border border-surface-border rounded-xl overflow-hidden shadow-sm">
+<div class="px-6 py-4 border-b border-surface-border flex justify-between items-center bg-surface-container-low/30">
+<h3 class="font-bold text-on-surface flex items-center gap-2">
+<span class="material-symbols-outlined text-[20px]" data-icon="list_alt">list_alt</span>
+                            Archivo de Proyecto
+                        </h3>
+<div class="flex gap-2">
+<button class="p-1.5 hover:bg-surface-container-high rounded transition-colors">
+<span class="material-symbols-outlined text-[20px] text-on-surface-variant" data-icon="filter_list">filter_list</span>
+</button>
+<button class="p-1.5 hover:bg-surface-container-high rounded transition-colors">
+<span class="material-symbols-outlined text-[20px] text-on-surface-variant" data-icon="refresh">refresh</span>
+</button>
+</div>
+</div>
+<div class="overflow-x-auto">
+<table class="w-full text-left border-collapse">
+<thead>
+<tr class="bg-surface-container-lowest">
+<th class="px-6 py-4 text-technical-label font-technical-label text-outline uppercase border-b border-surface-border">Archivo Original</th>
+<th class="px-6 py-4 text-technical-label font-technical-label text-outline uppercase border-b border-surface-border">Detalles</th>
+<th class="px-6 py-4 text-technical-label font-technical-label text-outline uppercase border-b border-surface-border text-center">Estado</th>
+<th class="px-6 py-4 text-technical-label font-technical-label text-outline uppercase border-b border-surface-border text-right">Archivo Procesado</th>
+</tr>
+</thead>
+<tbody class="divide-y divide-surface-border">
+<!-- Row 1 -->
+<tr class="hover:bg-surface-container-low transition-colors group">
+<td class="px-6 py-4">
+<div class="flex items-center gap-3">
+<div class="w-10 h-10 bg-surface-container-high flex items-center justify-center rounded">
+<span class="material-symbols-outlined text-primary" data-icon="description">description</span>
+</div>
+<div>
+<p class="font-bold text-on-surface text-body-sm">Foundation_Plan_V3.dwg</p>
+<p class="text-technical-label font-technical-label text-outline">CAD_STRUCT_490</p>
+</div>
+</div>
+</td>
+<td class="px-6 py-4">
+<p class="text-technical-label font-technical-label text-on-surface">24.8 MB</p>
+<p class="text-technical-label font-technical-label text-outline">Oct 24, 2023</p>
+</td>
+<td class="px-6 py-4 text-center">
+<span class="inline-flex items-center px-3 py-1 bg-success/10 text-success text-technical-label font-technical-label rounded-full">
+                                            Listo
+                                        </span>
+</td>
+<td class="px-6 py-4 text-right">
+<button class="bg-primary-container text-on-primary-container font-button text-button px-4 py-2 rounded hover:brightness-110 flex items-center gap-2 ml-auto">
+<span class="material-symbols-outlined text-[18px]" data-icon="download">download</span>
+                                            Descargar .DWG
+                                        </button>
+</td>
+</tr>
+<!-- Row 2 -->
+<tr class="hover:bg-surface-container-low transition-colors group">
+<td class="px-6 py-4">
+<div class="flex items-center gap-3">
+<div class="w-10 h-10 bg-surface-container-high flex items-center justify-center rounded text-primary">
+<span class="material-symbols-outlined" data-icon="description">description</span>
+</div>
+<div>
+<p class="font-bold text-on-surface text-body-sm">Elevator_Shaft_A.dwg</p>
+<p class="text-technical-label font-technical-label text-outline">CAD_STRUCT_491</p>
+</div>
+</div>
+</td>
+<td class="px-6 py-4">
+<p class="text-technical-label font-technical-label text-on-surface">15.2 MB</p>
+<p class="text-technical-label font-technical-label text-outline">Oct 24, 2023</p>
+</td>
+<td class="px-6 py-4 text-center">
+<div class="flex flex-col items-center gap-1">
+<span class="inline-flex items-center px-3 py-1 bg-secondary-container text-on-secondary-container text-technical-label font-technical-label rounded-full">
+                                                Procesando...
+                                            </span>
+<div class="w-20 h-1 bg-surface-container-high rounded-full overflow-hidden mt-1">
+<div class="bg-primary h-full w-[65%]"></div>
+</div>
+</div>
+</td>
+<td class="px-6 py-4 text-right">
+<button class="bg-surface-container-high text-outline cursor-not-allowed font-button text-button px-4 py-2 rounded flex items-center gap-2 ml-auto opacity-50" disabled="">
+<span class="material-symbols-outlined text-[18px]" data-icon="download">download</span>
+                                            Descargar .DWG
+                                        </button>
+</td>
+</tr>
+<!-- Row 3 -->
+<tr class="hover:bg-surface-container-low transition-colors group">
+<td class="px-6 py-4">
+<div class="flex items-center gap-3">
+<div class="w-10 h-10 bg-surface-container-high flex items-center justify-center rounded">
+<span class="material-symbols-outlined text-primary" data-icon="description">description</span>
+</div>
+<div>
+<p class="font-bold text-on-surface text-body-sm">HVAC_Layout_P2.dwg</p>
+<p class="text-technical-label font-technical-label text-outline">CAD_STRUCT_492</p>
+</div>
+</div>
+</td>
+<td class="px-6 py-4">
+<p class="text-technical-label font-technical-label text-on-surface">42.1 MB</p>
+<p class="text-technical-label font-technical-label text-outline">Oct 23, 2023</p>
+</td>
+<td class="px-6 py-4 text-center">
+<span class="inline-flex items-center px-3 py-1 bg-success/10 text-success text-technical-label font-technical-label rounded-full">
+                                            Listo
+                                        </span>
+</td>
+<td class="px-6 py-4 text-right">
+<button class="bg-primary-container text-on-primary-container font-button text-button px-4 py-2 rounded hover:brightness-110 flex items-center gap-2 ml-auto">
+<span class="material-symbols-outlined text-[18px]" data-icon="download">download</span>
+                                            Descargar .DWG
+                                        </button>
+</td>
+</tr>
+</tbody>
+</table>
+</div>
+<div class="px-6 py-4 bg-surface-container-low/30 border-t border-surface-border text-center">
+<button class="text-primary font-button text-button hover:underline">Ver todo el historial de archivos</button>
+</div>
+</div>
+</div>
+</div>
+<!-- System Status Section -->
+<section class="mt-gutter grid grid-cols-1 md:grid-cols-2 gap-gutter">
+<div class="bg-surface-container-lowest p-6 rounded-xl border border-surface-border flex items-start gap-6">
+<div class="w-24 h-24 rounded-lg bg-surface-container overflow-hidden flex-shrink-0">
+<img alt="Architecture blueprint visualization" class="w-full h-full object-cover grayscale opacity-60" data-alt="A detailed architectural technical drawing showing intricate structural cross-sections and blueprint layouts. The image has a clean, professional engineering aesthetic with crisp black lines against a technical gray background, emphasizing precision and methodical design typical of high-end CAD software interfaces used in modern architecture." src="https://lh3.googleusercontent.com/aida-public/AB6AXuCpgvr9C-9ycnlLdHQWsfe85CHgGy7bQXavF-IqBUW_WpkqvcGm1UwRX_WKg1AKQaGjqq71otoYrAJesyrCT_rL7NycyGTLoV98bhZ2Of339JuXrwTX0TdawfIJiuJFAnLIoF8RdVxG7ei55gQ_NZAj5g6-7Jc04VaQpOMNitQN8uiP4cDSFQeMhrQH9D-hARRF1aiVTwAI0vpuKYRzShEsne0lB2tDHgMaFuJoqSgDsXbMIylgWkk1WLJdZbSVsTG9UuXKnHNTNLKk"/>
+</div>
+<div>
+<h4 class="font-bold text-primary mb-2">Automated Optimization Status</h4>
+<p class="text-body-sm text-on-surface-variant mb-4">The conversion engine is currently operating at peak efficiency. Layers are being automatically mapped according to ISO standards.</p>
+<div class="flex items-center gap-4">
+<div class="flex items-center gap-1">
+<span class="w-2 h-2 rounded-full bg-success"></span>
+<span class="text-technical-label font-technical-label">Engine Online</span>
+</div>
+<div class="flex items-center gap-1">
+<span class="w-2 h-2 rounded-full bg-success"></span>
+<span class="text-technical-label font-technical-label">Cloud Sync Active</span>
+</div>
+</div>
+</div>
+</div>
+<div class="bg-inverse-surface text-on-primary p-6 rounded-xl border border-outline flex flex-col justify-between">
+<div>
+<h4 class="font-bold text-headline-md mb-2">Technical Logs</h4>
+<p class="font-technical-label text-technical-label text-surface-variant opacity-80 mb-4">MONITORING: REAL-TIME DWG PARSER</p>
+<div class="font-technical-label text-[11px] space-y-1 text-on-primary-container">
+<p>&gt; [INFO] Parsing Foundation_Plan_V3.dwg... OK</p>
+<p>&gt; [INFO] 421 blocks found, 12 layers normalized.</p>
+<p>&gt; [WARN] Non-standard font in Elevator_Shaft_A.dwg - substitution applied.</p>
+</div>
+</div>
+<div class="mt-4 flex justify-end">
+<button class="text-button font-button border border-on-primary/20 px-3 py-1 rounded hover:bg-white/10">OPEN_LOGS</button>
+</div>
+</div>
+</section>
+</main>
+</body></html>

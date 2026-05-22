@@ -41,6 +41,34 @@ export function getMetricsSnapshot(): {
     pipeline_errors: { ...pipelineErrorsByReason },
     ia_retries_by_job: Object.fromEntries(iaRetriesByJob),
     ia_cost_usd_by_job: Object.fromEntries(iaCostUsdByJob),
-    note: 'TBD: export to dashboard (Prometheus histogram/sum or vendor billing).',
+    note: 'Prometheus text at GET /api/metrics/prometheus (admin).',
   }
+}
+
+/** Prometheus exposition format (minimal counters/gauges for scraping). */
+export function formatPrometheusMetrics(): string {
+  const lines: string[] = [
+    '# HELP cambre_pipeline_step_latency_ms Last recorded step latencies (buffered).',
+    '# TYPE cambre_pipeline_step_latency_ms gauge',
+  ]
+  const snapshot = getMetricsSnapshot()
+  for (const { step, ms } of snapshot.step_latencies.slice(-100)) {
+    lines.push(`cambre_pipeline_step_latency_ms{step="${step.replace(/"/g, '')}"} ${ms}`)
+  }
+  lines.push('# HELP cambre_pipeline_errors_total Pipeline errors by step/reason.')
+  lines.push('# TYPE cambre_pipeline_errors_total counter')
+  for (const [reason, count] of Object.entries(snapshot.pipeline_errors)) {
+    lines.push(`cambre_pipeline_errors_total{reason="${reason.replace(/"/g, '')}"} ${count}`)
+  }
+  lines.push('# HELP cambre_ia_retries_total IA retries by job_id.')
+  lines.push('# TYPE cambre_ia_retries_total counter')
+  for (const [jobId, count] of Object.entries(snapshot.ia_retries_by_job)) {
+    lines.push(`cambre_ia_retries_total{job_id="${jobId}"} ${count}`)
+  }
+  lines.push('# HELP cambre_ia_cost_usd_total Estimated IA cost USD by job_id.')
+  lines.push('# TYPE cambre_ia_cost_usd_total counter')
+  for (const [jobId, usd] of Object.entries(snapshot.ia_cost_usd_by_job)) {
+    lines.push(`cambre_ia_cost_usd_total{job_id="${jobId}"} ${usd}`)
+  }
+  return `${lines.join('\n')}\n`
 }
