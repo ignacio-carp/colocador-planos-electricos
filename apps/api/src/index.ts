@@ -22,7 +22,7 @@ import {
   generateInviteToken,
   removeInvitationById,
 } from './invitesStore'
-import { createJob, findJob, listAllJobs, listJobsForOwner, type JobRow } from './jobsStore'
+import { createJob, findJob, listAllJobs, listJobsForOwner, patchJob, type JobRow } from './jobsStore'
 import {
   applyDwgQuotaHeaders,
   assertDwgUploadWithinQuota,
@@ -31,7 +31,7 @@ import {
 } from './quota'
 import { enqueueJobPipeline } from './jobQueue'
 import { drainPipelineQueueOnce, pipelineWorkerEnabled, startPipelineWorker } from './pipelineWorker'
-import { getMetricsSnapshot } from './metrics'
+import { formatPrometheusMetrics, getMetricsSnapshot } from './metrics'
 import { correlationMiddleware } from './middleware/correlation'
 import { requireAuth, type AuthedRequest } from './middleware/requireAuth'
 import { requireArchitectOrAdmin, requireRole } from './middleware/requireRole'
@@ -158,6 +158,9 @@ app.post(
       res.status(409).json({ error: 'Job already processed' })
       return
     }
+    if (job.status === 'error') {
+      await patchJob(jobId, { status: 'pendiente', error: undefined })
+    }
     const msg = await enqueueJobPipeline(jobId, correlationId)
     if (!msg) {
       res.status(409).json({ error: 'Cannot enqueue job in current state' })
@@ -184,9 +187,14 @@ app.post(
   },
 )
 
-/** T-07 métricas stub — consumo TBD por dashboard; solo administrador. */
+/** T-07 métricas — JSON y Prometheus; solo administrador. */
 app.get('/api/metrics', requireAuth, requireRole('administrator'), (_req, res) => {
   res.json(getMetricsSnapshot())
+})
+
+app.get('/api/metrics/prometheus', requireAuth, requireRole('administrator'), (_req, res) => {
+  res.setHeader('Content-Type', 'text/plain; version=0.0.4; charset=utf-8')
+  res.send(formatPrometheusMetrics())
 })
 
 /**

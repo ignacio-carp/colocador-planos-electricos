@@ -439,9 +439,24 @@ export default function JobDetail({ jobId, onNavigate }: JobDetailProps) {
               </div>
 
               {job.error ? (
-                <p className="mt-4 text-body-sm text-error">
-                  {job.error.code} — {job.error.correlation_id}
-                </p>
+                <div className="mt-4 rounded-lg border border-error/30 bg-error-container/40 p-4">
+                  <p className="text-body-sm font-semibold text-on-error-container">
+                    El procesamiento falló
+                  </p>
+                  <p className="text-body-sm mt-1 text-on-error-container">
+                    {job.error.message || job.error.code} — ID soporte: {job.error.correlation_id}
+                  </p>
+                  {canEdit && hasInput ? (
+                    <button
+                      type="button"
+                      className="btn-primary mt-4"
+                      disabled={processing}
+                      onClick={() => void processJob()}
+                    >
+                      {processing ? 'Reintentando…' : 'Reprocesar análisis'}
+                    </button>
+                  ) : null}
+                </div>
               ) : null}
             </div>
           </div>

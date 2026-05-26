@@ -14,6 +14,7 @@ export type JobErrorPayload = {
 export type JobPipelineMetadata = {
   normative_rules_version?: string
   cad_worker_inspect?: Record<string, unknown>
+  pipeline_mode?: string
 }
 
 export type JobRow = {
