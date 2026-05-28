@@ -1,6 +1,6 @@
 import { createHash } from 'node:crypto'
 import type { SupabaseClient } from '@supabase/supabase-js'
-import { buildDwgObjectPath, DWG_OUTPUT_BUCKET } from './dwgStorage'
+import { buildDxfObjectPath, DXF_OUTPUT_BUCKET } from './dxfStorage'
 import { insertFileRow } from './filesStore'
 import { PIPELINE_CONTRACT_VERSION } from './pipelineContracts'
 import { resolveActiveNormativeRulesVersion } from './normativeRules'
@@ -146,9 +146,9 @@ export function buildStubCadGenerationInput(params: {
   visionOutput: VisionLayoutOutputDoc
   normativeOutput: NormativeInferenceOutputDoc
 }): StubCadArtifacts {
-  const inputFileId = deterministicUuid(params.jobId, 'dwg-input')
-  const objectPath = buildDwgObjectPath(params.ownerUserId, params.jobId, inputFileId)
-  const checksum = deterministicHex(`${params.ownerUserId}|${params.jobId}|dwg-source`, 32)
+  const inputFileId = deterministicUuid(params.jobId, 'dxf-input')
+  const objectPath = buildDxfObjectPath(params.ownerUserId, params.jobId, inputFileId)
+  const checksum = deterministicHex(`${params.ownerUserId}|${params.jobId}|dxf-source`, 32)
 
   const interpretation = params.visionOutput.layout_interpretation
   const nr = params.normativeOutput
@@ -160,8 +160,8 @@ export function buildStubCadGenerationInput(params: {
     outlet_placements: nr.outlet_placements,
   }
 
-  const outputFileId = deterministicUuid(`${params.jobId}|out`, 'dwg-output')
-  const outputObjectPath = buildDwgObjectPath(params.ownerUserId, params.jobId, outputFileId)
+  const outputFileId = deterministicUuid(`${params.jobId}|out`, 'dxf-output')
+  const outputObjectPath = buildDxfObjectPath(params.ownerUserId, params.jobId, outputFileId)
 
   const cadInput = {
     contract_version: PIPELINE_CONTRACT_VERSION,
@@ -176,9 +176,9 @@ export function buildStubCadGenerationInput(params: {
     layout_interpretation: interpretation,
     normative_result: normativeResult,
     output_layer: {
-      name: 'Cambre_Electrical',
+      name: 'INSTALACION_ELECTRICA',
       block_name: 'CAMBRE_OUTLET',
-      color_aci: 3,
+      color_aci: 1,
     },
     output_dwg: {
       storage_path_hint: outputObjectPath,
@@ -190,9 +190,9 @@ export function buildStubCadGenerationInput(params: {
 }
 
 /**
- * When Supabase Storage is configured, register a synthetic `output_dwg` row for the pipeline MVP.
+ * When Supabase Storage is configured, register a synthetic `output_dxf` row for the pipeline MVP.
  */
-export async function registerMockOutputDwg(
+export async function registerMockOutputDxf(
   supabase: SupabaseClient,
   ctx: {
     jobId: string
@@ -204,10 +204,13 @@ export async function registerMockOutputDwg(
   await insertFileRow(supabase, {
     job_id: ctx.jobId,
     owner_user_id: ctx.ownerUserId,
-    bucket_id: DWG_OUTPUT_BUCKET,
+    bucket_id: DXF_OUTPUT_BUCKET,
     object_path: ctx.objectPath,
-    kind: 'output_dwg',
-    content_type: 'application/octet-stream',
+    kind: 'output_dxf',
+    content_type: 'application/dxf',
     size_bytes: ctx.sizeBytes ?? 512,
   })
 }
+
+/** @deprecated Use registerMockOutputDxf */
+export const registerMockOutputDwg = registerMockOutputDxf

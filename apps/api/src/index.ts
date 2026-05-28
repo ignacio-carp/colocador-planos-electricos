@@ -6,12 +6,12 @@ import express from 'express'
 import { getCorsOptions } from './corsConfig'
 import { sendInvitationEmail } from './email/sendInvitationEmail'
 import {
-  assertAllowedDwgContentType,
-  buildDwgObjectPath,
-  DWG_INPUT_BUCKET,
-  DWG_OUTPUT_BUCKET,
+  assertAllowedDxfContentType,
+  buildDxfObjectPath,
+  DXF_INPUT_BUCKET,
+  DXF_OUTPUT_BUCKET,
   objectPathMatchesJobAndOwner,
-} from './dwgStorage'
+} from './dxfStorage'
 import { findLatestOutputForJob, insertFileRow, listFilesForJob } from './filesStore'
 import { acceptInvitation } from './inviteAccept'
 import { createInviteRateLimiter } from './inviteRateLimit'
@@ -24,8 +24,8 @@ import {
 } from './invitesStore'
 import { createJob, findJob, listAllJobs, listJobsForOwner, patchJob, type JobRow } from './jobsStore'
 import {
-  applyDwgQuotaHeaders,
-  assertDwgUploadWithinQuota,
+  applyDxfQuotaHeaders,
+  assertDxfUploadWithinQuota,
   checkJobCreationQuota,
   QuotaExceededError,
 } from './quota'
@@ -223,7 +223,7 @@ app.get('/api/jobs', requireAuth, requireArchitectOrAdmin, async (req, res) => {
  * US-006: URL firmada de subida (sin URL pública permanente). Solo dueño del job (arquitecto).
  */
 app.post(
-  '/api/jobs/:jobId/dwg-input/signed-upload-url',
+  '/api/jobs/:jobId/dxf-input/signed-upload-url',
   requireAuth,
   requireStorage,
   requireRole('architect'),
@@ -247,7 +247,7 @@ app.post(
     const uploadBody = req.body as { contentType?: string; sizeBytes?: number }
     try {
       contentType = String(uploadBody.contentType ?? '').trim()
-      assertAllowedDwgContentType(contentType)
+      assertAllowedDxfContentType(contentType)
     } catch (e) {
       res.status(400).json({ error: e instanceof Error ? e.message : 'Invalid content type' })
       return
@@ -260,7 +260,7 @@ app.post(
         return
       }
       try {
-        assertDwgUploadWithinQuota({
+        assertDxfUploadWithinQuota({
           sizeBytes: optionalSize,
           userId: user.id,
           jobId: job.id,
@@ -274,10 +274,10 @@ app.post(
       }
     }
 
-    const objectPath = buildDwgObjectPath(job.owner_user_id, job.id)
+    const objectPath = buildDxfObjectPath(job.owner_user_id, job.id)
     try {
       const sb = getSupabaseServiceRole()
-      const { data, error } = await sb.storage.from(DWG_INPUT_BUCKET).createSignedUploadUrl(objectPath, {
+      const { data, error } = await sb.storage.from(DXF_INPUT_BUCKET).createSignedUploadUrl(objectPath, {
         upsert: true,
       })
       if (error || !data) {
@@ -285,14 +285,14 @@ app.post(
         res.status(502).json({ error: 'Could not create signed upload URL' })
         return
       }
-      applyDwgQuotaHeaders(res.setHeader.bind(res))
+      applyDxfQuotaHeaders(res.setHeader.bind(res))
       res.status(200).json({
-        bucket: DWG_INPUT_BUCKET,
+        bucket: DXF_INPUT_BUCKET,
         objectPath: data.path,
         signedUrl: data.signedUrl,
         token: data.token,
         contentType,
-        note: 'Upload via PUT to signedUrl with file body; then call POST .../dwg-input/register',
+        note: 'Upload via PUT to signedUrl with file body; then call POST .../dxf-input/register',
       })
     } catch (e) {
       console.error(e)
@@ -305,7 +305,7 @@ app.post(
  * US-006: registra fila `files` enlazada al job tras subida exitosa a Storage.
  */
 app.post(
-  '/api/jobs/:jobId/dwg-input/register',
+  '/api/jobs/:jobId/dxf-input/register',
   requireAuth,
   requireStorage,
   requireRole('architect'),
@@ -329,11 +329,11 @@ app.post(
     const objectPath = String(body.objectPath ?? '').trim()
     const parsed = objectPathMatchesJobAndOwner(objectPath, job.owner_user_id, job.id)
     if (!parsed) {
-      res.status(400).json({ error: 'objectPath does not match job/owner or is not a valid .dwg path' })
+      res.status(400).json({ error: 'objectPath does not match job/owner or is not a valid .dxf path' })
       return
     }
     try {
-      assertAllowedDwgContentType(body.contentType)
+      assertAllowedDxfContentType(body.contentType)
     } catch (e) {
       res.status(400).json({ error: e instanceof Error ? e.message : 'Invalid content type' })
       return
@@ -345,7 +345,7 @@ app.post(
     }
 
     try {
-      assertDwgUploadWithinQuota({
+      assertDxfUploadWithinQuota({
         sizeBytes,
         userId: user.id,
         jobId: job.id,
@@ -363,13 +363,13 @@ app.post(
       const row = await insertFileRow(sb, {
         job_id: job.id,
         owner_user_id: job.owner_user_id,
-        bucket_id: DWG_INPUT_BUCKET,
+        bucket_id: DXF_INPUT_BUCKET,
         object_path: objectPath,
-        kind: 'input_dwg',
+        kind: 'input_dxf',
         content_type: String(body.contentType).split(';')[0]?.trim() ?? null,
         size_bytes: Math.floor(sizeBytes),
       })
-      applyDwgQuotaHeaders(res.setHeader.bind(res))
+      applyDxfQuotaHeaders(res.setHeader.bind(res))
       const correlationId = req.correlationId
       const queued = await enqueueJobPipeline(job.id, correlationId)
       if (pipelineWorkerEnabled() && queued) {
@@ -450,7 +450,7 @@ app.get('/api/jobs/:jobId/download', requireAuth, requireStorage, requireArchite
     if (!output) {
       res.status(404).json({
         error: 'No output file yet',
-        hint: 'Pipeline must register an output_dwg row (e.g. cad-worker) before download is available',
+        hint: 'Pipeline must register an output_dxf row (e.g. cad-worker) before download is available',
       })
       return
     }
@@ -466,7 +466,7 @@ app.get('/api/jobs/:jobId/download', requireAuth, requireStorage, requireArchite
       owner_user_id: job.owner_user_id,
       signedUrl: data.signedUrl,
       expiresInSeconds: ttl,
-      streamUrl: `/api/jobs/${encodeURIComponent(jobId)}/dwg-output/stream`,
+      streamUrl: `/api/jobs/${encodeURIComponent(jobId)}/dxf-output/stream`,
       file: { id: output.id, bucket_id: output.bucket_id, object_path: output.object_path, kind: output.kind },
     })
   } catch (e) {
@@ -475,9 +475,9 @@ app.get('/api/jobs/:jobId/download', requireAuth, requireStorage, requireArchite
   }
 })
 
-/** US-010: stream autenticado del .dwg de salida (alternativa a URL firmada). */
+/** US-010: stream autenticado del .dxf de salida (alternativa a URL firmada). */
 app.get(
-  '/api/jobs/:jobId/dwg-output/stream',
+  '/api/jobs/:jobId/dxf-output/stream',
   requireAuth,
   requireStorage,
   requireArchitectOrAdmin,
@@ -518,7 +518,7 @@ app.get(
       const buf = Buffer.from(await data.arrayBuffer())
       const ct = output.content_type ?? 'application/octet-stream'
       res.setHeader('Content-Type', ct)
-      res.setHeader('Content-Disposition', `attachment; filename="job-${jobId}-output.dwg"`)
+      res.setHeader('Content-Disposition', `attachment; filename="job-${jobId}-output.dxf"`)
       res.send(buf)
     } catch (e) {
       console.error(e)
@@ -527,9 +527,9 @@ app.get(
   },
 )
 
-/** US-009/US-010: registrar .dwg de salida (p. ej. worker con service role vía API interna futura). Stub de desarrollo: solo service key en header (opcional). */
+/** US-009/US-010: registrar .dxf de salida (p. ej. worker con service role vía API interna futura). Stub de desarrollo: solo service key en header (opcional). */
 app.post(
-  '/api/jobs/:jobId/dwg-output/register',
+  '/api/jobs/:jobId/dxf-output/register',
   requireAuth,
   requireStorage,
   requireRole('administrator'),
@@ -548,7 +548,7 @@ app.post(
     const objectPath = String(body.objectPath ?? '').trim()
     const parsed = objectPathMatchesJobAndOwner(objectPath, job.owner_user_id, job.id)
     if (!parsed) {
-      res.status(400).json({ error: 'objectPath does not match job/owner or is not a valid .dwg path' })
+      res.status(400).json({ error: 'objectPath does not match job/owner or is not a valid .dxf path' })
       return
     }
     if (typeof body.sizeBytes !== 'number' || !Number.isFinite(body.sizeBytes) || body.sizeBytes < 1) {
@@ -556,7 +556,7 @@ app.post(
       return
     }
     try {
-      assertAllowedDwgContentType(body.contentType)
+      assertAllowedDxfContentType(body.contentType)
     } catch (e) {
       res.status(400).json({ error: e instanceof Error ? e.message : 'Invalid content type' })
       return
@@ -566,9 +566,9 @@ app.post(
       const row = await insertFileRow(sb, {
         job_id: job.id,
         owner_user_id: job.owner_user_id,
-        bucket_id: DWG_OUTPUT_BUCKET,
+        bucket_id: DXF_OUTPUT_BUCKET,
         object_path: objectPath,
-        kind: 'output_dwg',
+        kind: 'output_dxf',
         content_type: String(body.contentType).split(';')[0]?.trim() ?? null,
         size_bytes: Math.floor(body.sizeBytes),
       })

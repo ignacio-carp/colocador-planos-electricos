@@ -5,7 +5,8 @@ import sys
 from datetime import datetime, timezone
 
 from cad_worker.electrical_layer import apply_layer_cmd
-from cad_worker.inspect_dwg import inspect_cmd
+from cad_worker.extract_geometry import extract_geometry_cmd
+from cad_worker.inspect_dxf import inspect_cmd
 
 
 def _health_payload() -> dict[str, object]:
@@ -50,20 +51,27 @@ def main(argv: list[str] | None = None) -> None:
     )
     p_log.add_argument("--job-id", required=True, dest="job_id")
 
-    p_inspect = subparsers.add_parser("inspect", help="Inspect DWG/DXF; JSON on stdout.")
-    p_inspect.add_argument("--input", required=True, help="Path to .dwg or .dxf file")
+    p_inspect = subparsers.add_parser("inspect", help="Inspect DXF; JSON on stdout.")
+    p_inspect.add_argument("--input", required=True, help="Path to .dxf file")
     p_inspect.add_argument("--json", action="store_true", help="Emit JSON (default)")
+
+    p_extract = subparsers.add_parser(
+        "extract-geometry",
+        help="Extract walls and text labels from DXF modelspace.",
+    )
+    p_extract.add_argument("--input", required=True, help="Path to .dxf file")
+    p_extract.add_argument("--json", action="store_true", help="Emit JSON (default)")
 
     p_layer = subparsers.add_parser(
         "apply-electrical-layer",
-        help="Copy input DWG and add Cambre_Electrical outlets from JSON placements.",
+        help="Copy input DXF and add INSTALACION_ELECTRICA outlets from JSON placements.",
     )
     p_layer.add_argument("--input", required=True)
     p_layer.add_argument("--output", required=True)
     p_layer.add_argument(
         "--placements-json",
         required=True,
-        help='JSON array of outlet_placements (US-008 output)',
+        help="JSON array of outlet_placements, nuevas_tomas, or wrapper object",
     )
 
     args = parser.parse_args(argv)
@@ -74,6 +82,8 @@ def main(argv: list[str] | None = None) -> None:
         raise SystemExit(pipeline_log_cmd(args.job_id))
     if args.command == "inspect":
         raise SystemExit(inspect_cmd(args.input))
+    if args.command == "extract-geometry":
+        raise SystemExit(extract_geometry_cmd(args.input))
     if args.command == "apply-electrical-layer":
         raise SystemExit(apply_layer_cmd(args.input, args.output, args.placements_json))
 
@@ -82,4 +92,3 @@ def main(argv: list[str] | None = None) -> None:
 
 if __name__ == "__main__":
     main(sys.argv[1:])
-

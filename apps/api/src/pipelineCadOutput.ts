@@ -1,9 +1,9 @@
 import { readFileSync, statSync } from 'node:fs'
 import type { SupabaseClient } from '@supabase/supabase-js'
-import { DWG_OUTPUT_BUCKET } from './dwgStorage'
+import { DXF_OUTPUT_BUCKET } from './dxfStorage'
 import { insertFileRow } from './filesStore'
 
-export async function registerOutputDwgFromLocalFile(
+export async function registerOutputDxfFromLocalFile(
   supabase: SupabaseClient,
   ctx: {
     jobId: string
@@ -15,9 +15,9 @@ export async function registerOutputDwgFromLocalFile(
   const buf = readFileSync(ctx.localPath)
   const size = statSync(ctx.localPath).size
   const { error } = await supabase.storage
-    .from(DWG_OUTPUT_BUCKET)
+    .from(DXF_OUTPUT_BUCKET)
     .upload(ctx.objectPath, buf, {
-      contentType: 'application/octet-stream',
+      contentType: 'application/dxf',
       upsert: true,
     })
   if (error) {
@@ -26,10 +26,13 @@ export async function registerOutputDwgFromLocalFile(
   await insertFileRow(supabase, {
     job_id: ctx.jobId,
     owner_user_id: ctx.ownerUserId,
-    bucket_id: DWG_OUTPUT_BUCKET,
+    bucket_id: DXF_OUTPUT_BUCKET,
     object_path: ctx.objectPath,
-    kind: 'output_dwg',
-    content_type: 'application/octet-stream',
+    kind: 'output_dxf',
+    content_type: 'application/dxf',
     size_bytes: size,
   })
 }
+
+/** @deprecated Use registerOutputDxfFromLocalFile */
+export const registerOutputDwgFromLocalFile = registerOutputDxfFromLocalFile
