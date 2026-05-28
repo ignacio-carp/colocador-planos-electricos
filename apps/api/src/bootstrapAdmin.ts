@@ -1,5 +1,6 @@
 import { loadEnv } from './loadEnv'
 loadEnv()
+import './websocketPolyfill'
 import { createClient, type SupabaseClient, type User } from '@supabase/supabase-js'
 
 const ADMIN_ROLE = 'administrator'
