@@ -1,7 +1,12 @@
 import { mkdtempSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { applyElectricalLayer, cadWorkerDisabled, inspectDwgFile } from './cadWorkerBridge'
+import {
+  applyElectricalLayer,
+  CadWorkerError,
+  cadWorkerDisabled,
+  inspectDwgFile,
+} from './cadWorkerBridge'
 import { OpenAiClientError } from './openaiClient'
 import {
   buildLiveNormativeInferenceOutput,
@@ -311,10 +316,9 @@ export async function runJobPipeline(jobId: string, correlationId: string): Prom
         normativeOutput: normativeLocked,
       })
       const placements = (normativeLocked as { outlet_placements?: unknown[] }).outlet_placements ?? []
-      let usedLiveCad = false
+      let usedCadWorker = false
 
       if (
-        pipelineMode === 'live' &&
         !cadWorkerDisabled() &&
         isStorageConfigured() &&
         placements.length > 0
@@ -325,19 +329,28 @@ export async function runJobPipeline(jobId: string, correlationId: string): Prom
           const { data, error } = await supabase.storage
             .from(input.bucket_id)
             .download(input.object_path)
-          if (!error && data) {
+          if (error || !data) {
+            throw new Error(error?.message ?? 'Could not download input DWG for CAD worker')
+          }
+          try {
             const dir = mkdtempSync(join(tmpdir(), 'cambre-cad-out-'))
             const localIn = join(dir, 'input.dwg')
             const localOut = join(dir, 'output.dwg')
             writeFileSync(localIn, Buffer.from(await data.arrayBuffer()))
-            await applyElectricalLayer(localIn, localOut, placements)
+            const workerResult = await applyElectricalLayer(localIn, localOut, placements)
             await registerOutputDwgFromLocalFile(supabase, {
               jobId,
               ownerUserId: job.owner_user_id,
               objectPath: outputObjectPath,
               localPath: localOut,
             })
-            usedLiveCad = true
+            usedCadWorker = true
+            await patchJob(jobId, {
+              pipeline_metadata: {
+                ...(await findJob(jobId))?.pipeline_metadata,
+                cad_worker_apply: workerResult as Record<string, unknown>,
+              },
+            })
             logStructured('info', {
               event: 'pipeline_us009_live',
               job_id: jobId,
@@ -346,11 +359,22 @@ export async function runJobPipeline(jobId: string, correlationId: string): Prom
               output_object_path: outputObjectPath,
               outlets: placements.length,
             })
+          } catch (e) {
+            const message = e instanceof Error ? e.message : 'CAD worker apply failed'
+            logStructured('error', {
+              event: 'cad_worker_apply_failed',
+              job_id: jobId,
+              correlation_id: correlationId,
+              contract_version: PIPELINE_CONTRACT_VERSION,
+              output_object_path: outputObjectPath,
+              error: message,
+            })
+            throw e
           }
         }
       }
 
-      if (!usedLiveCad) {
+      if (!usedCadWorker) {
         logStructured('info', {
           event: 'pipeline_us009_stub',
           job_id: jobId,
@@ -398,9 +422,17 @@ export async function runJobPipeline(jobId: string, correlationId: string): Prom
     return done
   } catch (e) {
     const message = e instanceof Error ? e.message : 'Unknown pipeline error'
+    const code =
+      e instanceof CadWorkerError
+        ? e.code
+        : e instanceof OpenAiClientError
+          ? e.code
+          : message.includes('exhausted retries')
+            ? 'IA_PROVIDER_EXHAUSTED'
+            : 'PIPELINE_ERROR'
     incrementPipelineError(lastExecutedStep)
     const error = {
-      code: 'IA_PROVIDER_EXHAUSTED',
+      code,
       message,
       correlation_id: correlationId,
     }
