@@ -2,7 +2,7 @@
   "$schema": "http://json-schema.org/draft-07/schema#",
   "$id": "https://cambre.local/schemas/pipeline/cad-generation-input.json",
   "title": "CadGenerationInput",
-  "description": "US-009 — Entrada al script CAD (ezdxf): DWG original + salida normativa US-008.",
+  "description": "US-009 — Entrada al script CAD (ezdxf): DXF original + salida normativa US-008.",
   "type": "object",
   "additionalProperties": false,
   "required": [
@@ -68,8 +68,8 @@
       "properties": {
         "name": {
           "type": "string",
-          "const": "Cambre_Electrical",
-          "description": "Capa no destructiva sobre el DWG original (US-009)"
+          "const": "INSTALACION_ELECTRICA",
+          "description": "Capa no destructiva sobre el DXF original (US-009)"
         },
         "block_name": {
           "type": "string",

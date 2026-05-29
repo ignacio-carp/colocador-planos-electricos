@@ -3,10 +3,10 @@ import { AppShell } from '../components/AppShell'
 import { Icon } from '../components/Icon'
 import { useAuth } from '../context/AuthContext'
 import {
-  canDownloadProcessedDwg,
+  canDownloadProcessedDxf,
   fileRowStatus,
   formatJobCreatedAt,
-  hasRegisteredDwgInput,
+  hasRegisteredDxfInput,
 } from '../lib/jobPresentation'
 import { getAppRole } from '../lib/roles'
 
@@ -68,7 +68,7 @@ export default function JobDetail({ jobId, onNavigate }: JobDetailProps) {
         })
         if (fr.ok) {
           const fb = (await fr.json()) as { files?: { kind: string }[] }
-          setHasInput(hasRegisteredDwgInput(fb.files ?? []))
+          setHasInput(hasRegisteredDxfInput(fb.files ?? []))
         }
       } catch {
         setHasInput(false)
@@ -107,8 +107,8 @@ export default function JobDetail({ jobId, onNavigate }: JobDetailProps) {
     const file = e.target.files?.[0]
     e.target.value = ''
     if (!session || !file || !job) return
-    if (!file.name.toLowerCase().endsWith('.dwg')) {
-      setError('Solo archivos .dwg')
+    if (!file.name.toLowerCase().endsWith('.dxf')) {
+      setError('Solo archivos .dxf')
       return
     }
     setError(null)
@@ -116,7 +116,7 @@ export default function JobDetail({ jobId, onNavigate }: JobDetailProps) {
       const contentType =
         file.type && file.type.trim() !== '' ? file.type : 'application/octet-stream'
       setUploadLabel('Obteniendo URL firmada…')
-      const sur = await fetch(`${apiBase}/api/jobs/${encodeURIComponent(job.id)}/dwg-input/signed-upload-url`, {
+      const sur = await fetch(`${apiBase}/api/jobs/${encodeURIComponent(job.id)}/dxf-input/signed-upload-url`, {
         method: 'POST',
         headers: {
           Authorization: `Bearer ${session.access_token}`,
@@ -144,7 +144,7 @@ export default function JobDetail({ jobId, onNavigate }: JobDetailProps) {
         return
       }
       setUploadLabel('Registrando archivo…')
-      const reg = await fetch(`${apiBase}/api/jobs/${encodeURIComponent(job.id)}/dwg-input/register`, {
+      const reg = await fetch(`${apiBase}/api/jobs/${encodeURIComponent(job.id)}/dxf-input/register`, {
         method: 'POST',
         headers: {
           Authorization: `Bearer ${session.access_token}`,
@@ -167,7 +167,7 @@ export default function JobDetail({ jobId, onNavigate }: JobDetailProps) {
     await load()
   }
 
-  async function downloadProcessedDwg() {
+  async function downloadProcessedDxf() {
     if (!session || !job) return
     setDownloading(true)
     setError(null)
@@ -192,7 +192,7 @@ export default function JobDetail({ jobId, onNavigate }: JobDetailProps) {
       const streamPath =
         body.streamUrl && body.streamUrl.startsWith('/')
           ? body.streamUrl
-          : `/api/jobs/${encodeURIComponent(job.id)}/dwg-output/stream`
+          : `/api/jobs/${encodeURIComponent(job.id)}/dxf-output/stream`
       const streamRes = await fetch(`${apiBase}${streamPath}`, {
         headers: { Authorization: `Bearer ${session.access_token}` },
       })
@@ -204,7 +204,7 @@ export default function JobDetail({ jobId, onNavigate }: JobDetailProps) {
       const blob = await streamRes.blob()
       const dispo = streamRes.headers.get('Content-Disposition')
       const filenameMatch = dispo?.match(/filename="([^"]+)"/)
-      const filename = filenameMatch?.[1] ?? `job-${job.id}-output.dwg`
+      const filename = filenameMatch?.[1] ?? `job-${job.id}-output.dxf`
       const url = URL.createObjectURL(blob)
       const a = document.createElement('a')
       a.href = url
@@ -226,13 +226,13 @@ export default function JobDetail({ jobId, onNavigate }: JobDetailProps) {
     <AppShell
       activeNav="dashboard"
       onNavigate={onNavigate}
-      headerTitle="Gestión de archivos DWG"
-      showExport={canDownloadProcessedDwg(job?.status)}
+      headerTitle="Gestión de archivos DXF"
+      showExport={canDownloadProcessedDxf(job?.status)}
     >
       <input
         ref={fileRef}
         type="file"
-        accept=".dwg,application/acad,application/octet-stream"
+        accept=".dxf,application/dxf,application/octet-stream"
         className="hidden"
         onChange={onFilePicked}
       />
@@ -302,7 +302,7 @@ export default function JobDetail({ jobId, onNavigate }: JobDetailProps) {
                   <div className="mb-6 flex h-16 w-16 items-center justify-center rounded-full bg-primary-fixed transition-transform group-hover:scale-110">
                     <Icon name="cloud_upload" className="text-3xl text-primary" />
                   </div>
-                  <h3 className="text-headline-md text-on-surface mb-2">Subir archivos DWG</h3>
+                  <h3 className="text-headline-md text-on-surface mb-2">Subir archivos DXF</h3>
                   <p className="text-body-sm mb-6 max-w-[240px] text-on-surface-variant">
                     Arrastrá tus planos aquí o seleccioná un archivo desde tu equipo.
                   </p>
@@ -314,7 +314,7 @@ export default function JobDetail({ jobId, onNavigate }: JobDetailProps) {
                   >
                     {uploadLabel ?? 'Seleccionar archivos'}
                   </button>
-                  <p className="text-technical-label mt-4 text-outline uppercase">Solo .dwg</p>
+                  <p className="text-technical-label mt-4 text-outline uppercase">Solo .dxf</p>
                   {canEdit ? (
                     <button
                       type="button"
@@ -334,12 +334,12 @@ export default function JobDetail({ jobId, onNavigate }: JobDetailProps) {
                 <StatCard label="Archivos" value={hasInput ? '1' : '0'} />
                 <StatCard
                   label="Procesados"
-                  value={canDownloadProcessedDwg(job.status) ? '1' : '0'}
+                  value={canDownloadProcessedDxf(job.status) ? '1' : '0'}
                   tone="success"
                 />
                 <StatCard
                   label="Pendientes"
-                  value={hasInput && !canDownloadProcessedDwg(job.status) ? '1' : '0'}
+                  value={hasInput && !canDownloadProcessedDxf(job.status) ? '1' : '0'}
                   tone="danger"
                 />
               </div>
@@ -378,7 +378,7 @@ export default function JobDetail({ jobId, onNavigate }: JobDetailProps) {
                             </div>
                             <div>
                               <p className="text-body-sm font-bold text-on-surface">
-                                {hasInput ? `${job.title.replace(/\s+/g, '_')}.dwg` : '—'}
+                                {hasInput ? `${job.title.replace(/\s+/g, '_')}.dxf` : '—'}
                               </p>
                               <p className="text-technical-label text-outline">JOB_{job.id.slice(0, 8).toUpperCase()}</p>
                             </div>
@@ -386,7 +386,7 @@ export default function JobDetail({ jobId, onNavigate }: JobDetailProps) {
                         </td>
                         <td className="px-6 py-4">
                           <p className="text-technical-label text-on-surface">
-                            {hasInput ? 'DWG registrado' : 'Sin carga'}
+                            {hasInput ? 'DXF registrado' : 'Sin carga'}
                           </p>
                           {createdLabel ? (
                             <p className="text-technical-label text-outline">{createdLabel}</p>
@@ -416,10 +416,10 @@ export default function JobDetail({ jobId, onNavigate }: JobDetailProps) {
                               type="button"
                               disabled={downloading}
                               className="btn-primary ml-auto px-4 py-2"
-                              onClick={() => void downloadProcessedDwg()}
+                              onClick={() => void downloadProcessedDxf()}
                             >
                               <Icon name="download" className="text-[18px]" />
-                              {downloading ? 'Descargando…' : 'Descargar .DWG'}
+                              {downloading ? 'Descargando…' : 'Descargar .DXF'}
                             </button>
                           ) : (
                             <button
@@ -428,7 +428,7 @@ export default function JobDetail({ jobId, onNavigate }: JobDetailProps) {
                               className="ml-auto flex items-center gap-2 rounded bg-surface-container-high px-4 py-2 text-button text-outline opacity-50"
                             >
                               <Icon name="download" className="text-[18px]" />
-                              Descargar .DWG
+                              Descargar .DXF
                             </button>
                           )}
                         </td>

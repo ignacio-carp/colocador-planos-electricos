@@ -1,6 +1,6 @@
 import type { SupabaseClient } from '@supabase/supabase-js'
 
-export type FileKind = 'input_dwg' | 'output_dwg'
+export type FileKind = 'input_dxf' | 'output_dxf'
 
 export type FileRow = {
   id: string
@@ -65,7 +65,7 @@ export async function findLatestInputForJob(
     .from('files')
     .select('*')
     .eq('job_id', jobId)
-    .eq('kind', 'input_dwg')
+    .eq('kind', 'input_dxf')
     .order('created_at', { ascending: false })
     .limit(1)
     .maybeSingle()
@@ -81,7 +81,7 @@ export async function findLatestOutputForJob(
     .from('files')
     .select('*')
     .eq('job_id', jobId)
-    .eq('kind', 'output_dwg')
+    .eq('kind', 'output_dxf')
     .order('created_at', { ascending: false })
     .limit(1)
     .maybeSingle()

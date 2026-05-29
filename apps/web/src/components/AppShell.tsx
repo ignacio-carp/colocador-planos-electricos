@@ -113,7 +113,7 @@ export function AppShell({
               type="button"
               className="rounded-lg bg-secondary-container px-4 py-2 text-button font-semibold text-on-secondary-container transition-all hover:brightness-95"
             >
-              EXPORT_DWG
+              EXPORT_DXF
             </button>
           ) : null}
         </div>

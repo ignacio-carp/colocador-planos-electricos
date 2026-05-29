@@ -58,7 +58,7 @@ export default function JobsNew({ onNavigate }: { onNavigate: (path: string) => 
         >
           <h1 className="text-headline-md text-primary">Crear proyecto</h1>
           <p className="text-body-sm mt-2 text-on-surface-variant">
-            Definí un nombre para el trabajo. Después podrás subir el plano DWG y ejecutar el análisis.
+            Definí un nombre para el trabajo. Después podrás subir el plano DXF y ejecutar el análisis.
           </p>
           <label className="mt-6 block space-y-2">
             <span className="text-button text-on-surface">Título del proyecto</span>

@@ -1,40 +1,32 @@
 # cad-worker (MVP)
 
-Servicio Python que centraliza la lectura e inspección de archivos CAD (DWG/DXF) para el resto de la plataforma.
-Su objetivo es desacoplar la lógica CAD del API principal, de forma que el backend Node pueda delegar validaciones y extracción de metadatos en un componente especializado.
+Servicio Python que centraliza la lectura, inspección y geometría de archivos **DXF** para el resto de la plataforma.
+La plataforma ya no acepta `.dwg`; el worker usa `ezdxf` directamente sobre DXF.
 
 ## Para qué sirve este servicio
 
-- Inspeccionar archivos CAD y devolver un resumen estructurado.
-- Estandarizar el análisis inicial de planos antes de continuar con el pipeline.
-- Aislar dependencias CAD (por ejemplo `ezdxf`) en un servicio dedicado.
-- Reducir complejidad en la API principal al delegar procesamiento específico.
+- Inspeccionar archivos DXF y devolver un resumen estructurado.
+- Extraer geometría (paredes como segmentos, etiquetas de texto) para el pipeline de IA.
+- Aplicar la capa vectorial `INSTALACION_ELECTRICA` con placements normativos.
+- Aislar dependencias CAD (`ezdxf`) en un servicio dedicado.
 
 ## Flujo de llamados (alto nivel)
 
-1. Un cliente (web, script o integración interna) sube o referencia un archivo CAD.
-2. La API principal recibe la solicitud y deriva el análisis al bridge del worker.
-3. El bridge (`apps/api/src/cadWorkerBridge.ts`) ejecuta el comando `inspect` del worker Python.
-4. `cad-worker` analiza el archivo y responde con salida estructurada (JSON cuando corresponde).
-5. La API usa ese resultado para continuar el flujo de negocio (validaciones, estado del proceso, respuesta al cliente).
+1. Un cliente sube o referencia un archivo `.dxf`.
+2. La API principal deriva análisis al bridge del worker (`apps/api/src/cadWorkerBridge.ts`).
+3. El bridge ejecuta subcomandos CLI: `inspect`, `extract-geometry`, `apply-electrical-layer`.
+4. `cad-worker` responde JSON en stdout.
+5. La API persiste `cad_worker_inspect`, `geometry_extract` y el DXF de salida en Storage.
 
-### Comando principal usado por la API
+### Comandos usados por la API
 
 ```bash
 python -m cad_worker inspect --input /path/to/file.dxf --json
+python -m cad_worker extract-geometry --input /path/to/file.dxf --json
+python -m cad_worker apply-electrical-layer --input in.dxf --output out.dxf --placements-json '[...]'
 ```
 
 El tiempo máximo de espera se controla con `CAD_WORKER_TIMEOUT_MS` (default 30s).
-
-## Funcionamiento no técnico (referencia rápida)
-
-Pensado como "mesa de revisión de planos":
-
-- La API le entrega un plano al worker.
-- El worker revisa el archivo y arma un reporte consistente.
-- La API consume ese reporte para decidir si el archivo está apto para el siguiente paso del proceso.
-
-Esto permite que, ante cambios en reglas CAD o librerías de parseo, el impacto quede contenido en este servicio y no en toda la plataforma.
 
 ## Ejecución local
 
@@ -42,17 +34,24 @@ Esto permite que, ante cambios en reglas CAD o librerías de parseo, el impacto 
 python -m pip install -e ".[dev]"
 python -m cad_worker health
 python -m cad_worker inspect --input /path/to/file.dxf --json
+python -m cad_worker extract-geometry --input /path/to/file.dxf --json
 ```
 
 ## Configuración útil
 
 - `CAD_WORKER_PYTHON`: intérprete de Python a utilizar (default `python3`).
-- `CAD_WORKER_DISABLED`: desactiva la invocación desde la API (útil para pruebas o bypass controlado).
-- `CAD_WORKER_FIXTURE_DWG`: ruta local a fixture CAD para pruebas de integración del pipeline.
+- `CAD_WORKER_DISABLED`: desactiva la invocación desde la API.
+- `CAD_WORKER_FIXTURE_DXF`: ruta local a fixture DXF para pruebas del pipeline (alias legacy: `CAD_WORKER_FIXTURE_DWG`).
+
+## Códigos de error
+
+- `CAD_WORKER_INVALID_DXF`: archivo DXF inválido o corrupto.
+- `CAD_WORKER_FILE_NOT_FOUND`: ruta de entrada inexistente.
+- `CAD_WORKER_ERROR`: error genérico.
 
 ## Dependencia CAD principal
 
-`ezdxf` está fijado en `pyproject.toml` (`>=1.3,<2`) para asegurar compatibilidad estable en el MVP.
+`ezdxf` está fijado en `pyproject.toml` (`>=1.3,<2`).
 
 ## Lint y formato
 
@@ -62,3 +61,8 @@ ruff check .
 black --check .
 ```
 
+## Tests
+
+```bash
+python -m pytest -q
+```

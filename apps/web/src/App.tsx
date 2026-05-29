@@ -24,7 +24,7 @@ function AppRoutes() {
     if (pathname === '/healthz') document.title = 'healthz'
     else if (pathname === '/login') document.title = 'Iniciar sesión — Cambre Planos'
     else if (pathname === '/dashboard') document.title = 'Mis proyectos — Cambre Planos'
-    else if (isJobDetailPath(pathname)) document.title = 'Archivos DWG — Cambre Planos'
+    else if (isJobDetailPath(pathname)) document.title = 'Archivos DXF — Cambre Planos'
     else if (pathname === '/jobs/new') document.title = 'Nuevo proyecto — Cambre Planos'
     else if (pathname === '/invites') document.title = 'Invitaciones — Cambre Planos'
     else if (pathname === '/invite') document.title = 'Invitación — Cambre Planos'
@@ -59,7 +59,7 @@ function AppRoutes() {
           <div className="max-w-lg text-center">
             <h1 className="text-headline-lg text-primary">Cambre Planos</h1>
             <p className="text-body-md mt-4 text-on-surface-variant">
-              Portal técnico para análisis de luminarias en planos DWG.
+              Portal técnico para análisis de luminarias en planos DXF.
             </p>
             <div className="mt-8 flex flex-wrap justify-center gap-3">
               <button type="button" className="btn-primary" onClick={() => navigate('/login')}>

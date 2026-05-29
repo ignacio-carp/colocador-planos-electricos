@@ -1,4 +1,4 @@
-/** Presentation helpers for jobs list / DWG metadata (US-004 / US-006). */
+/** Presentation helpers for jobs list / DXF metadata (US-004 / US-006). */
 
 export function formatJobCreatedAt(iso: string | undefined): string | null {
   if (!iso?.trim()) return null
@@ -26,9 +26,12 @@ export function formatJobModifiedLabel(iso: string | undefined): string | null {
     .toUpperCase()
 }
 
-export function hasRegisteredDwgInput(files: readonly { kind: string }[]): boolean {
-  return files.some((f) => f.kind === 'input_dwg')
+export function hasRegisteredDxfInput(files: readonly { kind: string }[]): boolean {
+  return files.some((f) => f.kind === 'input_dxf')
 }
+
+/** @deprecated Use hasRegisteredDxfInput */
+export const hasRegisteredDwgInput = hasRegisteredDxfInput
 
 export type ProjectStatusChip = {
   label: string
@@ -103,7 +106,10 @@ export function fileRowStatus(jobStatus?: string, hasInput?: boolean): FileRowSt
 }
 
 /** Align with API `jobsStore` JobStatus plus legacy/Spanish labels. */
-export function canDownloadProcessedDwg(status?: string): boolean {
+export function canDownloadProcessedDxf(status?: string): boolean {
   const s = (status ?? '').toLowerCase()
   return s === 'completed' || s === 'procesado'
 }
+
+/** @deprecated Use canDownloadProcessedDxf */
+export const canDownloadProcessedDwg = canDownloadProcessedDxf

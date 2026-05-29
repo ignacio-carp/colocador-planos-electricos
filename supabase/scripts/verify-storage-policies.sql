@@ -13,4 +13,4 @@ where tablename = 'files'
 order by policyname;
 
 -- Buckets must be private
-select id, public from storage.buckets where id in ('job-dwg-input', 'job-dwg-output');
+select id, public from storage.buckets where id in ('job-dxf-input', 'job-dxf-output', 'job-dwg-input', 'job-dwg-output');

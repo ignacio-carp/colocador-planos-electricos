@@ -106,7 +106,7 @@ export default function Dashboard({ onNavigate }: { onNavigate: (path: string) =
           <p className="text-headline-md text-primary">Sin proyectos todavía</p>
           <p className="text-body-sm mt-2 max-w-sm text-on-surface-variant">
             {role === 'architect'
-              ? 'Creá un proyecto para subir planos DWG y ejecutar el análisis de luminarias.'
+              ? 'Creá un proyecto para subir planos DXF y ejecutar el análisis de luminarias.'
               : 'No hay trabajos visibles para tu cuenta.'}
           </p>
           {role === 'architect' ? (
@@ -171,7 +171,7 @@ export default function Dashboard({ onNavigate }: { onNavigate: (path: string) =
               </div>
               <span className="text-headline-md text-primary">Nuevo proyecto</span>
               <p className="text-body-sm mt-2 text-center text-on-surface-variant">
-                Importá un DWG o iniciá un análisis de luminarias.
+                Importá un DXF o iniciá un análisis de luminarias.
               </p>
             </button>
           ) : null}

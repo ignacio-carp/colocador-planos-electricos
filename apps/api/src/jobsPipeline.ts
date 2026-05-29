@@ -5,7 +5,8 @@ import {
   applyElectricalLayer,
   CadWorkerError,
   cadWorkerDisabled,
-  inspectDwgFile,
+  extractGeometryFromDxf,
+  inspectDxfFile,
 } from './cadWorkerBridge'
 import { OpenAiClientError } from './openaiClient'
 import {
@@ -14,8 +15,8 @@ import {
   buildLiveVisionLayoutOutput,
 } from './pipelineLive'
 import { getPipelineMode, openaiConfigured } from './pipelineMode'
-import { registerOutputDwgFromLocalFile } from './pipelineCadOutput'
-import { DWG_INPUT_BUCKET } from './dwgStorage'
+import { registerOutputDxfFromLocalFile } from './pipelineCadOutput'
+import { DXF_INPUT_BUCKET } from './dxfStorage'
 import { findLatestInputForJob } from './filesStore'
 import { logStructured } from './logger'
 import { findJob, patchJob, type JobRow } from './jobsStore'
@@ -31,20 +32,45 @@ import {
   buildStubCadGenerationInput,
   buildStubNormativeInferenceOutput,
   buildStubVisionLayoutOutput,
-  registerMockOutputDwg,
+  registerMockOutputDxf,
 } from './pipelineStubs'
-import { DWG_OUTPUT_BUCKET } from './dwgStorage'
+import { DXF_OUTPUT_BUCKET } from './dxfStorage'
 import { getSupabaseServiceRole, isStorageConfigured } from './supabaseService'
 
 const IA_MAX_ATTEMPTS = 3
+
+function cadWorkerFixturePath(): string | undefined {
+  return (
+    process.env.CAD_WORKER_FIXTURE_DXF?.trim() ||
+    process.env.CAD_WORKER_FIXTURE_DWG?.trim() ||
+    undefined
+  )
+}
+
+async function downloadInputDxfToTemp(
+  jobId: string,
+): Promise<{ localPath: string; dir: string } | null> {
+  if (!isStorageConfigured()) return null
+  const supabase = getSupabaseServiceRole()
+  const input = await findLatestInputForJob(supabase, jobId)
+  if (input?.bucket_id !== DXF_INPUT_BUCKET || !input.object_path) return null
+  const { data, error } = await supabase.storage.from(input.bucket_id).download(input.object_path)
+  if (error || !data) {
+    throw new Error(error?.message ?? 'Could not download input DXF')
+  }
+  const dir = mkdtempSync(join(tmpdir(), 'cambre-cad-'))
+  const localPath = join(dir, 'input.dxf')
+  writeFileSync(localPath, Buffer.from(await data.arrayBuffer()))
+  return { localPath, dir }
+}
 
 async function runCadWorkerInspectForJob(
   jobId: string,
   correlationId: string,
 ): Promise<Record<string, unknown>> {
-  const fixture = process.env.CAD_WORKER_FIXTURE_DWG?.trim()
+  const fixture = cadWorkerFixturePath()
   if (fixture) {
-    const result = await inspectDwgFile(fixture)
+    const result = await inspectDxfFile(fixture)
     logStructured('info', {
       event: 'cad_worker_inspect',
       job_id: jobId,
@@ -55,31 +81,51 @@ async function runCadWorkerInspectForJob(
     return result as Record<string, unknown>
   }
 
-  if (isStorageConfigured()) {
-    const supabase = getSupabaseServiceRole()
-    const input = await findLatestInputForJob(supabase, jobId)
-    if (input?.bucket_id === DWG_INPUT_BUCKET && input.object_path) {
-      const { data, error } = await supabase.storage.from(input.bucket_id).download(input.object_path)
-      if (error || !data) {
-        throw new Error(error?.message ?? 'Could not download input DWG for inspect')
-      }
-      const dir = mkdtempSync(join(tmpdir(), 'cambre-cad-'))
-      const localPath = join(dir, 'input.dwg')
-      const buf = Buffer.from(await data.arrayBuffer())
-      writeFileSync(localPath, buf)
-      const result = await inspectDwgFile(localPath)
-      logStructured('info', {
-        event: 'cad_worker_inspect',
-        job_id: jobId,
-        correlation_id: correlationId,
-        source: 'storage',
-        entity_count: result.entity_count,
-      })
-      return result as Record<string, unknown>
-    }
+  const downloaded = await downloadInputDxfToTemp(jobId)
+  if (downloaded) {
+    const result = await inspectDxfFile(downloaded.localPath)
+    logStructured('info', {
+      event: 'cad_worker_inspect',
+      job_id: jobId,
+      correlation_id: correlationId,
+      source: 'storage',
+      entity_count: result.entity_count,
+    })
+    return result as Record<string, unknown>
   }
 
-  throw new Error('No CAD_WORKER_FIXTURE_DWG and no input file in storage')
+  throw new Error('No CAD_WORKER_FIXTURE_DXF and no input file in storage')
+}
+
+async function runCadWorkerGeometryExtract(
+  jobId: string,
+  correlationId: string,
+): Promise<Record<string, unknown> | undefined> {
+  const fixture = cadWorkerFixturePath()
+  if (fixture) {
+    const geometry = await extractGeometryFromDxf(fixture)
+    logStructured('info', {
+      event: 'cad_worker_geometry_extract',
+      job_id: jobId,
+      correlation_id: correlationId,
+      source: 'fixture',
+      wall_count: geometry.paredes?.length ?? 0,
+    })
+    return geometry as Record<string, unknown>
+  }
+
+  const downloaded = await downloadInputDxfToTemp(jobId)
+  if (!downloaded) return undefined
+
+  const geometry = await extractGeometryFromDxf(downloaded.localPath)
+  logStructured('info', {
+    event: 'cad_worker_geometry_extract',
+    job_id: jobId,
+    correlation_id: correlationId,
+    source: 'storage',
+    wall_count: geometry.paredes?.length ?? 0,
+  })
+  return geometry as Record<string, unknown>
 }
 
 function sleep(ms: number): Promise<void> {
@@ -210,6 +256,7 @@ export async function runJobPipeline(jobId: string, correlationId: string): Prom
     await runTimedStep(jobId, correlationId, 'ingest', () => sleep(5))
 
     let cadInspectForVision: Record<string, unknown> | undefined
+    let geometryExtract: Record<string, unknown> | undefined
     if (!cadWorkerDisabled()) {
       try {
         cadInspectForVision = await runCadWorkerInspectForJob(jobId, correlationId)
@@ -220,6 +267,27 @@ export async function runJobPipeline(jobId: string, correlationId: string): Prom
           job_id: jobId,
           correlation_id: correlationId,
           error: message,
+        })
+      }
+      try {
+        geometryExtract = await runCadWorkerGeometryExtract(jobId, correlationId)
+      } catch (e) {
+        const message = e instanceof Error ? e.message : String(e)
+        logStructured('warn', {
+          event: 'cad_worker_geometry_extract_skipped',
+          job_id: jobId,
+          correlation_id: correlationId,
+          error: message,
+        })
+      }
+      if (cadInspectForVision || geometryExtract) {
+        await patchJob(jobId, {
+          pipeline_metadata: {
+            ...(await findJob(jobId))?.pipeline_metadata,
+            ...(cadInspectForVision ? { cad_worker_inspect: cadInspectForVision } : {}),
+            ...(geometryExtract ? { geometry_extract: geometryExtract } : {}),
+            pipeline_mode: pipelineMode,
+          },
         })
       }
     }
@@ -303,6 +371,7 @@ export async function runJobPipeline(jobId: string, correlationId: string): Prom
           pipeline_metadata: {
             ...(await findJob(jobId))?.pipeline_metadata,
             cad_worker_inspect: cadInspect,
+            ...(geometryExtract ? { geometry_extract: geometryExtract } : {}),
             pipeline_mode: pipelineMode,
           },
         })
@@ -325,20 +394,20 @@ export async function runJobPipeline(jobId: string, correlationId: string): Prom
       ) {
         const supabase = getSupabaseServiceRole()
         const input = await findLatestInputForJob(supabase, jobId)
-        if (input?.bucket_id === DWG_INPUT_BUCKET && input.object_path) {
+        if (input?.bucket_id === DXF_INPUT_BUCKET && input.object_path) {
           const { data, error } = await supabase.storage
             .from(input.bucket_id)
             .download(input.object_path)
           if (error || !data) {
-            throw new Error(error?.message ?? 'Could not download input DWG for CAD worker')
+            throw new Error(error?.message ?? 'Could not download input DXF for CAD worker')
           }
           try {
             const dir = mkdtempSync(join(tmpdir(), 'cambre-cad-out-'))
-            const localIn = join(dir, 'input.dwg')
-            const localOut = join(dir, 'output.dwg')
+            const localIn = join(dir, 'input.dxf')
+            const localOut = join(dir, 'output.dxf')
             writeFileSync(localIn, Buffer.from(await data.arrayBuffer()))
             const workerResult = await applyElectricalLayer(localIn, localOut, placements)
-            await registerOutputDwgFromLocalFile(supabase, {
+            await registerOutputDxfFromLocalFile(supabase, {
               jobId,
               ownerUserId: job.owner_user_id,
               objectPath: outputObjectPath,
@@ -385,7 +454,7 @@ export async function runJobPipeline(jobId: string, correlationId: string): Prom
         if (isStorageConfigured()) {
           try {
             const supabase = getSupabaseServiceRole()
-            await registerMockOutputDwg(supabase, {
+            await registerMockOutputDxf(supabase, {
               jobId,
               ownerUserId: job.owner_user_id,
               objectPath: outputObjectPath,
@@ -395,7 +464,7 @@ export async function runJobPipeline(jobId: string, correlationId: string): Prom
               job_id: jobId,
               correlation_id: correlationId,
               contract_version: PIPELINE_CONTRACT_VERSION,
-              bucket: DWG_OUTPUT_BUCKET,
+              bucket: DXF_OUTPUT_BUCKET,
               output_object_path: outputObjectPath,
             })
           } catch (e) {
