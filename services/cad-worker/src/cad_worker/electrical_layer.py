@@ -22,9 +22,12 @@ logger = logging.getLogger(__name__)
 INVALID_DXF_CODE = "CAD_WORKER_INVALID_DXF"
 
 
-def _normalize_placements(raw: list[dict[str, object]]) -> list[tuple[float, float, dict[str, object]]]:
+PlacementPoint = tuple[float, float, dict[str, object]]
+
+
+def _normalize_placements(raw: list[dict[str, object]]) -> list[PlacementPoint]:
     """Accept outlet_placements ({position:{x,y}}) or nuevas_tomas ({coordenadas:[x,y]})."""
-    normalized: list[tuple[float, float, dict[str, object]]] = []
+    normalized: list[PlacementPoint] = []
     for item in raw:
         x: float | None = None
         y: float | None = None

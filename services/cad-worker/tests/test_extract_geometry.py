@@ -27,7 +27,8 @@ def test_extract_geometry_structure(tmp_path: Path) -> None:
     result = extract_geometry(src)
     assert len(result["paredes"]) >= 1
     assert any(
-        isinstance(l, dict) and l.get("texto") == "SALA" for l in result["etiquetas_texto"]
+        isinstance(etiqueta, dict) and etiqueta.get("texto") == "SALA"
+        for etiqueta in result["etiquetas_texto"]
     )
     bbox = geometry_bounding_box(result)
     assert bbox is not None
