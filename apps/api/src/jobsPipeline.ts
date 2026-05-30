@@ -16,7 +16,7 @@ import {
   buildLiveVisionFallback,
   buildLiveVisionLayoutOutput,
 } from './pipelineLive'
-import { getPipelineMode, openaiConfigured } from './pipelineMode'
+import { aiConfigured, getPipelineMode } from './pipelineMode'
 import { registerOutputDxfFromLocalFile } from './pipelineCadOutput'
 import { DXF_INPUT_BUCKET } from './dxfStorage'
 import { findLatestInputForJob } from './filesStore'
@@ -257,10 +257,10 @@ export async function runJobPipeline(jobId: string, correlationId: string): Prom
   })
 
   const pipelineMode = getPipelineMode()
-  if (pipelineMode === 'live' && !openaiConfigured()) {
+  if (pipelineMode === 'live' && !aiConfigured()) {
     throw new OpenAiClientError(
-      'OPENAI_NOT_CONFIGURED',
-      'CAD_PIPELINE_MODE=live requires OPENAI_API_KEY',
+      'LLM_NOT_CONFIGURED',
+      'CAD_PIPELINE_MODE=live requires OPENROUTER_API_KEY or OPENAI_API_KEY',
     )
   }
 

@@ -1,6 +1,13 @@
 import { describe, it } from 'node:test'
 import assert from 'node:assert/strict'
-import { getPipelineMode, openaiConfigured } from './pipelineMode'
+import {
+  aiBackend,
+  aiConfigured,
+  contractProviderName,
+  getPipelineMode,
+  openaiConfigured,
+  visionModel,
+} from './pipelineMode'
 
 describe('pipelineMode', () => {
   it('defaults to stub', () => {
@@ -17,12 +24,43 @@ describe('pipelineMode', () => {
     process.env.CAD_PIPELINE_MODE = prev
   })
 
-  it('openaiConfigured reflects OPENAI_API_KEY', () => {
-    const prev = process.env.OPENAI_API_KEY
+  it('aiConfigured reflects OPENROUTER_API_KEY or OPENAI_API_KEY', () => {
+    const prevOpenAi = process.env.OPENAI_API_KEY
+    const prevOpenRouter = process.env.OPENROUTER_API_KEY
     delete process.env.OPENAI_API_KEY
-    assert.equal(openaiConfigured(), false)
-    process.env.OPENAI_API_KEY = 'sk-test'
+    delete process.env.OPENROUTER_API_KEY
+    assert.equal(aiConfigured(), false)
+    process.env.OPENROUTER_API_KEY = 'sk-or-test'
+    assert.equal(aiConfigured(), true)
     assert.equal(openaiConfigured(), true)
-    process.env.OPENAI_API_KEY = prev
+    assert.equal(aiBackend(), 'openrouter')
+    delete process.env.OPENROUTER_API_KEY
+    process.env.OPENAI_API_KEY = 'sk-test'
+    assert.equal(aiConfigured(), true)
+    assert.equal(aiBackend(), 'openai')
+    process.env.OPENAI_API_KEY = prevOpenAi
+    process.env.OPENROUTER_API_KEY = prevOpenRouter
+  })
+
+  it('visionModel uses OpenRouter slug when OPENROUTER_API_KEY is set', () => {
+    const prevKey = process.env.OPENROUTER_API_KEY
+    const prevModel = process.env.OPENROUTER_MODEL
+    process.env.OPENROUTER_API_KEY = 'sk-or-test'
+    process.env.OPENROUTER_MODEL = 'anthropic/claude-3.5-sonnet'
+    try {
+      assert.equal(visionModel(), 'anthropic/claude-3.5-sonnet')
+      assert.equal(contractProviderName(visionModel()), 'anthropic')
+    } finally {
+      if (prevKey === undefined) delete process.env.OPENROUTER_API_KEY
+      else process.env.OPENROUTER_API_KEY = prevKey
+      if (prevModel === undefined) delete process.env.OPENROUTER_MODEL
+      else process.env.OPENROUTER_MODEL = prevModel
+    }
+  })
+
+  it('contractProviderName maps openrouter model prefixes', () => {
+    assert.equal(contractProviderName('openai/gpt-4o'), 'openai')
+    assert.equal(contractProviderName('anthropic/claude-3.5-sonnet'), 'anthropic')
+    assert.equal(contractProviderName('gpt-4o'), 'openai')
   })
 })

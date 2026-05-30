@@ -6,7 +6,7 @@ import {
   assertValidVisionLayoutOutput,
 } from './pipelineSchemaValidation'
 import { openaiChatJsonObject } from './openaiClient'
-import { normativeTimeoutMs, visionModel, visionTimeoutMs } from './pipelineMode'
+import { contractProviderName, normativeTimeoutMs, visionModel, visionTimeoutMs } from './pipelineMode'
 import { repoRootDirectory } from './pipelinePackageRoot'
 import { resolveActiveNormativeRulesVersion } from './normativeRules'
 import {
@@ -37,9 +37,10 @@ export async function buildLiveVisionLayoutOutput(
   cadInspect: Record<string, unknown>,
 ): Promise<VisionLayoutOutputDoc> {
   const model = visionModel()
+  const providerName = contractProviderName(model)
   const system = `You are a CAD layout interpreter for architectural DWG files.
 Return a single JSON object that satisfies the VisionLayoutOutput contract for Cambre MVP.
-Required top-level keys: contract_version, job_id, correlation_id, story_id ("US-007"), provider (name "openai", model), layout_interpretation, completed_at (ISO8601).
+Required top-level keys: contract_version, job_id, correlation_id, story_id ("US-007"), provider (name "${providerName}", model), layout_interpretation, completed_at (ISO8601).
 Use contract_version "${PIPELINE_CONTRACT_VERSION}".
 Infer rooms/polygons from entity bounds when possible; use drawing_units.`
 
@@ -67,7 +68,7 @@ Infer rooms/polygons from entity bounds when possible; use drawing_units.`
     correlation_id: correlationId,
     story_id: 'US-007',
     provider: {
-      name: 'openai',
+      name: providerName,
       model,
       request_id: typeof (raw.provider as { request_id?: string })?.request_id === 'string'
         ? (raw.provider as { request_id: string }).request_id

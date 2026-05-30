@@ -92,7 +92,11 @@ Si usas URL pública, también funciona: `https://<cad-worker>.up.railway.app`.
 | Variable | Ejemplo | Notas |
 |----------|---------|--------|
 | `CAD_WORKER_URL` | `http://cad-worker.railway.internal:8000` o URL pública | **Sin** barra final |
-| `CAD_PIPELINE_MODE` | `live` o `stub` | `live` requiere `OPENAI_API_KEY` |
+| `CAD_PIPELINE_MODE` | `live` o `stub` | `live` requiere `OPENROUTER_API_KEY` (o `OPENAI_API_KEY`) |
+| `OPENROUTER_API_KEY` | clave OpenRouter | Recomendado para visión/normativa en `live` |
+| `OPENROUTER_MODEL` | p. ej. `openai/gpt-4o` | Modelo en [OpenRouter](https://openrouter.ai/models) |
+| `OPENROUTER_HTTP_REFERER` | URL del front | Opcional; ranking/atribución en OpenRouter |
+| `OPENROUTER_APP_NAME` | nombre app | Opcional |
 | `PIPELINE_WORKER_ENABLED` | `true` | Worker en background |
 | `CORS_ORIGIN` | URL del front en Vercel | |
 | `SUPABASE_*` | … | Igual que local |

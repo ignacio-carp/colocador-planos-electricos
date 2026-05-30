@@ -1,3 +1,4 @@
+import type { AiBackend } from './pipelineMode'
 import { logStructured } from './logger'
 
 export class OpenAiClientError extends Error {
@@ -10,15 +11,51 @@ export class OpenAiClientError extends Error {
   }
 }
 
-function apiKey(): string {
-  const key = process.env.OPENAI_API_KEY?.trim()
-  if (!key) {
-    throw new OpenAiClientError('OPENAI_NOT_CONFIGURED', 'OPENAI_API_KEY is not set')
-  }
-  return key
+type LlmApiConfig = {
+  backend: AiBackend
+  apiKey: string
+  chatCompletionsUrl: string
+  extraHeaders: Record<string, string>
 }
 
-/** Chat Completions with JSON object response (GPT-4o family). */
+function resolveLlmApiConfig(): LlmApiConfig {
+  const openrouterKey = process.env.OPENROUTER_API_KEY?.trim()
+  if (openrouterKey) {
+    const base =
+      process.env.OPENROUTER_BASE_URL?.trim().replace(/\/+$/, '') ||
+      'https://openrouter.ai/api/v1'
+    const extraHeaders: Record<string, string> = {}
+    const referer = process.env.OPENROUTER_HTTP_REFERER?.trim()
+    const appName = process.env.OPENROUTER_APP_NAME?.trim()
+    if (referer) extraHeaders['HTTP-Referer'] = referer
+    if (appName) extraHeaders['X-Title'] = appName
+    return {
+      backend: 'openrouter',
+      apiKey: openrouterKey,
+      chatCompletionsUrl: `${base}/chat/completions`,
+      extraHeaders,
+    }
+  }
+
+  const openaiKey = process.env.OPENAI_API_KEY?.trim()
+  if (openaiKey) {
+    const base =
+      process.env.OPENAI_BASE_URL?.trim().replace(/\/+$/, '') || 'https://api.openai.com/v1'
+    return {
+      backend: 'openai',
+      apiKey: openaiKey,
+      chatCompletionsUrl: `${base}/chat/completions`,
+      extraHeaders: {},
+    }
+  }
+
+  throw new OpenAiClientError(
+    'LLM_NOT_CONFIGURED',
+    'Set OPENROUTER_API_KEY (recommended) or OPENAI_API_KEY for CAD_PIPELINE_MODE=live',
+  )
+}
+
+/** Chat Completions with JSON object response (OpenAI API or OpenRouter). */
 export async function openaiChatJsonObject(params: {
   model: string
   system: string
@@ -28,15 +65,25 @@ export async function openaiChatJsonObject(params: {
   correlationId: string
   step: string
 }): Promise<Record<string, unknown>> {
+  const llm = resolveLlmApiConfig()
   const controller = new AbortController()
   const timer = setTimeout(() => controller.abort(), params.timeoutMs)
   let res: Response
   try {
-    res = await fetch('https://api.openai.com/v1/chat/completions', {
+    logStructured('info', {
+      event: 'llm_request',
+      job_id: params.jobId,
+      correlation_id: params.correlationId,
+      step: params.step,
+      backend: llm.backend,
+      model: params.model,
+    })
+    res = await fetch(llm.chatCompletionsUrl, {
       method: 'POST',
       headers: {
-        Authorization: `Bearer ${apiKey()}`,
+        Authorization: `Bearer ${llm.apiKey}`,
         'Content-Type': 'application/json',
+        ...llm.extraHeaders,
       },
       body: JSON.stringify({
         model: params.model,
@@ -52,7 +99,7 @@ export async function openaiChatJsonObject(params: {
   } catch (e) {
     const message = e instanceof Error ? e.message : String(e)
     if (message.includes('abort')) {
-      throw new OpenAiClientError('OPENAI_TIMEOUT', `OpenAI request timed out (${params.step})`)
+      throw new OpenAiClientError('OPENAI_TIMEOUT', `LLM request timed out (${params.step})`)
     }
     throw new OpenAiClientError('OPENAI_NETWORK', message)
   } finally {
@@ -68,10 +115,11 @@ export async function openaiChatJsonObject(params: {
   if (!res.ok) {
     const msg = body.error?.message ?? `HTTP ${res.status}`
     logStructured('warn', {
-      event: 'openai_http_error',
+      event: 'llm_http_error',
       job_id: params.jobId,
       correlation_id: params.correlationId,
       step: params.step,
+      backend: llm.backend,
       status: res.status,
       error: msg,
     })
@@ -83,7 +131,7 @@ export async function openaiChatJsonObject(params: {
 
   const content = body.choices?.[0]?.message?.content?.trim()
   if (!content) {
-    throw new OpenAiClientError('OPENAI_EMPTY_CONTENT', 'No message content in OpenAI response')
+    throw new OpenAiClientError('OPENAI_EMPTY_CONTENT', 'No message content in LLM response')
   }
 
   let parsed: Record<string, unknown>
@@ -94,10 +142,11 @@ export async function openaiChatJsonObject(params: {
   }
 
   logStructured('info', {
-    event: 'openai_success',
+    event: 'llm_success',
     job_id: params.jobId,
     correlation_id: params.correlationId,
     step: params.step,
+    backend: llm.backend,
     model: params.model,
     tokens: body.usage?.total_tokens,
   })
