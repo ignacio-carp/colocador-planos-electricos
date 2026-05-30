@@ -4,7 +4,9 @@ import { join } from 'node:path'
 import {
   applyElectricalLayer,
   CadWorkerError,
+  cadWorkerConfigSummary,
   cadWorkerDisabled,
+  cadWorkerTransport,
   extractGeometryFromDxf,
   inspectDxfFile,
 } from './cadWorkerBridge'
@@ -76,6 +78,7 @@ async function runCadWorkerInspectForJob(
       job_id: jobId,
       correlation_id: correlationId,
       source: 'fixture',
+      cad_worker_transport: cadWorkerTransport(),
       entity_count: result.entity_count,
     })
     return result as Record<string, unknown>
@@ -89,6 +92,7 @@ async function runCadWorkerInspectForJob(
       job_id: jobId,
       correlation_id: correlationId,
       source: 'storage',
+      cad_worker_transport: cadWorkerTransport(),
       entity_count: result.entity_count,
     })
     return result as Record<string, unknown>
@@ -243,6 +247,15 @@ export async function runJobPipeline(jobId: string, correlationId: string): Prom
 
   await patchJob(jobId, { status: 'procesando' })
 
+  logStructured('info', {
+    event: 'pipeline_start',
+    job_id: jobId,
+    correlation_id: correlationId,
+    contract_version: PIPELINE_CONTRACT_VERSION,
+    pipeline_mode: getPipelineMode(),
+    ...cadWorkerConfigSummary(),
+  })
+
   const pipelineMode = getPipelineMode()
   if (pipelineMode === 'live' && !openaiConfigured()) {
     throw new OpenAiClientError(
@@ -266,7 +279,9 @@ export async function runJobPipeline(jobId: string, correlationId: string): Prom
           event: 'cad_worker_inspect_skipped',
           job_id: jobId,
           correlation_id: correlationId,
+          cad_worker_transport: cadWorkerTransport(),
           error: message,
+          error_code: e instanceof CadWorkerError ? e.code : undefined,
         })
       }
       try {
@@ -435,8 +450,10 @@ export async function runJobPipeline(jobId: string, correlationId: string): Prom
               job_id: jobId,
               correlation_id: correlationId,
               contract_version: PIPELINE_CONTRACT_VERSION,
+              cad_worker_transport: cadWorkerTransport(),
               output_object_path: outputObjectPath,
               error: message,
+              error_code: e instanceof CadWorkerError ? e.code : undefined,
             })
             throw e
           }

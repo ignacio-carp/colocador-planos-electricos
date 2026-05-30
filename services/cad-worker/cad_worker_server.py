@@ -1,17 +1,55 @@
 from __future__ import annotations
 
 import json
+import logging
+import time
 from pathlib import Path
 from tempfile import NamedTemporaryFile
 
 import ezdxf
-from fastapi import FastAPI, File, Form, HTTPException, UploadFile
+from fastapi import FastAPI, File, Form, HTTPException, Request, UploadFile
+from fastapi.responses import FileResponse
+from starlette.background import BackgroundTask
 
 from cad_worker.electrical_layer import INVALID_DXF_CODE, apply_electrical_layer
 from cad_worker.extract_geometry import extract_geometry
 from cad_worker.inspect_dxf import inspect_dxf_file
 
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(message)s",
+)
+logger = logging.getLogger("cad_worker_server")
+
 app = FastAPI(title="cad-worker", version="0.2.0")
+
+CAD_WORKER_RESULT_HEADER = "X-Cad-Worker-Result"
+
+
+def _log_event(level: int, event: str, **fields: object) -> None:
+    payload = {"ts": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()), "event": event, **fields}
+    logger.log(level, json.dumps(payload, default=str))
+
+
+@app.middleware("http")
+async def log_requests(request: Request, call_next):  # type: ignore[no-untyped-def]
+    t0 = time.perf_counter()
+    _log_event(
+        logging.INFO,
+        "cad_worker_http_request",
+        method=request.method,
+        path=request.url.path,
+    )
+    response = await call_next(request)
+    _log_event(
+        logging.INFO,
+        "cad_worker_http_response",
+        method=request.method,
+        path=request.url.path,
+        status=response.status_code,
+        duration_ms=round((time.perf_counter() - t0) * 1000, 2),
+    )
+    return response
 
 
 def _http_error(status: int, code: str, error: str) -> HTTPException:
@@ -63,11 +101,16 @@ async def extract_geometry_endpoint(file: UploadFile = File(...)) -> dict[str, o
         tmp_path.unlink(missing_ok=True)
 
 
+def _cleanup_paths(*paths: Path) -> None:
+    for path in paths:
+        path.unlink(missing_ok=True)
+
+
 @app.post("/apply-electrical-layer")
 async def apply_layer(
     file: UploadFile = File(...),
     placements_json: str = Form(...),
-) -> dict[str, object]:
+) -> FileResponse:
     input_suffix = Path(file.filename or "input.dxf").suffix or ".dxf"
     with NamedTemporaryFile(delete=False, suffix=input_suffix) as input_tmp:
         input_tmp.write(await file.read())
@@ -88,14 +131,29 @@ async def apply_layer(
                 placements = nuevas
             elif isinstance(outlets, list):
                 placements = outlets
-        return apply_electrical_layer(input_path, output_path, placements)
+        result = apply_electrical_layer(input_path, output_path, placements)
+        _log_event(
+            logging.INFO,
+            "cad_worker_apply_complete",
+            outlets_added=result.get("outlets_added"),
+            output=str(output_path),
+        )
+        return FileResponse(
+            path=output_path,
+            media_type="application/dxf",
+            filename="output.dxf",
+            headers={CAD_WORKER_RESULT_HEADER: json.dumps(result)},
+            background=BackgroundTask(_cleanup_paths, input_path, output_path),
+        )
     except FileNotFoundError as exc:
+        _cleanup_paths(input_path, output_path)
         raise _http_error(404, "CAD_WORKER_FILE_NOT_FOUND", str(exc)) from exc
     except ezdxf.DXFStructureError as exc:
+        _cleanup_paths(input_path, output_path)
         raise _http_error(400, INVALID_DXF_CODE, str(exc)) from exc
     except json.JSONDecodeError as exc:
+        _cleanup_paths(input_path, output_path)
         raise _http_error(400, "CAD_WORKER_INVALID_JSON", str(exc)) from exc
     except Exception as exc:  # noqa: BLE001
+        _cleanup_paths(input_path, output_path)
         raise _http_error(500, "CAD_WORKER_ERROR", str(exc)) from exc
-    finally:
-        input_path.unlink(missing_ok=True)

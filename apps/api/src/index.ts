@@ -29,6 +29,8 @@ import {
   checkJobCreationQuota,
   QuotaExceededError,
 } from './quota'
+import { cadWorkerConfigSummary, cadWorkerTransport, probeCadWorkerOnStartup } from './cadWorkerBridge'
+import { logStructured } from './logger'
 import { enqueueJobPipeline } from './jobQueue'
 import { drainPipelineQueueOnce, pipelineWorkerEnabled, startPipelineWorker } from './pipelineWorker'
 import { formatPrometheusMetrics, getMetricsSnapshot } from './metrics'
@@ -85,7 +87,10 @@ function assertJobAccess(userId: string, role: ReturnType<typeof getAppRole>, jo
 }
 
 app.get('/healthz', (_req, res) => {
-  res.status(200).json({ status: 'ok' })
+  res.status(200).json({
+    status: 'ok',
+    cad_worker: cadWorkerConfigSummary(),
+  })
 })
 
 app.get('/api/me', requireAuth, (req, res) => {
@@ -690,6 +695,13 @@ app.post(
 const port = Number(process.env.API_PORT ?? 3001)
 
 app.listen(port, () => {
-  console.log(`api listening on http://localhost:${port}`)
+  logStructured('info', {
+    event: 'api_listening',
+    port,
+    cad_worker_transport: cadWorkerTransport(),
+    pipeline_worker_enabled: pipelineWorkerEnabled(),
+    ...cadWorkerConfigSummary(),
+  })
+  void probeCadWorkerOnStartup()
   startPipelineWorker()
 })

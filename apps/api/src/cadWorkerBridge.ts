@@ -1,6 +1,7 @@
-import { existsSync } from 'node:fs'
+import { existsSync, readFileSync, writeFileSync } from 'node:fs'
 import { spawn } from 'node:child_process'
-import { join } from 'node:path'
+import { basename, join } from 'node:path'
+import { logStructured } from './logger'
 import { repoRootDirectory } from './pipelinePackageRoot'
 
 export type CadWorkerInspectResult = {
@@ -47,6 +48,10 @@ export class CadWorkerError extends Error {
   }
 }
 
+export type CadWorkerTransport = 'http' | 'spawn' | 'disabled'
+
+const CAD_WORKER_RESULT_HEADER = 'x-cad-worker-result'
+
 function cadWorkerCwd(): string {
   return join(repoRootDirectory(), 'services', 'cad-worker')
 }
@@ -69,6 +74,36 @@ export function cadWorkerTimeoutMs(): number {
   return Number.isFinite(n) && n > 0 ? n : 30_000
 }
 
+/** Base URL of the remote cad-worker HTTP service (no trailing slash). */
+export function cadWorkerBaseUrl(): string | undefined {
+  const raw = process.env.CAD_WORKER_URL?.trim()
+  if (!raw) return undefined
+  return raw.replace(/\/+$/, '')
+}
+
+export function cadWorkerTransport(): CadWorkerTransport {
+  if (cadWorkerDisabled()) return 'disabled'
+  if (cadWorkerBaseUrl()) return 'http'
+  return 'spawn'
+}
+
+export function cadWorkerConfigSummary(): Record<string, unknown> {
+  const transport = cadWorkerTransport()
+  return {
+    cad_worker_transport: transport,
+    cad_worker_url: transport === 'http' ? cadWorkerBaseUrl() : undefined,
+    cad_worker_timeout_ms: cadWorkerTimeoutMs(),
+    cad_worker_python: transport === 'spawn' ? pythonExecutable() : undefined,
+  }
+}
+
+function logCadWorker(
+  level: 'info' | 'warn' | 'error',
+  fields: Record<string, unknown>,
+): void {
+  logStructured(level, { component: 'cad_worker_bridge', ...fields })
+}
+
 function mapExitCodeToError(code: string | undefined, message: string, exitCode: number): CadWorkerError {
   if (code === 'CAD_WORKER_FILE_NOT_FOUND') {
     return new CadWorkerError('CAD_WORKER_FILE_NOT_FOUND', message, exitCode)
@@ -85,7 +120,198 @@ function mapExitCodeToError(code: string | undefined, message: string, exitCode:
   return new CadWorkerError(code ?? 'CAD_WORKER_ERROR', message, exitCode)
 }
 
-function spawnCadWorkerJson(args: string[]): Promise<Record<string, unknown>> {
+function parseWorkerPayload(body: string, httpStatus: number): Record<string, unknown> {
+  let parsed: Record<string, unknown>
+  try {
+    parsed = JSON.parse(body) as Record<string, unknown>
+  } catch {
+    throw new CadWorkerError('CAD_WORKER_INVALID_JSON', body.slice(0, 500), httpStatus)
+  }
+  if (parsed.ok === false) {
+    throw mapExitCodeToError(
+      typeof parsed.code === 'string' ? parsed.code : undefined,
+      typeof parsed.error === 'string' ? parsed.error : `HTTP ${httpStatus}`,
+      httpStatus,
+    )
+  }
+  return parsed
+}
+
+function httpDetailMessage(detail: unknown): string {
+  if (typeof detail === 'string') return detail
+  if (detail && typeof detail === 'object') {
+    const d = detail as { error?: unknown; message?: unknown }
+    if (typeof d.error === 'string') return d.error
+    if (typeof d.message === 'string') return d.message
+    return JSON.stringify(detail).slice(0, 500)
+  }
+  return 'cad-worker HTTP error'
+}
+
+function httpDetailCode(detail: unknown): string | undefined {
+  if (detail && typeof detail === 'object' && typeof (detail as { code?: unknown }).code === 'string') {
+    return (detail as { code: string }).code
+  }
+  return undefined
+}
+
+async function fetchCadWorker(
+  endpoint: string,
+  init: RequestInit & { operation: string; inputPath?: string },
+): Promise<Response> {
+  const base = cadWorkerBaseUrl()
+  if (!base) {
+    throw new CadWorkerError('CAD_WORKER_URL_MISSING', 'CAD_WORKER_URL is not set')
+  }
+
+  const url = `${base}${endpoint}`
+  const timeoutMs = cadWorkerTimeoutMs()
+  const t0 = Date.now()
+
+  logCadWorker('info', {
+    event: 'cad_worker_http_request',
+    operation: init.operation,
+    endpoint,
+    url,
+    method: init.method ?? 'POST',
+    input_path: init.inputPath,
+    transport: 'http',
+  })
+
+  const controller = new AbortController()
+  const timer = setTimeout(() => controller.abort(), timeoutMs)
+
+  try {
+    const response = await fetch(url, { ...init, signal: controller.signal })
+    const durationMs = Date.now() - t0
+    logCadWorker(response.ok ? 'info' : 'warn', {
+      event: 'cad_worker_http_response',
+      operation: init.operation,
+      endpoint,
+      status: response.status,
+      duration_ms: durationMs,
+      transport: 'http',
+    })
+    return response
+  } catch (e) {
+    const durationMs = Date.now() - t0
+    const message = e instanceof Error ? e.message : String(e)
+    const isAbort = e instanceof Error && e.name === 'AbortError'
+    logCadWorker('error', {
+      event: 'cad_worker_http_failed',
+      operation: init.operation,
+      endpoint,
+      duration_ms: durationMs,
+      error: message,
+      timed_out: isAbort,
+      transport: 'http',
+    })
+    if (isAbort) {
+      throw new CadWorkerError('CAD_WORKER_TIMEOUT', `cad-worker HTTP timeout after ${timeoutMs}ms`)
+    }
+    throw new CadWorkerError('CAD_WORKER_HTTP_FAILED', message)
+  } finally {
+    clearTimeout(timer)
+  }
+}
+
+async function postDxfForJson(
+  endpoint: string,
+  operation: string,
+  inputPath: string,
+): Promise<Record<string, unknown>> {
+  const fileName = basename(inputPath)
+  const bytes = readFileSync(inputPath)
+  const form = new FormData()
+  form.append('file', new Blob([bytes]), fileName)
+
+  const response = await fetchCadWorker(endpoint, {
+    method: 'POST',
+    body: form,
+    operation,
+    inputPath,
+  })
+
+  const body = await response.text()
+  if (!response.ok) {
+    let detail: unknown
+    try {
+      detail = JSON.parse(body) as { detail?: unknown }
+      if (detail && typeof detail === 'object' && 'detail' in detail) {
+        detail = (detail as { detail: unknown }).detail
+      }
+    } catch {
+      detail = body
+    }
+    throw mapExitCodeToError(
+      httpDetailCode(detail),
+      httpDetailMessage(detail),
+      response.status,
+    )
+  }
+
+  return parseWorkerPayload(body, response.status)
+}
+
+async function httpApplyElectricalLayer(
+  inputPath: string,
+  outputPath: string,
+  placements: unknown[],
+): Promise<CadWorkerApplyLayerResult> {
+  const fileName = basename(inputPath)
+  const bytes = readFileSync(inputPath)
+  const form = new FormData()
+  form.append('file', new Blob([bytes]), fileName)
+  form.append('placements_json', JSON.stringify(placements))
+
+  const response = await fetchCadWorker('/apply-electrical-layer', {
+    method: 'POST',
+    body: form,
+    operation: 'apply-electrical-layer',
+    inputPath,
+  })
+
+  if (!response.ok) {
+    const body = await response.text()
+    let detail: unknown = body
+    try {
+      const parsed = JSON.parse(body) as { detail?: unknown }
+      if (parsed.detail !== undefined) detail = parsed.detail
+    } catch {
+      /* keep raw body */
+    }
+    throw mapExitCodeToError(
+      httpDetailCode(detail),
+      httpDetailMessage(detail),
+      response.status,
+    )
+  }
+
+  const metaHeader = response.headers.get(CAD_WORKER_RESULT_HEADER)
+  let meta: CadWorkerApplyLayerResult = { ok: true }
+  if (metaHeader) {
+    try {
+      meta = parseWorkerPayload(metaHeader, response.status) as CadWorkerApplyLayerResult
+    } catch (e) {
+      logCadWorker('warn', {
+        event: 'cad_worker_apply_meta_parse_failed',
+        error: e instanceof Error ? e.message : String(e),
+      })
+    }
+  }
+
+  const outputBytes = Buffer.from(await response.arrayBuffer())
+  writeFileSync(outputPath, outputBytes)
+  logCadWorker('info', {
+    event: 'cad_worker_apply_saved',
+    output_path: outputPath,
+    bytes: outputBytes.length,
+    outlets_added: meta.outlets_added,
+  })
+  return { ...meta, ok: true, output: outputPath }
+}
+
+function spawnCadWorkerJson(args: string[], inputPath?: string): Promise<Record<string, unknown>> {
   if (cadWorkerDisabled()) {
     return Promise.reject(new CadWorkerError('CAD_WORKER_DISABLED', 'CAD worker disabled'))
   }
@@ -93,6 +319,17 @@ function spawnCadWorkerJson(args: string[]): Promise<Record<string, unknown>> {
   const timeoutMs = cadWorkerTimeoutMs()
   const py = pythonExecutable()
   const cwd = cadWorkerCwd()
+  const operation = args[0] ?? 'unknown'
+
+  logCadWorker('info', {
+    event: 'cad_worker_spawn_start',
+    operation,
+    python: py,
+    cwd,
+    args: args.slice(0, 4),
+    input_path: inputPath,
+    transport: 'spawn',
+  })
 
   return new Promise((resolve, reject) => {
     const child = spawn(py, ['-m', 'cad_worker', ...args], {
@@ -114,16 +351,35 @@ function spawnCadWorkerJson(args: string[]): Promise<Record<string, unknown>> {
       child.kill('SIGKILL')
     }, timeoutMs)
 
+    const t0 = Date.now()
+
     child.on('error', (err) => {
       clearTimeout(timer)
+      logCadWorker('error', {
+        event: 'cad_worker_spawn_failed',
+        operation,
+        error: err.message,
+        duration_ms: Date.now() - t0,
+        transport: 'spawn',
+      })
       reject(new CadWorkerError('CAD_WORKER_SPAWN_FAILED', err.message))
     })
 
     child.on('close', (exitCode) => {
       clearTimeout(timer)
       const code = exitCode ?? 1
+      const durationMs = Date.now() - t0
       const trimmed = stdout.trim()
+
       if (!trimmed) {
+        logCadWorker('error', {
+          event: 'cad_worker_spawn_empty_output',
+          operation,
+          exit_code: code,
+          stderr_preview: stderr.trim().slice(0, 300),
+          duration_ms: durationMs,
+          transport: 'spawn',
+        })
         reject(
           new CadWorkerError(
             'CAD_WORKER_EMPTY_OUTPUT',
@@ -133,14 +389,32 @@ function spawnCadWorkerJson(args: string[]): Promise<Record<string, unknown>> {
         )
         return
       }
+
       let parsed: Record<string, unknown>
       try {
         parsed = JSON.parse(trimmed) as Record<string, unknown>
       } catch {
+        logCadWorker('error', {
+          event: 'cad_worker_spawn_invalid_json',
+          operation,
+          exit_code: code,
+          stdout_preview: trimmed.slice(0, 300),
+          duration_ms: durationMs,
+          transport: 'spawn',
+        })
         reject(new CadWorkerError('CAD_WORKER_INVALID_JSON', trimmed.slice(0, 500), code))
         return
       }
+
       if (code !== 0 || parsed.ok === false) {
+        logCadWorker('warn', {
+          event: 'cad_worker_spawn_error',
+          operation,
+          exit_code: code,
+          code_field: parsed.code,
+          duration_ms: durationMs,
+          transport: 'spawn',
+        })
         reject(
           mapExitCodeToError(
             typeof parsed.code === 'string' ? parsed.code : undefined,
@@ -150,31 +424,91 @@ function spawnCadWorkerJson(args: string[]): Promise<Record<string, unknown>> {
         )
         return
       }
+
+      logCadWorker('info', {
+        event: 'cad_worker_spawn_success',
+        operation,
+        exit_code: code,
+        duration_ms: durationMs,
+        transport: 'spawn',
+      })
       resolve(parsed)
     })
   })
 }
 
+async function invokeCadWorkerJson(
+  operation: string,
+  spawnArgs: string[],
+  inputPath: string,
+  httpEndpoint: string,
+): Promise<Record<string, unknown>> {
+  if (cadWorkerTransport() === 'http') {
+    return postDxfForJson(httpEndpoint, operation, inputPath)
+  }
+  return spawnCadWorkerJson(spawnArgs, inputPath)
+}
+
 /**
- * Runs `python -m cad_worker inspect --input <path> --json` and parses stdout JSON.
+ * On API startup, probes cad-worker when HTTP transport is configured.
+ */
+export async function probeCadWorkerOnStartup(): Promise<void> {
+  const transport = cadWorkerTransport()
+  logCadWorker('info', {
+    event: 'cad_worker_config',
+    ...cadWorkerConfigSummary(),
+  })
+
+  if (transport !== 'http') return
+
+  const base = cadWorkerBaseUrl()!
+  const t0 = Date.now()
+  try {
+    const response = await fetch(`${base}/healthz`, {
+      signal: AbortSignal.timeout(Math.min(cadWorkerTimeoutMs(), 10_000)),
+    })
+    const body = await response.text()
+    logCadWorker(response.ok ? 'info' : 'warn', {
+      event: 'cad_worker_startup_probe',
+      status: response.status,
+      duration_ms: Date.now() - t0,
+      body_preview: body.slice(0, 200),
+    })
+  } catch (e) {
+    logCadWorker('error', {
+      event: 'cad_worker_startup_probe_failed',
+      error: e instanceof Error ? e.message : String(e),
+      duration_ms: Date.now() - t0,
+      url: `${base}/healthz`,
+    })
+  }
+}
+
+/**
+ * Runs `python -m cad_worker inspect --input <path> --json` or POST /inspect when CAD_WORKER_URL is set.
  */
 export function inspectDxfFile(inputPath: string): Promise<CadWorkerInspectResult> {
   if (cadWorkerDisabled()) {
     return Promise.resolve({ ok: false, code: 'CAD_WORKER_DISABLED', error: 'CAD worker disabled' })
   }
-  return spawnCadWorkerJson(['inspect', '--input', inputPath, '--json']) as Promise<CadWorkerInspectResult>
+  return invokeCadWorkerJson(
+    'inspect',
+    ['inspect', '--input', inputPath, '--json'],
+    inputPath,
+    '/inspect',
+  ) as Promise<CadWorkerInspectResult>
 }
 
 export function extractGeometryFromDxf(inputPath: string): Promise<CadWorkerGeometryExtract> {
   if (cadWorkerDisabled()) {
     return Promise.resolve({ ok: false, code: 'CAD_WORKER_DISABLED', error: 'CAD worker disabled' })
   }
-  return spawnCadWorkerJson([
+  return invokeCadWorkerJson(
     'extract-geometry',
-    '--input',
+    ['extract-geometry', '--input', inputPath, '--json'],
     inputPath,
-    '--json',
-  ]) as Promise<CadWorkerGeometryExtract>
+    '/extract-geometry',
+  ) as Promise<CadWorkerGeometryExtract>
 }
 
 /** @deprecated Use inspectDxfFile — platform is DXF-only. */
@@ -186,15 +520,26 @@ export async function applyElectricalLayer(
   outputPath: string,
   placements: unknown[],
 ): Promise<CadWorkerApplyLayerResult> {
+  if (cadWorkerDisabled()) {
+    return { ok: false, code: 'CAD_WORKER_DISABLED', error: 'CAD worker disabled' }
+  }
+
+  if (cadWorkerTransport() === 'http') {
+    return httpApplyElectricalLayer(inputPath, outputPath, placements)
+  }
+
   const placementsJson = JSON.stringify(placements)
-  const parsed = await spawnCadWorkerJson([
-    'apply-electrical-layer',
-    '--input',
+  const parsed = await spawnCadWorkerJson(
+    [
+      'apply-electrical-layer',
+      '--input',
+      inputPath,
+      '--output',
+      outputPath,
+      '--placements-json',
+      placementsJson,
+    ],
     inputPath,
-    '--output',
-    outputPath,
-    '--placements-json',
-    placementsJson,
-  ])
+  )
   return parsed as CadWorkerApplyLayerResult
 }

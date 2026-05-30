@@ -14,9 +14,11 @@ La plataforma ya no acepta `.dwg`; el worker usa `ezdxf` directamente sobre DXF.
 
 1. Un cliente sube o referencia un archivo `.dxf`.
 2. La API principal deriva análisis al bridge del worker (`apps/api/src/cadWorkerBridge.ts`).
-3. El bridge ejecuta subcomandos CLI: `inspect`, `extract-geometry`, `apply-electrical-layer`.
-4. `cad-worker` responde JSON en stdout.
+3. **Local / mismo host:** el bridge ejecuta subcomandos CLI (`python -m cad_worker …`).
+4. **Producción (Railway u otro host):** con `CAD_WORKER_URL` el bridge llama al servidor HTTP (`cad_worker_server.py`).
 5. La API persiste `cad_worker_inspect`, `geometry_extract` y el DXF de salida en Storage.
+
+Guía de despliegue API ↔ worker en Railway: [`docs/deploy/railway-api-cad-worker.md`](../../docs/deploy/railway-api-cad-worker.md).
 
 ### Comandos usados por la API
 
@@ -37,10 +39,21 @@ python -m cad_worker inspect --input /path/to/file.dxf --json
 python -m cad_worker extract-geometry --input /path/to/file.dxf --json
 ```
 
-## Configuración útil
+## Servidor HTTP (producción)
 
-- `CAD_WORKER_PYTHON`: intérprete de Python a utilizar (default `python3`).
+```bash
+pip install -r requirements.txt && pip install -e .
+uvicorn cad_worker_server:app --host 0.0.0.0 --port 8000
+```
+
+Endpoints: `GET /healthz`, `POST /inspect`, `POST /extract-geometry`, `POST /apply-electrical-layer` (multipart: `file`, `placements_json`).
+
+## Configuración útil (API)
+
+- `CAD_WORKER_URL`: URL base del servicio HTTP (sin barra final). Si está definida, la API no hace `spawn` local.
+- `CAD_WORKER_PYTHON`: intérprete de Python a utilizar en modo spawn (default `python3`).
 - `CAD_WORKER_DISABLED`: desactiva la invocación desde la API.
+- `CAD_WORKER_TIMEOUT_MS`: timeout de llamadas (HTTP o spawn).
 - `CAD_WORKER_FIXTURE_DXF`: ruta local a fixture DXF para pruebas del pipeline (alias legacy: `CAD_WORKER_FIXTURE_DWG`).
 
 ## Códigos de error
