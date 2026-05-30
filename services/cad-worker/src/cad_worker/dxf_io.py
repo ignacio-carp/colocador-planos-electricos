@@ -17,3 +17,13 @@ def open_dxf_file(file_path: str | Path) -> Drawing:
         return ezdxf.readfile(str(path))
     except (ezdxf.DXFStructureError, IOError, OSError) as e:
         raise ezdxf.DXFStructureError(f"Invalid or corrupt DXF: {path.name}: {e}") from e
+
+
+def save_dxf_file(doc: Drawing, file_path: str | Path) -> None:
+    """Save DXF using the encoding required by the drawing version (UTF-8 for R2007+)."""
+    path = Path(file_path)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    encoding = getattr(doc, "output_encoding", None)
+    if not encoding:
+        encoding = "utf-8" if doc.dxfversion >= "AC1021" else getattr(doc, "encoding", None) or "cp1252"
+    doc.saveas(str(path), encoding=encoding)

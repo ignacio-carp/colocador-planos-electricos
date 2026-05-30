@@ -51,6 +51,17 @@ export class CadWorkerError extends Error {
 export type CadWorkerTransport = 'http' | 'spawn' | 'disabled'
 
 const CAD_WORKER_RESULT_HEADER = 'x-cad-worker-result'
+const CAD_WORKER_RESULT_ENCODING_HEADER = 'x-cad-worker-result-encoding'
+
+function decodeCadWorkerResultHeader(
+  rawHeader: string,
+  encodingHeader: string | null,
+): string {
+  if (encodingHeader?.toLowerCase() === 'base64-utf-8') {
+    return Buffer.from(rawHeader, 'base64').toString('utf-8')
+  }
+  return rawHeader
+}
 
 function cadWorkerCwd(): string {
   return join(repoRootDirectory(), 'services', 'cad-worker')
@@ -295,10 +306,12 @@ async function httpApplyElectricalLayer(
     )
   }
 
-  const metaHeader = response.headers.get(CAD_WORKER_RESULT_HEADER)
+  const metaHeaderRaw = response.headers.get(CAD_WORKER_RESULT_HEADER)
+  const metaEncoding = response.headers.get(CAD_WORKER_RESULT_ENCODING_HEADER)
   let meta: CadWorkerApplyLayerResult = { ok: true }
-  if (metaHeader) {
+  if (metaHeaderRaw) {
     try {
+      const metaHeader = decodeCadWorkerResultHeader(metaHeaderRaw, metaEncoding)
       meta = parseWorkerPayload(metaHeader, response.status) as CadWorkerApplyLayerResult
     } catch (e) {
       logCadWorker('warn', {

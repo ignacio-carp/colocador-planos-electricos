@@ -9,7 +9,7 @@ from typing import Any
 
 import ezdxf
 
-from cad_worker.dxf_io import open_dxf_file
+from cad_worker.dxf_io import open_dxf_file, save_dxf_file
 from cad_worker.extract_geometry import (
     ELECTRICAL_LAYER_NAME,
     extract_geometry,
@@ -80,8 +80,7 @@ def apply_electrical_layer(
         msp.add_circle((x, y), radius, dxfattribs={"layer": layer_name})
         added += 1
 
-    output_path.parent.mkdir(parents=True, exist_ok=True)
-    doc.saveas(str(output_path))
+    save_dxf_file(doc, output_path)
 
     result: dict[str, Any] = {
         "ok": True,

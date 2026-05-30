@@ -1,7 +1,7 @@
 from __future__ import annotations
 
-import json
 import logging
+import sys
 import time
 from pathlib import Path
 from tempfile import NamedTemporaryFile
@@ -13,7 +13,15 @@ from starlette.background import BackgroundTask
 
 from cad_worker.electrical_layer import INVALID_DXF_CODE, apply_electrical_layer
 from cad_worker.extract_geometry import extract_geometry
+from cad_worker.http_json import dumps_ascii_safe, encode_result_header
 from cad_worker.inspect_dxf import inspect_dxf_file
+
+if hasattr(sys.stdout, "reconfigure"):
+    try:
+        sys.stdout.reconfigure(encoding="utf-8")
+        sys.stderr.reconfigure(encoding="utf-8")
+    except Exception:  # noqa: BLE001
+        pass
 
 logging.basicConfig(
     level=logging.INFO,
@@ -28,7 +36,7 @@ CAD_WORKER_RESULT_HEADER = "X-Cad-Worker-Result"
 
 def _log_event(level: int, event: str, **fields: object) -> None:
     payload = {"ts": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()), "event": event, **fields}
-    logger.log(level, json.dumps(payload, default=str))
+    logger.log(level, dumps_ascii_safe(payload))
 
 
 @app.middleware("http")
@@ -132,6 +140,7 @@ async def apply_layer(
             elif isinstance(outlets, list):
                 placements = outlets
         result = apply_electrical_layer(input_path, output_path, placements)
+        header_value, header_extra = encode_result_header(result)
         _log_event(
             logging.INFO,
             "cad_worker_apply_complete",
@@ -142,7 +151,10 @@ async def apply_layer(
             path=output_path,
             media_type="application/dxf",
             filename="output.dxf",
-            headers={CAD_WORKER_RESULT_HEADER: json.dumps(result)},
+            headers={
+                CAD_WORKER_RESULT_HEADER: header_value,
+                **header_extra,
+            },
             background=BackgroundTask(_cleanup_paths, input_path, output_path),
         )
     except FileNotFoundError as exc:
