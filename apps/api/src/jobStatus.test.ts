@@ -8,9 +8,17 @@ describe('jobStatus transitions', () => {
     assert.doesNotThrow(() => assertJobStatusTransition('procesando', 'procesado'))
   })
 
+  it('allows error → pendiente for pipeline retry', () => {
+    assert.doesNotThrow(() => assertJobStatusTransition('error', 'pendiente'))
+  })
+
   it('rejects illegal transitions', () => {
     assert.throws(
       () => assertJobStatusTransition('procesado', 'pendiente'),
+      InvalidJobStatusTransitionError,
+    )
+    assert.throws(
+      () => assertJobStatusTransition('error', 'procesando'),
       InvalidJobStatusTransitionError,
     )
   })

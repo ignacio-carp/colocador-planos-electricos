@@ -5,6 +5,7 @@ import {
   cadWorkerDisabled,
   cadWorkerTransport,
   inspectDxfFile,
+  normalizeCadWorkerBaseUrl,
 } from './cadWorkerBridge'
 
 describe('cadWorkerBridge S-02', () => {
@@ -30,6 +31,21 @@ describe('cadWorkerBridge S-02', () => {
       if (prev === undefined) delete process.env.CAD_WORKER_DISABLED
       else process.env.CAD_WORKER_DISABLED = prev
     }
+  })
+
+  it('normalizeCadWorkerBaseUrl adds http:// when scheme is missing', () => {
+    assert.equal(
+      normalizeCadWorkerBaseUrl('colocador-planos-electricos.railway.internal'),
+      'http://colocador-planos-electricos.railway.internal',
+    )
+    assert.equal(
+      normalizeCadWorkerBaseUrl('colocador-planos-electricos.railway.internal:8080'),
+      'http://colocador-planos-electricos.railway.internal:8080',
+    )
+    assert.equal(
+      normalizeCadWorkerBaseUrl('https://cad.example.com/'),
+      'https://cad.example.com',
+    )
   })
 
   it('uses http transport when CAD_WORKER_URL is set', () => {

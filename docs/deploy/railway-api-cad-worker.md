@@ -71,7 +71,7 @@ En el mismo proyecto Railway:
 
 1. Habilita **Private Networking** en ambos servicios.
 2. Anota el hostname interno del cad-worker (p. ej. `cad-worker.railway.internal`).
-3. Usa `http://cad-worker.railway.internal:<PORT>` como `CAD_WORKER_URL` en la API (sin barra final).
+3. Usa `http://cad-worker.railway.internal:<PORT>` como `CAD_WORKER_URL` en la API (con `http://`, sin barra final). También vale `cad-worker.railway.internal:<PORT>` — la API normaliza el esquema.
 
 Ventaja: el tráfico DXF no sale a internet y evitas cold starts externos.
 
@@ -91,7 +91,7 @@ Si usas URL pública, también funciona: `https://<cad-worker>.up.railway.app`.
 
 | Variable | Ejemplo | Notas |
 |----------|---------|--------|
-| `CAD_WORKER_URL` | `http://cad-worker.railway.internal:8000` o URL pública | **Sin** barra final |
+| `CAD_WORKER_URL` | `http://cad-worker.railway.internal:8000` o URL pública | Debe incluir `http://` o `https://`. Si usas solo el hostname privado (`*.railway.internal`), la API añade `http://` automáticamente. Sin barra final |
 | `CAD_PIPELINE_MODE` | `live` o `stub` | `live` requiere `OPENROUTER_API_KEY` (o `OPENAI_API_KEY`) |
 | `OPENROUTER_API_KEY` | clave OpenRouter | Recomendado para visión/normativa en `live` |
 | `OPENROUTER_MODEL` | p. ej. `openai/gpt-4o` | Modelo en [OpenRouter](https://openrouter.ai/models) |
@@ -183,6 +183,11 @@ Filtra por `correlation_id` (viene en la respuesta de error del job o en headers
 
 - La API sigue en modo **spawn** (no hay `CAD_WORKER_URL`).
 - En Railway la API no tiene Python/ezdxf → debes usar HTTP.
+
+### `cad_worker_http_failed` — `Failed to parse URL from *.railway.internal/...`
+
+- `CAD_WORKER_URL` sin esquema (`http://` o `https://`). Usa p. ej. `http://colocador-planos-electricos.railway.internal:8080` o deja solo el hostname (la API añade `http://` desde la versión con `normalizeCadWorkerBaseUrl`).
+- Falta el **puerto** en red privada si uvicorn no escucha en 80 (suele ser `${PORT}` del servicio Python).
 
 ### `CAD_WORKER_HTTP_FAILED` / timeout
 

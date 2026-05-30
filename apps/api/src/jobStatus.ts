@@ -12,7 +12,8 @@ const ALLOWED_TRANSITIONS: Record<JobStatus, readonly JobStatus[]> = {
   pendiente: ['procesando', 'error'],
   procesando: ['procesado', 'error'],
   procesado: [],
-  error: [],
+  /** Retry after pipeline failure (POST /api/jobs/:id/process). */
+  error: ['pendiente'],
 }
 
 export class InvalidJobStatusTransitionError extends Error {

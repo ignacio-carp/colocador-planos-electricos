@@ -27,6 +27,17 @@ describe('jobQueue S-01', () => {
     assert.equal(await enqueueJobPipeline(job.id, 'c'), null)
   })
 
+  it('enqueues again after error is reset to pendiente', async () => {
+    const job = await createJob('dddddddd-dddd-4ddd-8ddd-dddddddddddd', 'retry')
+    await patchJob(job.id, { status: 'procesando' })
+    await patchJob(job.id, { status: 'error', error: { code: 'PIPELINE_ERROR', message: 'fail' } })
+    assert.equal(await enqueueJobPipeline(job.id, 'c1'), null)
+    await patchJob(job.id, { status: 'pendiente', error: undefined })
+    const msg = await enqueueJobPipeline(job.id, 'c2')
+    assert.ok(msg)
+    assert.equal(msg?.job_id, job.id)
+  })
+
   it('worker drains queue to procesado', async () => {
     const job = await createJob('cccccccc-cccc-4ccc-8ccc-cccccccccccc', 'run')
     await enqueueJobPipeline(job.id, 'corr-worker')

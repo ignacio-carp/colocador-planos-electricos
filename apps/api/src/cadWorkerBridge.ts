@@ -75,10 +75,18 @@ export function cadWorkerTimeoutMs(): number {
 }
 
 /** Base URL of the remote cad-worker HTTP service (no trailing slash). */
+/** Ensures fetch()-safe base URL (Railway private hostnames often omit http://). */
+export function normalizeCadWorkerBaseUrl(raw: string): string {
+  const trimmed = raw.trim().replace(/\/+$/, '')
+  if (!trimmed) return trimmed
+  if (/^https?:\/\//i.test(trimmed)) return trimmed
+  return `http://${trimmed}`
+}
+
 export function cadWorkerBaseUrl(): string | undefined {
   const raw = process.env.CAD_WORKER_URL?.trim()
   if (!raw) return undefined
-  return raw.replace(/\/+$/, '')
+  return normalizeCadWorkerBaseUrl(raw)
 }
 
 export function cadWorkerTransport(): CadWorkerTransport {
