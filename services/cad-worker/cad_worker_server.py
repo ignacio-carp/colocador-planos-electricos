@@ -41,6 +41,22 @@ def _log_event(level: int, event: str, **fields: object) -> None:
     logger.log(level, dumps_ascii_safe(payload))
 
 
+def _safe_result_headers(result: dict[str, object]) -> dict[str, str]:
+    try:
+        header_value, header_extra = encode_result_header(result)
+        return {
+            CAD_WORKER_RESULT_HEADER: header_value,
+            **header_extra,
+        }
+    except Exception as exc:  # noqa: BLE001
+        _log_event(
+            logging.WARNING,
+            "cad_worker_result_header_encode_failed",
+            error=str(exc),
+        )
+        return {}
+
+
 @app.middleware("http")
 async def log_requests(request: Request, call_next):  # type: ignore[no-untyped-def]
     t0 = time.perf_counter()
@@ -142,7 +158,6 @@ async def apply_layer(
             elif isinstance(outlets, list):
                 placements = outlets
         result = apply_electrical_layer(input_path, output_path, placements)
-        header_value, header_extra = encode_result_header(result)
         _log_event(
             logging.INFO,
             "cad_worker_apply_complete",
@@ -153,10 +168,7 @@ async def apply_layer(
             path=output_path,
             media_type="application/dxf",
             filename="output.dxf",
-            headers={
-                CAD_WORKER_RESULT_HEADER: header_value,
-                **header_extra,
-            },
+            headers=_safe_result_headers(result),
             background=BackgroundTask(_cleanup_paths, input_path, output_path),
         )
     except FileNotFoundError as exc:
