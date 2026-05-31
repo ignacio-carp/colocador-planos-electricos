@@ -10,7 +10,9 @@ import ezdxf
 
 from cad_worker.dxf_io import open_dxf_file
 
-ELECTRICAL_LAYER_NAME = "INSTALACION_ELECTRICA"
+from cad_worker.constants import LEGACY_ELECTRICAL_LAYER_NAME, OUTPUT_ELECTRICAL_LAYER_NAME
+
+ELECTRICAL_LAYER_NAME = OUTPUT_ELECTRICAL_LAYER_NAME
 
 
 def _point_xy(value: Any) -> list[float] | None:

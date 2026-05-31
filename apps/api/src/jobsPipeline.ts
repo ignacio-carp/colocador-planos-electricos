@@ -17,6 +17,7 @@ import {
   buildLiveVisionLayoutOutput,
 } from './pipelineLive'
 import { aiConfigured, getPipelineMode } from './pipelineMode'
+import { parseUs009OutputLayer, sha256Hex } from './cadGeneration'
 import { registerOutputDxfFromLocalFile } from './pipelineCadOutput'
 import { DXF_INPUT_BUCKET } from './dxfStorage'
 import { findLatestInputForJob } from './filesStore'
@@ -30,13 +31,13 @@ import {
   recordStepLatency,
 } from './metrics'
 import { PIPELINE_CONTRACT_VERSION } from './pipelineContracts'
+import { assertValidCadGenerationInput } from './pipelineSchemaValidation'
 import {
+  buildCadGenerationInput,
   buildStubCadGenerationInput,
   buildStubNormativeInferenceOutput,
   buildStubVisionLayoutOutput,
-  registerMockOutputDxf,
 } from './pipelineStubs'
-import { DXF_OUTPUT_BUCKET } from './dxfStorage'
 import { getSupabaseServiceRole, isStorageConfigured } from './supabaseService'
 
 const IA_MAX_ATTEMPTS = 3
@@ -395,110 +396,117 @@ export async function runJobPipeline(jobId: string, correlationId: string): Prom
         })
       }
 
-      const { cadInput, outputObjectPath } = buildStubCadGenerationInput({
+      const placements = (normativeLocked as { outlet_placements?: unknown[] }).outlet_placements ?? []
+      if (placements.length === 0) {
+        throw new Error('US-009 requires at least one outlet placement from normative inference')
+      }
+
+      if (getPipelineMode() === 'stub' && !isStorageConfigured()) {
+        const { cadInput } = buildStubCadGenerationInput({
+          jobId,
+          ownerUserId: job.owner_user_id,
+          correlationId,
+          visionOutput: visionLocked,
+          normativeOutput: normativeLocked,
+        })
+        assertValidCadGenerationInput(cadInput)
+        logStructured('info', {
+          event: 'pipeline_us009_stub_contract_only',
+          job_id: jobId,
+          correlation_id: correlationId,
+          contract_version: PIPELINE_CONTRACT_VERSION,
+          output_layer: cadInput.output_layer,
+        })
+        return
+      }
+
+      if (cadWorkerDisabled()) {
+        throw new Error('CAD worker is disabled; cannot complete US-009 cad_generation')
+      }
+      if (!isStorageConfigured()) {
+        throw new Error('Storage is not configured; cannot complete US-009 cad_generation')
+      }
+
+      const supabase = getSupabaseServiceRole()
+      const input = await findLatestInputForJob(supabase, jobId)
+      if (input?.bucket_id !== DXF_INPUT_BUCKET || !input.object_path) {
+        throw new Error('No input DXF registered for job; cannot complete US-009')
+      }
+
+      const { data, error } = await supabase.storage.from(input.bucket_id).download(input.object_path)
+      if (error || !data) {
+        throw new Error(error?.message ?? 'Could not download input DXF for CAD worker')
+      }
+
+      const inputBytes = Buffer.from(await data.arrayBuffer())
+      const inputChecksumSha256 = sha256Hex(inputBytes)
+
+      const { cadInput, outputObjectPath } = buildCadGenerationInput({
         jobId,
         ownerUserId: job.owner_user_id,
         correlationId,
         visionOutput: visionLocked,
         normativeOutput: normativeLocked,
+        inputObjectPath: input.object_path,
+        inputChecksumSha256,
       })
-      const placements = (normativeLocked as { outlet_placements?: unknown[] }).outlet_placements ?? []
-      let usedCadWorker = false
 
-      if (
-        !cadWorkerDisabled() &&
-        isStorageConfigured() &&
-        placements.length > 0
-      ) {
-        const supabase = getSupabaseServiceRole()
-        const input = await findLatestInputForJob(supabase, jobId)
-        if (input?.bucket_id === DXF_INPUT_BUCKET && input.object_path) {
-          const { data, error } = await supabase.storage
-            .from(input.bucket_id)
-            .download(input.object_path)
-          if (error || !data) {
-            throw new Error(error?.message ?? 'Could not download input DXF for CAD worker')
-          }
-          try {
-            const dir = mkdtempSync(join(tmpdir(), 'cambre-cad-out-'))
-            const localIn = join(dir, 'input.dxf')
-            const localOut = join(dir, 'output.dxf')
-            writeFileSync(localIn, Buffer.from(await data.arrayBuffer()))
-            const workerResult = await applyElectricalLayer(localIn, localOut, placements)
-            await registerOutputDxfFromLocalFile(supabase, {
-              jobId,
-              ownerUserId: job.owner_user_id,
-              objectPath: outputObjectPath,
-              localPath: localOut,
-            })
-            usedCadWorker = true
-            await patchJob(jobId, {
-              pipeline_metadata: {
-                ...(await findJob(jobId))?.pipeline_metadata,
-                cad_worker_apply: workerResult as Record<string, unknown>,
-              },
-            })
-            logStructured('info', {
-              event: 'pipeline_us009_live',
-              job_id: jobId,
-              correlation_id: correlationId,
-              contract_version: PIPELINE_CONTRACT_VERSION,
-              output_object_path: outputObjectPath,
-              outlets: placements.length,
-            })
-          } catch (e) {
-            const message = e instanceof Error ? e.message : 'CAD worker apply failed'
-            logStructured('error', {
-              event: 'cad_worker_apply_failed',
-              job_id: jobId,
-              correlation_id: correlationId,
-              contract_version: PIPELINE_CONTRACT_VERSION,
-              cad_worker_transport: cadWorkerTransport(),
-              output_object_path: outputObjectPath,
-              error: message,
-              error_code: e instanceof CadWorkerError ? e.code : undefined,
-            })
-            throw e
-          }
-        }
+      assertValidCadGenerationInput(cadInput)
+
+      const outputLayer = parseUs009OutputLayer(cadInput.output_layer)
+      const dir = mkdtempSync(join(tmpdir(), 'cambre-cad-out-'))
+      const localIn = join(dir, 'input.dxf')
+      const localOut = join(dir, 'output.dxf')
+      writeFileSync(localIn, inputBytes)
+
+      const workerResult = await applyElectricalLayer(localIn, localOut, placements, {
+        outputLayer,
+      })
+
+      if (!workerResult.ok || workerResult.outlets_added === 0) {
+        throw new CadWorkerError(
+          workerResult.code ?? 'CAD_WORKER_APPLY_EMPTY',
+          workerResult.error ?? 'CAD worker produced no outlet entities',
+        )
       }
 
-      if (!usedCadWorker) {
-        logStructured('info', {
-          event: 'pipeline_us009_stub',
-          job_id: jobId,
-          correlation_id: correlationId,
-          contract_version: PIPELINE_CONTRACT_VERSION,
-          output_hint: cadInput.output_dwg as { storage_path_hint?: string } | undefined,
-        })
-        if (isStorageConfigured()) {
-          try {
-            const supabase = getSupabaseServiceRole()
-            await registerMockOutputDxf(supabase, {
-              jobId,
-              ownerUserId: job.owner_user_id,
-              objectPath: outputObjectPath,
-            })
-            logStructured('info', {
-              event: 'pipeline_us009_registered',
-              job_id: jobId,
-              correlation_id: correlationId,
-              contract_version: PIPELINE_CONTRACT_VERSION,
-              bucket: DXF_OUTPUT_BUCKET,
-              output_object_path: outputObjectPath,
-            })
-          } catch (e) {
-            const message = e instanceof Error ? e.message : 'registration failed'
-            logStructured('warn', {
-              event: 'pipeline_us009_register_skipped',
-              job_id: jobId,
-              correlation_id: correlationId,
-              contract_version: PIPELINE_CONTRACT_VERSION,
-              error: message,
-            })
-          }
-        }
-      }
+      const registered = await registerOutputDxfFromLocalFile(supabase, {
+        jobId,
+        ownerUserId: job.owner_user_id,
+        objectPath: outputObjectPath,
+        localPath: localOut,
+      })
+
+      await patchJob(jobId, {
+        pipeline_metadata: {
+          ...(await findJob(jobId))?.pipeline_metadata,
+          cad_generation: {
+            story_id: 'US-009',
+            input_checksum_sha256: inputChecksumSha256,
+            output_checksum_sha256:
+              workerResult.output_checksum_sha256 ?? registered.checksum_sha256,
+            output_object_path: outputObjectPath,
+            layer: workerResult.layer ?? outputLayer.name,
+            block_name: workerResult.block_name ?? outputLayer.block_name,
+            outlets_added: workerResult.outlets_added,
+            source_layers_preserved: workerResult.source_layers_preserved ?? true,
+            output_size_bytes: registered.size_bytes,
+          },
+          cad_worker_apply: workerResult as Record<string, unknown>,
+        },
+      })
+
+      logStructured('info', {
+        event: 'pipeline_us009_complete',
+        job_id: jobId,
+        correlation_id: correlationId,
+        contract_version: PIPELINE_CONTRACT_VERSION,
+        output_object_path: outputObjectPath,
+        outlets: workerResult.outlets_added,
+        layer: workerResult.layer,
+        block_name: workerResult.block_name,
+        cad_worker_transport: cadWorkerTransport(),
+      })
     })
 
     const done = await patchJob(jobId, { status: 'procesado', error: undefined })

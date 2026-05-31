@@ -68,7 +68,7 @@
       "properties": {
         "name": {
           "type": "string",
-          "const": "INSTALACION_ELECTRICA",
+          "const": "Cambre_Electrical",
           "description": "Capa no destructiva sobre el DXF original (US-009)"
         },
         "block_name": {

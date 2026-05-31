@@ -1,28 +1,51 @@
-"""Add INSTALACION_ELECTRICA layer with outlet markers to a DXF copy."""
+"""Add Cambre_Electrical layer with CAMBRE_OUTLET block inserts to a DXF copy (US-009)."""
 
 from __future__ import annotations
 
+import hashlib
 import json
 import logging
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
 import ezdxf
+from ezdxf.document import Drawing
 
-from cad_worker.dxf_io import open_dxf_file, save_dxf_file
-from cad_worker.extract_geometry import (
-    ELECTRICAL_LAYER_NAME,
-    extract_geometry,
-    geometry_bounding_box,
-    point_inside_bbox,
+from cad_worker.constants import (
+    DEFAULT_LAYER_COLOR_ACI,
+    DEFAULT_OUTLET_BLOCK_NAME,
+    OUTLET_BLOCK_RADIUS,
+    OUTPUT_ELECTRICAL_LAYER_NAME,
 )
+from cad_worker.dxf_io import open_dxf_file, save_dxf_file
+from cad_worker.extract_geometry import extract_geometry, geometry_bounding_box, point_inside_bbox
 
 logger = logging.getLogger(__name__)
 
 INVALID_DXF_CODE = "CAD_WORKER_INVALID_DXF"
 
-
 PlacementPoint = tuple[float, float, dict[str, object]]
+
+
+@dataclass(frozen=True)
+class OutputLayerConfig:
+    layer_name: str = OUTPUT_ELECTRICAL_LAYER_NAME
+    block_name: str = DEFAULT_OUTLET_BLOCK_NAME
+    color_aci: int = DEFAULT_LAYER_COLOR_ACI
+
+
+def parse_output_layer_config(raw: object | None) -> OutputLayerConfig:
+    if not isinstance(raw, dict):
+        return OutputLayerConfig()
+    layer_name = raw.get("name")
+    block_name = raw.get("block_name")
+    color_aci = raw.get("color_aci")
+    return OutputLayerConfig(
+        layer_name=str(layer_name) if isinstance(layer_name, str) and layer_name.strip() else OUTPUT_ELECTRICAL_LAYER_NAME,
+        block_name=str(block_name) if isinstance(block_name, str) and block_name.strip() else DEFAULT_OUTLET_BLOCK_NAME,
+        color_aci=int(color_aci) if isinstance(color_aci, int) else DEFAULT_LAYER_COLOR_ACI,
+    )
 
 
 def _normalize_placements(raw: list[dict[str, object]]) -> list[PlacementPoint]:
@@ -45,20 +68,50 @@ def _normalize_placements(raw: list[dict[str, object]]) -> list[PlacementPoint]:
     return normalized
 
 
+def _modelspace_entity_counts_by_layer(doc: Drawing, exclude_layers: set[str]) -> dict[str, int]:
+    counts: dict[str, int] = {}
+    for entity in doc.modelspace():
+        layer = entity.dxf.layer
+        if layer in exclude_layers:
+            continue
+        counts[layer] = counts.get(layer, 0) + 1
+    return counts
+
+
+def _ensure_outlet_block(doc: Drawing, block_name: str, color_aci: int) -> None:
+    if block_name in doc.blocks:
+        return
+    block = doc.blocks.new(name=block_name)
+    block.add_circle((0, 0), OUTLET_BLOCK_RADIUS, dxfattribs={"color": color_aci})
+    block.add_line((-OUTLET_BLOCK_RADIUS * 0.7, 0), (OUTLET_BLOCK_RADIUS * 0.7, 0), dxfattribs={"color": color_aci})
+    block.add_line((0, -OUTLET_BLOCK_RADIUS * 0.7), (0, OUTLET_BLOCK_RADIUS * 0.7), dxfattribs={"color": color_aci})
+
+
+def _sha256_file(path: Path) -> str:
+    return hashlib.sha256(path.read_bytes()).hexdigest()
+
+
 def apply_electrical_layer(
     input_path: Path,
     output_path: Path,
     placements: list[dict[str, object]],
     *,
+    output_layer: OutputLayerConfig | None = None,
     bbox_margin: float = 500.0,
 ) -> dict[str, object]:
     if not input_path.is_file():
         raise FileNotFoundError(f"Input file not found: {input_path}")
 
+    config = output_layer or OutputLayerConfig()
     doc = open_dxf_file(input_path)
-    layer_name = ELECTRICAL_LAYER_NAME
+    layer_name = config.layer_name
     if layer_name not in [layer.dxf.name for layer in doc.layers]:
-        doc.layers.new(name=layer_name, dxfattribs={"color": 1})
+        doc.layers.new(name=layer_name, dxfattribs={"color": config.color_aci})
+
+    exclude = {layer_name}
+    source_entity_counts = _modelspace_entity_counts_by_layer(doc, exclude)
+
+    _ensure_outlet_block(doc, config.block_name, config.color_aci)
 
     geometry = extract_geometry(input_path)
     bbox = geometry_bounding_box(geometry)
@@ -66,7 +119,6 @@ def apply_electrical_layer(
 
     msp = doc.modelspace()
     added = 0
-    radius = 150.0
     for x, y, _item in _normalize_placements(placements):
         if bbox is not None and not point_inside_bbox(x, y, bbox, margin=bbox_margin):
             skipped_out_of_bbox += 1
@@ -77,8 +129,16 @@ def apply_electrical_layer(
                 bbox,
             )
             continue
-        msp.add_circle((x, y), radius, dxfattribs={"layer": layer_name})
+        msp.add_blockref(
+            config.block_name,
+            (x, y),
+            dxfattribs={"layer": layer_name, "xscale": 1, "yscale": 1, "zscale": 1},
+        )
         added += 1
+
+    preserved = _modelspace_entity_counts_by_layer(doc, exclude) == source_entity_counts
+    if not preserved:
+        raise RuntimeError("Source modelspace entities were modified; US-009 requires non-destructive layer add")
 
     save_dxf_file(doc, output_path)
 
@@ -87,7 +147,10 @@ def apply_electrical_layer(
         "input": str(input_path.resolve()),
         "output": str(output_path.resolve()),
         "layer": layer_name,
+        "block_name": config.block_name,
         "outlets_added": added,
+        "source_layers_preserved": preserved,
+        "output_checksum_sha256": _sha256_file(output_path),
     }
     if bbox is not None:
         result["bounding_box"] = bbox
@@ -96,7 +159,12 @@ def apply_electrical_layer(
     return result
 
 
-def apply_layer_cmd(input_path: str, output_path: str, placements_json: str) -> int:
+def apply_layer_cmd(
+    input_path: str,
+    output_path: str,
+    placements_json: str,
+    output_layer_json: str | None = None,
+) -> int:
     try:
         parsed = json.loads(placements_json)
         placements: list[dict[str, object]] = []
@@ -109,10 +177,14 @@ def apply_layer_cmd(input_path: str, output_path: str, placements_json: str) -> 
                 placements = nuevas
             elif isinstance(outlets, list):
                 placements = outlets
+        layer_config = parse_output_layer_config(
+            json.loads(output_layer_json) if output_layer_json else None,
+        )
         payload = apply_electrical_layer(
             Path(input_path),
             Path(output_path),
             placements,
+            output_layer=layer_config,
         )
         print(json.dumps(payload))
         return 0

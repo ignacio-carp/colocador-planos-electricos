@@ -7,7 +7,7 @@ La plataforma ya no acepta `.dwg`; el worker usa `ezdxf` directamente sobre DXF.
 
 - Inspeccionar archivos DXF y devolver un resumen estructurado.
 - Extraer geometría (paredes como segmentos, etiquetas de texto) para el pipeline de IA.
-- Aplicar la capa vectorial `INSTALACION_ELECTRICA` con placements normativos.
+- Aplicar la capa vectorial `Cambre_Electrical` (bloques `CAMBRE_OUTLET`) con placements normativos.
 - Aislar dependencias CAD (`ezdxf`) en un servicio dedicado.
 
 ## Flujo de llamados (alto nivel)
@@ -25,7 +25,7 @@ Guía de despliegue API ↔ worker en Railway: [`docs/deploy/railway-api-cad-wor
 ```bash
 python -m cad_worker inspect --input /path/to/file.dxf --json
 python -m cad_worker extract-geometry --input /path/to/file.dxf --json
-python -m cad_worker apply-electrical-layer --input in.dxf --output out.dxf --placements-json '[...]'
+python -m cad_worker apply-electrical-layer --input in.dxf --output out.dxf --placements-json '[...]' --output-layer-json '{"name":"Cambre_Electrical","block_name":"CAMBRE_OUTLET","color_aci":3}'
 ```
 
 El tiempo máximo de espera se controla con `CAD_WORKER_TIMEOUT_MS` (default 30s).

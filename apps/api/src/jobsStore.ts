@@ -15,6 +15,8 @@ export type JobPipelineMetadata = {
   normative_rules_version?: string
   cad_worker_inspect?: Record<string, unknown>
   cad_worker_apply?: Record<string, unknown>
+  geometry_extract?: Record<string, unknown>
+  cad_generation?: Record<string, unknown>
   pipeline_mode?: string
 }
 

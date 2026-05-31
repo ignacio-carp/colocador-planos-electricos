@@ -17,7 +17,9 @@ def apply_layer_header_metadata(result: dict[str, object]) -> dict[str, object]:
     meta: dict[str, object] = {
         "ok": result.get("ok", True),
         "layer": result.get("layer"),
+        "block_name": result.get("block_name"),
         "outlets_added": result.get("outlets_added"),
+        "source_layers_preserved": result.get("source_layers_preserved"),
     }
     skipped = result.get("placements_skipped_out_of_bbox")
     if skipped is not None:

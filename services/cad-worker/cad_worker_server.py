@@ -13,7 +13,7 @@ from fastapi import FastAPI, File, Form, HTTPException, Request, UploadFile
 from fastapi.responses import FileResponse
 from starlette.background import BackgroundTask
 
-from cad_worker.electrical_layer import INVALID_DXF_CODE, apply_electrical_layer
+from cad_worker.electrical_layer import INVALID_DXF_CODE, apply_electrical_layer, parse_output_layer_config
 from cad_worker.extract_geometry import extract_geometry
 from cad_worker.http_json import dumps_ascii_safe, encode_result_header
 from cad_worker.inspect_dxf import inspect_dxf_file
@@ -136,6 +136,7 @@ def _cleanup_paths(*paths: Path) -> None:
 async def apply_layer(
     file: UploadFile = File(...),
     placements_json: str = Form(...),
+    output_layer_json: str | None = Form(default=None),
 ) -> FileResponse:
     input_suffix = Path(file.filename or "input.dxf").suffix or ".dxf"
     with NamedTemporaryFile(delete=False, suffix=input_suffix) as input_tmp:
@@ -157,7 +158,15 @@ async def apply_layer(
                 placements = nuevas
             elif isinstance(outlets, list):
                 placements = outlets
-        result = apply_electrical_layer(input_path, output_path, placements)
+        layer_config = parse_output_layer_config(
+            json_loads(output_layer_json) if output_layer_json else None,
+        )
+        result = apply_electrical_layer(
+            input_path,
+            output_path,
+            placements,
+            output_layer=layer_config,
+        )
         _log_event(
             logging.INFO,
             "cad_worker_apply_complete",

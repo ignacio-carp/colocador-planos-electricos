@@ -4,6 +4,7 @@ import { buildDxfObjectPath, DXF_OUTPUT_BUCKET } from './dxfStorage'
 import { insertFileRow } from './filesStore'
 import { PIPELINE_CONTRACT_VERSION } from './pipelineContracts'
 import { resolveActiveNormativeRulesVersion } from './normativeRules'
+import { US009_OUTPUT_LAYER } from './cadGeneration'
 import {
   assertValidCadGenerationInput,
   assertValidNormativeInferenceOutput,
@@ -137,18 +138,21 @@ export type StubCadArtifacts = {
 }
 
 /**
- * US-009 — CAD generation input bridging DWG blob + normative result; validates against cad-generation-input.json.
+ * US-009 — CAD generation input bridging source DXF + normative result; validates against cad-generation-input.json.
  */
-export function buildStubCadGenerationInput(params: {
+export function buildCadGenerationInput(params: {
   jobId: string
   ownerUserId: string
   correlationId: string
   visionOutput: VisionLayoutOutputDoc
   normativeOutput: NormativeInferenceOutputDoc
+  inputObjectPath: string
+  inputChecksumSha256: string
 }): StubCadArtifacts {
-  const inputFileId = deterministicUuid(params.jobId, 'dxf-input')
-  const objectPath = buildDxfObjectPath(params.ownerUserId, params.jobId, inputFileId)
-  const checksum = deterministicHex(`${params.ownerUserId}|${params.jobId}|dxf-source`, 32)
+  const checksum = params.inputChecksumSha256.trim().toLowerCase()
+  if (!/^[a-f0-9]{64}$/.test(checksum)) {
+    throw new Error('inputChecksumSha256 must be a 64-char hex SHA-256 digest')
+  }
 
   const interpretation = params.visionOutput.layout_interpretation
   const nr = params.normativeOutput
@@ -170,15 +174,15 @@ export function buildStubCadGenerationInput(params: {
     story_id: 'US-009',
     feature_key: 'cad.layer_output',
     dwg: {
-      storage_path: objectPath,
+      storage_path: params.inputObjectPath,
       checksum_sha256: checksum,
     },
     layout_interpretation: interpretation,
     normative_result: normativeResult,
     output_layer: {
-      name: 'INSTALACION_ELECTRICA',
-      block_name: 'CAMBRE_OUTLET',
-      color_aci: 1,
+      name: US009_OUTPUT_LAYER.name,
+      block_name: US009_OUTPUT_LAYER.block_name,
+      color_aci: US009_OUTPUT_LAYER.color_aci,
     },
     output_dwg: {
       storage_path_hint: outputObjectPath,
@@ -187,6 +191,24 @@ export function buildStubCadGenerationInput(params: {
   }
   assertValidCadGenerationInput(cadInput)
   return { cadInput, outputObjectPath }
+}
+
+/** Deterministic checksum for tests when no real input file is loaded. */
+export function buildStubCadGenerationInput(params: {
+  jobId: string
+  ownerUserId: string
+  correlationId: string
+  visionOutput: VisionLayoutOutputDoc
+  normativeOutput: NormativeInferenceOutputDoc
+}): StubCadArtifacts {
+  const inputFileId = deterministicUuid(params.jobId, 'dxf-input')
+  const objectPath = buildDxfObjectPath(params.ownerUserId, params.jobId, inputFileId)
+  const checksum = deterministicHex(`${params.ownerUserId}|${params.jobId}|dxf-source`, 32)
+  return buildCadGenerationInput({
+    ...params,
+    inputObjectPath: objectPath,
+    inputChecksumSha256: checksum,
+  })
 }
 
 /**

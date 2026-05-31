@@ -30,11 +30,22 @@ export type CadWorkerApplyLayerResult = {
   input?: string
   output?: string
   layer?: string
+  block_name?: string
   outlets_added?: number
   placements_skipped_out_of_bbox?: number
   bounding_box?: { min_x: number; max_x: number; min_y: number; max_y: number }
+  source_layers_preserved?: boolean
+  output_checksum_sha256?: string
   error?: string
   code?: string
+}
+
+export type ApplyElectricalLayerOptions = {
+  outputLayer?: {
+    name: string
+    block_name?: string
+    color_aci?: number
+  }
 }
 
 export class CadWorkerError extends Error {
@@ -276,12 +287,16 @@ async function httpApplyElectricalLayer(
   inputPath: string,
   outputPath: string,
   placements: unknown[],
+  options?: ApplyElectricalLayerOptions,
 ): Promise<CadWorkerApplyLayerResult> {
   const fileName = basename(inputPath)
   const bytes = readFileSync(inputPath)
   const form = new FormData()
   form.append('file', new Blob([bytes]), fileName)
   form.append('placements_json', JSON.stringify(placements))
+  if (options?.outputLayer) {
+    form.append('output_layer_json', JSON.stringify(options.outputLayer))
+  }
 
   const response = await fetchCadWorker('/apply-electrical-layer', {
     method: 'POST',
@@ -535,32 +550,34 @@ export function extractGeometryFromDxf(inputPath: string): Promise<CadWorkerGeom
 /** @deprecated Use inspectDxfFile — platform is DXF-only. */
 export const inspectDwgFile = inspectDxfFile
 
-/** US-009 — copy input DXF and add INSTALACION_ELECTRICA from outlet_placements JSON. */
+/** US-009 — copy input DXF and add Cambre_Electrical blocks from outlet_placements JSON. */
 export async function applyElectricalLayer(
   inputPath: string,
   outputPath: string,
   placements: unknown[],
+  options?: ApplyElectricalLayerOptions,
 ): Promise<CadWorkerApplyLayerResult> {
   if (cadWorkerDisabled()) {
     return { ok: false, code: 'CAD_WORKER_DISABLED', error: 'CAD worker disabled' }
   }
 
   if (cadWorkerTransport() === 'http') {
-    return httpApplyElectricalLayer(inputPath, outputPath, placements)
+    return httpApplyElectricalLayer(inputPath, outputPath, placements, options)
   }
 
   const placementsJson = JSON.stringify(placements)
-  const parsed = await spawnCadWorkerJson(
-    [
-      'apply-electrical-layer',
-      '--input',
-      inputPath,
-      '--output',
-      outputPath,
-      '--placements-json',
-      placementsJson,
-    ],
+  const spawnArgs = [
+    'apply-electrical-layer',
+    '--input',
     inputPath,
-  )
+    '--output',
+    outputPath,
+    '--placements-json',
+    placementsJson,
+  ]
+  if (options?.outputLayer) {
+    spawnArgs.push('--output-layer-json', JSON.stringify(options.outputLayer))
+  }
+  const parsed = await spawnCadWorkerJson(spawnArgs, inputPath)
   return parsed as CadWorkerApplyLayerResult
 }

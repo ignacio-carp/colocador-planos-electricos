@@ -7,6 +7,7 @@ from pathlib import Path
 
 import ezdxf
 
+from cad_worker.constants import LEGACY_ELECTRICAL_LAYER_NAME, OUTPUT_ELECTRICAL_LAYER_NAME
 from cad_worker.dxf_io import open_dxf_file
 
 INVALID_DXF_CODE = "CAD_WORKER_INVALID_DXF"
@@ -29,8 +30,9 @@ def inspect_dxf_file(path: Path) -> dict[str, object]:
         "layers": layers[:50],
         "entity_count": sum(entity_types.values()),
         "entity_types": entity_types,
-        "has_instalacion_electrica_layer": "INSTALACION_ELECTRICA" in layers,
-        "has_cambre_electrical_layer": "Cambre_Electrical" in layers,
+        "has_instalacion_electrica_layer": LEGACY_ELECTRICAL_LAYER_NAME in layers
+        or OUTPUT_ELECTRICAL_LAYER_NAME in layers,
+        "has_cambre_electrical_layer": OUTPUT_ELECTRICAL_LAYER_NAME in layers,
     }
 
 

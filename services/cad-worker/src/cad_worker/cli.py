@@ -64,7 +64,7 @@ def main(argv: list[str] | None = None) -> None:
 
     p_layer = subparsers.add_parser(
         "apply-electrical-layer",
-        help="Copy input DXF and add INSTALACION_ELECTRICA outlets from JSON placements.",
+        help="Copy input DXF and add Cambre_Electrical outlet blocks from JSON placements.",
     )
     p_layer.add_argument("--input", required=True)
     p_layer.add_argument("--output", required=True)
@@ -72,6 +72,11 @@ def main(argv: list[str] | None = None) -> None:
         "--placements-json",
         required=True,
         help="JSON array of outlet_placements, nuevas_tomas, or wrapper object",
+    )
+    p_layer.add_argument(
+        "--output-layer-json",
+        default=None,
+        help='Optional JSON: {"name":"Cambre_Electrical","block_name":"CAMBRE_OUTLET","color_aci":3}',
     )
 
     args = parser.parse_args(argv)
@@ -85,7 +90,9 @@ def main(argv: list[str] | None = None) -> None:
     if args.command == "extract-geometry":
         raise SystemExit(extract_geometry_cmd(args.input))
     if args.command == "apply-electrical-layer":
-        raise SystemExit(apply_layer_cmd(args.input, args.output, args.placements_json))
+        raise SystemExit(
+            apply_layer_cmd(args.input, args.output, args.placements_json, args.output_layer_json),
+        )
 
     raise SystemExit(2)
 
