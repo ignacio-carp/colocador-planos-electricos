@@ -104,3 +104,26 @@ def test_apply_electrical_layer_header_serialization_does_not_500(
 
     assert response.status_code == 200
     assert response.headers.get("x-cad-worker-result")
+
+
+def test_apply_electrical_layer_header_encode_failure_is_non_fatal(
+    client: TestClient,
+    sample_dxf: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    server = importlib.import_module("cad_worker_server")
+
+    def boom(_result: dict[str, object]) -> tuple[str, dict[str, str]]:
+        raise UnicodeEncodeError("ascii", "áé", 0, 2, "ordinal not in range(128)")
+
+    monkeypatch.setattr(server, "encode_result_header", boom)
+
+    with sample_dxf.open("rb") as handle:
+        response = client.post(
+            "/apply-electrical-layer",
+            files={"file": ("sample.dxf", handle, "application/octet-stream")},
+            data={"placements_json": "[]"},
+        )
+
+    assert response.status_code == 200
+    assert response.headers.get("x-cad-worker-result") is None
