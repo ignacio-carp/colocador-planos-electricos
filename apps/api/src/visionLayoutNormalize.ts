@@ -238,23 +238,29 @@ export function normalizeLayoutInterpretation(raw: unknown): Record<string, unkn
 
 /** Compact contract excerpt for LLM system prompts (US-007). */
 export function visionLayoutInterpretationPromptSpec(): string {
-  return `layout_interpretation MUST follow this exact shape (no extra keys at any level):
+  return `Return a JSON object with ONLY these top-level keys (optional confidence / warnings allowed):
 {
-  "coordinate_system": "drawing_origin_bottom_left" | "drawing_origin_top_left",
-  "scale": { "pixels_per_meter": number, "known": boolean },
-  "rooms": [{
-    "id": "room-<lowercase-slug>",
-    "label": "human readable name",
-    "room_type": "living"|"bedroom"|"kitchen"|"bathroom"|"hallway"|"office"|"storage"|"other"|"unknown",
-    "polygon": { "vertices": [{ "x": number, "y": number, "unit": "drawing_units" }] },
-    "area_m2": number
-  }],
-  "walls": [{ "id": string, "start": { "x", "y" }, "end": { "x", "y" }, "is_exterior": boolean }],
-  "openings": [{ "id": string, "kind": "door"|"window"|"opening", "center": { "x", "y" }, "width_mm": number }]
+  "layout_interpretation": {
+    "coordinate_system": "drawing_origin_bottom_left" | "drawing_origin_top_left",
+    "rooms": [{
+      "id": "room-<lowercase-slug>",
+      "label": "human readable name",
+      "room_type": "living"|"bedroom"|"kitchen"|"bathroom"|"hallway"|"office"|"storage"|"other"|"unknown",
+      "polygon": { "vertices": [{ "x": number, "y": number, "unit": "drawing_units" }] },
+      "area_m2": number
+    }],
+    "walls": [{ "id": string, "start": { "x", "y" }, "end": { "x", "y" }, "is_exterior": boolean }],
+    "openings": [{ "id": string, "kind": "door"|"window"|"opening", "center": { "x", "y" }, "width_mm": number }]
+  },
+  "confidence": { "overall": number, "scale_detected": boolean },
+  "warnings": ["string"]
 }
 Rules:
+- Infer rooms from geometry_extract.paredes (wall segments) and geometry_extract.etiquetas_texto (room names).
+- Use cad_inspect.layers only as hints for layer naming; do not invent scale without evidence.
 - room id pattern: ^room-[a-z0-9-]+$
 - Use "label" (NOT name), "area_m2" (NOT area_sq_m), polygon.vertices (NOT GeoJSON coordinates/type).
 - Wall/opening points are objects {x,y}, NOT [x,y] arrays.
-- Do NOT include drawing_units, scale_factor, layer, name, category, or GeoJSON fields.`
+- Omit layout_interpretation.scale unless you can justify it from the input.
+- Do NOT return contract_version, job_id, correlation_id, story_id, provider, or completed_at.`
 }

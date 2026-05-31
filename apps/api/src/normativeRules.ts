@@ -7,10 +7,25 @@ export type NormativeRulesManifest = {
   versions: { version: string; path: string; description?: string }[]
 }
 
+export type NormativeRule = {
+  id: string
+  summary: string
+  applies_to_room_types?: string[]
+  min_outlets_per_room?: number
+  spacing_along_wall_m?: number
+  clearance_from_opening_m?: number
+  outlet_type?: string
+  height_mm?: number
+  mounting?: string
+  notes?: string
+}
+
 export type NormativeRulesBundle = {
   version: string
   title?: string
-  rules: { id: string; summary: string }[]
+  jurisdiction_note?: string
+  defaults?: Record<string, unknown>
+  rules: NormativeRule[]
 }
 
 let cachedManifest: NormativeRulesManifest | null = null

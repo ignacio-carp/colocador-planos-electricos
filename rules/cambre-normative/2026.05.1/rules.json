@@ -1,10 +1,77 @@
 {
   "version": "cambre-normative-2026.05.1",
-  "title": "Cambre normative rules (MVP stub)",
+  "title": "Cambre — reglas MVP tomas de luz (vivienda)",
+  "jurisdiction_note": "Borrador operativo para el pipeline MVP. Validar con normativa oficial aplicable (IRAM, AEA, reglamentos locales) antes de producción comercial.",
+  "defaults": {
+    "outlet_type": "standard",
+    "mounting": "wall",
+    "height_mm": 300,
+    "position_unit": "drawing_units"
+  },
   "rules": [
     {
-      "id": "RULE-STUB-ELEC-ROOM",
-      "summary": "At least one standard wall outlet per interpreted room (MVP stub)."
+      "id": "RULE-ROOM-MIN-OUTLET",
+      "summary": "Cada ambiente habitable interpretado debe tener al menos una toma estándar en pared.",
+      "applies_to_room_types": ["living", "bedroom", "kitchen", "bathroom", "office", "storage", "other"],
+      "min_outlets_per_room": 1,
+      "outlet_type": "standard",
+      "height_mm": 300
+    },
+    {
+      "id": "RULE-LIVING-DENSITY",
+      "summary": "En living/salón: mínimo 2 tomas; si el perímetro útil supera ~12 m, agregar una toma adicional cada ~6 m de pared habitable.",
+      "applies_to_room_types": ["living"],
+      "min_outlets_per_room": 2,
+      "spacing_along_wall_m": 6,
+      "outlet_type": "standard",
+      "height_mm": 300
+    },
+    {
+      "id": "RULE-BEDROOM-MIN",
+      "summary": "En dormitorios: mínimo 2 tomas en paredes distintas cuando el polígono lo permita.",
+      "applies_to_room_types": ["bedroom"],
+      "min_outlets_per_room": 2,
+      "outlet_type": "standard",
+      "height_mm": 300
+    },
+    {
+      "id": "RULE-KITCHEN-COUNTER",
+      "summary": "En cocina: mínimo 2 tomas sobre línea de mesada/trabajo; preferir toma dedicada cerca de heladera/horno (dedicated_appliance) si el layout lo sugiere.",
+      "applies_to_room_types": ["kitchen"],
+      "min_outlets_per_room": 2,
+      "outlet_type": "standard",
+      "height_mm": 1100,
+      "notes": "Altura sobre mesada típica; bajar a 300 mm en muro sin mesada."
+    },
+    {
+      "id": "RULE-BATHROOM-ZONE",
+      "summary": "En baño: al menos 1 toma; ubicar lejos de ducha/bañera y de pileta (no dentro de zonas húmedas). Preferir pared exterior o junto a vanitory.",
+      "applies_to_room_types": ["bathroom"],
+      "min_outlets_per_room": 1,
+      "outlet_type": "standard",
+      "height_mm": 1100,
+      "notes": "MVP: marcar warning si no hay separación clara de zona húmeda."
+    },
+    {
+      "id": "RULE-HALLWAY-SPACING",
+      "summary": "En pasillos/circulaciones (hallway): 1 toma cada ~5 m de recorrido de pared, mínimo 1 si longitud > 3 m.",
+      "applies_to_room_types": ["hallway"],
+      "min_outlets_per_room": 1,
+      "spacing_along_wall_m": 5,
+      "outlet_type": "standard",
+      "height_mm": 300
+    },
+    {
+      "id": "RULE-WALL-HEIGHT-DEFAULT",
+      "summary": "Tomas en pared: cota 300 mm desde piso terminado salvo cocina sobre mesada (1100 mm) o baño junto a vanitory (1100 mm).",
+      "applies_to_room_types": ["living", "bedroom", "kitchen", "bathroom", "hallway", "office", "storage", "other"],
+      "height_mm": 300
+    },
+    {
+      "id": "RULE-AVOID-OPENINGS",
+      "summary": "No colocar tomas en vanos de puertas/ventanas ni a menos de ~0.15 m de marco de abertura cuando openings estén disponibles.",
+      "applies_to_room_types": ["living", "bedroom", "kitchen", "bathroom", "hallway", "office", "storage", "other"],
+      "clearance_from_opening_m": 0.15
     }
   ]
 }

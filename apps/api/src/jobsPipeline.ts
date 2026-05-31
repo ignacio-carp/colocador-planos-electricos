@@ -310,8 +310,11 @@ export async function runJobPipeline(jobId: string, correlationId: string): Prom
     lastExecutedStep = 'vision_layout'
     let visionResult: ReturnType<typeof buildStubVisionLayoutOutput> | undefined
     await runTimedStep(jobId, correlationId, 'vision_layout', async () => {
-      if (pipelineMode === 'live' && cadInspectForVision) {
-        visionResult = await buildLiveVisionLayoutOutput(jobId, correlationId, cadInspectForVision)
+      if (pipelineMode === 'live' && (cadInspectForVision || geometryExtract)) {
+        visionResult = await buildLiveVisionLayoutOutput(jobId, correlationId, {
+          cadInspect: cadInspectForVision,
+          geometryExtract,
+        })
         logStructured('info', {
           event: 'pipeline_us007_live',
           job_id: jobId,

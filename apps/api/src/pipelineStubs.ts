@@ -119,7 +119,7 @@ export function buildStubNormativeInferenceOutput(
         mounting: 'wall',
         height_mm: 300,
         rationale: 'MVP deterministic stub outlet',
-        rule_ids: ['RULE-STUB-ELEC-ROOM'],
+        rule_ids: ['RULE-ROOM-MIN-OUTLET'],
       },
     ],
     warnings: [] as string[],

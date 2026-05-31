@@ -1,15 +1,14 @@
-import { readFileSync } from 'node:fs'
-import { join } from 'node:path'
 import { logStructured } from './logger'
 import { PIPELINE_CONTRACT_VERSION } from './pipelineContracts'
 import {
   assertValidNormativeInferenceOutput,
   assertValidVisionLayoutOutput,
 } from './pipelineSchemaValidation'
+import { slimCadInspectForLlm, slimGeometryExtractForLlm } from './llmContext'
 import { openaiChatJsonObject } from './openaiClient'
+import { normativeOutletPlacementsPromptSpec } from './normativePromptSpec'
 import { contractProviderName, normativeTimeoutMs, visionModel, visionTimeoutMs } from './pipelineMode'
-import { repoRootDirectory } from './pipelinePackageRoot'
-import { resolveActiveNormativeRulesVersion } from './normativeRules'
+import { loadNormativeRulesBundle, resolveActiveNormativeRulesVersion } from './normativeRules'
 import {
   buildStubNormativeInferenceOutput,
   buildStubVisionLayoutOutput,
@@ -22,55 +21,64 @@ import {
   visionLayoutInterpretationPromptSpec,
 } from './visionLayoutNormalize'
 
-function loadNormativeRulesSnippet(): string {
+export type LiveVisionCadContext = {
+  cadInspect?: Record<string, unknown>
+  geometryExtract?: Record<string, unknown>
+}
+
+function loadNormativeRulesForPrompt(): Record<string, unknown> {
   const version = resolveActiveNormativeRulesVersion()
-  const path = join(repoRootDirectory(), 'rules', 'cambre-normative', version, 'rules.json')
   try {
-    const raw = readFileSync(path, 'utf8')
-    return raw.slice(0, 12_000)
+    return loadNormativeRulesBundle(version) as unknown as Record<string, unknown>
   } catch {
-    return JSON.stringify({ version, note: 'rules file missing; use Cambre MVP defaults' })
+    return { version, note: 'rules file missing; apply Cambre MVP defaults from prompt' }
   }
 }
 
 /**
- * US-007 live: uses CAD inspect JSON as context (DWG→raster TBD per ADR-003).
+ * US-007 live: CAD inspect + geometry extract as context (raster TBD per ADR-003).
  */
 export async function buildLiveVisionLayoutOutput(
   jobId: string,
   correlationId: string,
-  cadInspect: Record<string, unknown>,
+  cadContext: LiveVisionCadContext,
 ): Promise<VisionLayoutOutputDoc> {
   const model = visionModel()
   const providerName = contractProviderName(model)
+
+  const cadSummary =
+    cadContext.cadInspect && typeof cadContext.cadInspect === 'object'
+      ? slimCadInspectForLlm(cadContext.cadInspect)
+      : undefined
+  const geometry =
+    cadContext.geometryExtract && typeof cadContext.geometryExtract === 'object'
+      ? slimGeometryExtractForLlm(cadContext.geometryExtract)
+      : undefined
+
   const system = `You are a CAD layout interpreter for architectural floor plans (DXF).
-Return a single JSON object for Cambre VisionLayoutOutput (US-007).
-Required top-level keys: contract_version, job_id, correlation_id, story_id ("US-007"), provider (name "${providerName}", model), layout_interpretation, completed_at (ISO8601).
-Use contract_version "${PIPELINE_CONTRACT_VERSION}".
-Infer at least one room with a closed polygon from cad_inspect entity bounds and text labels when possible.
-Coordinates are in drawing units (same space as DXF geometry).
+Infer habitable rooms as closed polygons in drawing-unit coordinates.
+Use wall segments and text labels from the user payload; match text labels to room labels when possible.
 
 ${visionLayoutInterpretationPromptSpec()}`
 
-  const user = JSON.stringify({
-    job_id: jobId,
-    correlation_id: correlationId,
-    cad_inspect: cadInspect,
-    hint: 'Produce at least one room with a closed polygon and scale if detectable.',
-  })
+  const userPayload: Record<string, unknown> = {}
+  if (cadSummary && Object.keys(cadSummary).length > 0) userPayload.cad_inspect = cadSummary
+  if (geometry) userPayload.geometry_extract = geometry
 
   const raw = await openaiChatJsonObject({
     model,
     system,
-    user,
+    user: JSON.stringify(userPayload),
     timeoutMs: visionTimeoutMs(),
     jobId,
     correlationId,
     step: 'vision_layout',
   })
 
+  const layoutRaw =
+    raw.layout_interpretation !== undefined ? raw.layout_interpretation : raw
+
   const doc: VisionLayoutOutputDoc = {
-    ...raw,
     contract_version: PIPELINE_CONTRACT_VERSION,
     job_id: jobId,
     correlation_id: correlationId,
@@ -78,15 +86,17 @@ ${visionLayoutInterpretationPromptSpec()}`
     provider: {
       name: providerName,
       model,
-      request_id: typeof (raw.provider as { request_id?: string })?.request_id === 'string'
-        ? (raw.provider as { request_id: string }).request_id
-        : `live-vision-${correlationId.slice(0, 8)}`,
+      request_id: `live-vision-${correlationId.slice(0, 8)}`,
     },
-    layout_interpretation: normalizeLayoutInterpretation(raw.layout_interpretation),
-    completed_at:
-      typeof raw.completed_at === 'string'
-        ? raw.completed_at
-        : deterministicCompletedAt(jobId, correlationId, 'us007'),
+    layout_interpretation: normalizeLayoutInterpretation(layoutRaw),
+    completed_at: deterministicCompletedAt(jobId, correlationId, 'us007'),
+  }
+
+  if (raw.confidence && typeof raw.confidence === 'object') {
+    doc.confidence = raw.confidence
+  }
+  if (Array.isArray(raw.warnings)) {
+    doc.warnings = raw.warnings.filter((w): w is string => typeof w === 'string')
   }
 
   try {
@@ -112,16 +122,17 @@ export async function buildLiveNormativeInferenceOutput(
 ): Promise<NormativeInferenceOutputDoc> {
   const model = visionModel()
   const rulesVersion = resolveActiveNormativeRulesVersion()
-  const rulesSnippet = loadNormativeRulesSnippet()
+  const rules = loadNormativeRulesForPrompt()
 
   const system = `You are an electrical code assistant for Cambre lighting outlet placement.
-Return JSON for NormativeInferenceOutput: contract_version, job_id, correlation_id, story_id ("US-008"), normative_rules_version, outlet_placements[], warnings[], completed_at.
-contract_version must be "${PIPELINE_CONTRACT_VERSION}".
-normative_rules_version must be "${rulesVersion}".`
+Apply the normative rules bundle to the supplied layout_interpretation.
+Place outlets at wall-accessible coordinates inside each affected room.
+
+${normativeOutletPlacementsPromptSpec()}`
 
   const user = JSON.stringify({
     layout_interpretation: visionOutput.layout_interpretation,
-    rules: rulesSnippet,
+    rules,
   })
 
   const raw = await openaiChatJsonObject({
@@ -135,16 +146,20 @@ normative_rules_version must be "${rulesVersion}".`
   })
 
   const doc: NormativeInferenceOutputDoc = {
-    ...raw,
     contract_version: PIPELINE_CONTRACT_VERSION,
     job_id: jobId,
     correlation_id: correlationId,
     story_id: 'US-008',
     normative_rules_version: rulesVersion,
-    completed_at:
-      typeof raw.completed_at === 'string'
-        ? raw.completed_at
-        : deterministicCompletedAt(jobId, correlationId, 'us008'),
+    outlet_placements: raw.outlet_placements,
+    completed_at: deterministicCompletedAt(jobId, correlationId, 'us008'),
+  }
+
+  if (Array.isArray(raw.warnings)) {
+    doc.warnings = raw.warnings.filter((w): w is string => typeof w === 'string')
+  }
+  if (Array.isArray(raw.conflicts_resolved)) {
+    doc.conflicts_resolved = raw.conflicts_resolved
   }
 
   try {
