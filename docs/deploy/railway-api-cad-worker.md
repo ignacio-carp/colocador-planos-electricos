@@ -168,6 +168,20 @@ Filtra por `correlation_id` (viene en la respuesta de error del job o en headers
 
 ## 5. Problemas frecuentes
 
+### 500 en `/apply-electrical-layer` (NameError / `json`)
+
+- Bug conocido (commit `4bf1dbc`): se eliminó `import json` de `cad_worker_server.py` al refactorizar logging Unicode.
+- **Síntoma:** solo `/apply-electrical-layer` devuelve 500; `/healthz`, `/inspect` y `/extract-geometry` siguen en 200.
+- **Fix:** commit `faf6d63` y posteriores (import explícito `from json import …`).
+- **Importante:** un push a `main` que despliega la **API** no actualiza el servicio **cad-worker**. En Railway → servicio cad-worker → **Redeploy** (o verifica que el watch path / root directory sea `services/cad-worker`).
+- Verifica local: `./scripts/run-cad-worker.sh` y `curl http://127.0.0.1:8000/healthz`.
+
+### 500 en todos los endpoints del worker
+
+- Build/arranque fallido: falta `pip install -e .` (error `No module named 'cad_worker'` al importar).
+- Root Directory incorrecto en Railway (debe ser `services/cad-worker`).
+- Usa `services/cad-worker/railway.toml` como referencia de `startCommand` y healthcheck.
+
 ### `cad_worker_transport: "spawn"` en producción
 
 - Falta `CAD_WORKER_URL` en el servicio **api** de Railway.

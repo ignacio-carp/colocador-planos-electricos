@@ -1,17 +1,79 @@
-"""Regression tests for cad_worker_server module wiring."""
+"""Regression tests for cad_worker_server module wiring and HTTP endpoints."""
 
 from __future__ import annotations
 
 import importlib
-import json
+from json import JSONDecodeError
+from json import loads as json_loads
+from pathlib import Path
 
+import ezdxf
 import pytest
+from fastapi.testclient import TestClient
 
 
-def test_cad_worker_server_imports_json_for_apply_layer() -> None:
-    """apply_layer uses json.loads and json.JSONDecodeError — must not be removed."""
+@pytest.fixture
+def client() -> TestClient:
     server = importlib.import_module("cad_worker_server")
-    assert server.json is json
-    assert server.json.loads("[]") == []
-    with pytest.raises(json.JSONDecodeError):
-        server.json.loads("not-json")
+    return TestClient(server.app)
+
+
+@pytest.fixture
+def sample_dxf(tmp_path: Path) -> Path:
+    path = tmp_path / "sample.dxf"
+    doc = ezdxf.new()
+    doc.modelspace().add_line((0, 0), (1000, 0))
+    doc.saveas(path)
+    return path
+
+
+def test_cad_worker_server_json_helpers_for_apply_layer() -> None:
+    """apply_layer uses json.loads and JSONDecodeError — must not be removed."""
+    server = importlib.import_module("cad_worker_server")
+    assert server.json_loads is json_loads
+    assert server.JSONDecodeError is JSONDecodeError
+    assert server.json_loads("[]") == []
+    with pytest.raises(JSONDecodeError):
+        server.json_loads("not-json")
+
+
+def test_healthz(client: TestClient) -> None:
+    response = client.get("/healthz")
+    assert response.status_code == 200
+    assert response.json() == {"status": "ok", "service": "cad-worker"}
+
+
+def test_inspect(client: TestClient, sample_dxf: Path) -> None:
+    with sample_dxf.open("rb") as handle:
+        response = client.post(
+            "/inspect",
+            files={"file": ("sample.dxf", handle, "application/octet-stream")},
+        )
+    assert response.status_code == 200
+    body = response.json()
+    assert body.get("ok") is True
+    assert body.get("entity_count", 0) >= 1
+
+
+def test_extract_geometry(client: TestClient, sample_dxf: Path) -> None:
+    with sample_dxf.open("rb") as handle:
+        response = client.post(
+            "/extract-geometry",
+            files={"file": ("sample.dxf", handle, "application/octet-stream")},
+        )
+    assert response.status_code == 200
+    body = response.json()
+    assert body.get("ok") is True
+    assert "paredes" in body
+
+
+def test_apply_electrical_layer(client: TestClient, sample_dxf: Path) -> None:
+    with sample_dxf.open("rb") as handle:
+        response = client.post(
+            "/apply-electrical-layer",
+            files={"file": ("sample.dxf", handle, "application/octet-stream")},
+            data={"placements_json": "[]"},
+        )
+    assert response.status_code == 200
+    assert response.headers.get("content-type", "").startswith("application/dxf")
+    assert response.headers.get("x-cad-worker-result")

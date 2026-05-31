@@ -1,9 +1,10 @@
 from __future__ import annotations
 
-import json
 import logging
 import sys
 import time
+from json import JSONDecodeError
+from json import loads as json_loads
 from pathlib import Path
 from tempfile import NamedTemporaryFile
 
@@ -129,7 +130,7 @@ async def apply_layer(
         output_path = Path(output_tmp.name)
 
     try:
-        placements_raw = json.loads(placements_json)
+        placements_raw = json_loads(placements_json)
         placements: list[dict[str, object]] = []
         if isinstance(placements_raw, list):
             placements = placements_raw
@@ -164,7 +165,7 @@ async def apply_layer(
     except ezdxf.DXFStructureError as exc:
         _cleanup_paths(input_path, output_path)
         raise _http_error(400, INVALID_DXF_CODE, str(exc)) from exc
-    except json.JSONDecodeError as exc:
+    except JSONDecodeError as exc:
         _cleanup_paths(input_path, output_path)
         raise _http_error(400, "CAD_WORKER_INVALID_JSON", str(exc)) from exc
     except Exception as exc:  # noqa: BLE001
