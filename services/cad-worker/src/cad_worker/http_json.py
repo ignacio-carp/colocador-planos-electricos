@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import base64
 import json
-from typing import Any
 
 CAD_WORKER_RESULT_ENCODING_HEADER = "X-Cad-Worker-Result-Encoding"
 

@@ -25,5 +25,8 @@ def save_dxf_file(doc: Drawing, file_path: str | Path) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     encoding = getattr(doc, "output_encoding", None)
     if not encoding:
-        encoding = "utf-8" if doc.dxfversion >= "AC1021" else getattr(doc, "encoding", None) or "cp1252"
+        if doc.dxfversion >= "AC1021":
+            encoding = "utf-8"
+        else:
+            encoding = getattr(doc, "encoding", None) or "cp1252"
     doc.saveas(str(path), encoding=encoding)
