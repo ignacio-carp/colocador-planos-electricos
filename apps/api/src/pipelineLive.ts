@@ -1,5 +1,6 @@
 import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
+import { logStructured } from './logger'
 import { PIPELINE_CONTRACT_VERSION } from './pipelineContracts'
 import {
   assertValidNormativeInferenceOutput,
@@ -16,6 +17,10 @@ import {
   type NormativeInferenceOutputDoc,
   type VisionLayoutOutputDoc,
 } from './pipelineStubs'
+import {
+  normalizeLayoutInterpretation,
+  visionLayoutInterpretationPromptSpec,
+} from './visionLayoutNormalize'
 
 function loadNormativeRulesSnippet(): string {
   const version = resolveActiveNormativeRulesVersion()
@@ -38,11 +43,14 @@ export async function buildLiveVisionLayoutOutput(
 ): Promise<VisionLayoutOutputDoc> {
   const model = visionModel()
   const providerName = contractProviderName(model)
-  const system = `You are a CAD layout interpreter for architectural DWG files.
-Return a single JSON object that satisfies the VisionLayoutOutput contract for Cambre MVP.
+  const system = `You are a CAD layout interpreter for architectural floor plans (DXF).
+Return a single JSON object for Cambre VisionLayoutOutput (US-007).
 Required top-level keys: contract_version, job_id, correlation_id, story_id ("US-007"), provider (name "${providerName}", model), layout_interpretation, completed_at (ISO8601).
 Use contract_version "${PIPELINE_CONTRACT_VERSION}".
-Infer rooms/polygons from entity bounds when possible; use drawing_units.`
+Infer at least one room with a closed polygon from cad_inspect entity bounds and text labels when possible.
+Coordinates are in drawing units (same space as DXF geometry).
+
+${visionLayoutInterpretationPromptSpec()}`
 
   const user = JSON.stringify({
     job_id: jobId,
@@ -74,14 +82,26 @@ Infer rooms/polygons from entity bounds when possible; use drawing_units.`
         ? (raw.provider as { request_id: string }).request_id
         : `live-vision-${correlationId.slice(0, 8)}`,
     },
+    layout_interpretation: normalizeLayoutInterpretation(raw.layout_interpretation),
     completed_at:
       typeof raw.completed_at === 'string'
         ? raw.completed_at
         : deterministicCompletedAt(jobId, correlationId, 'us007'),
   }
 
-  assertValidVisionLayoutOutput(doc)
-  return doc
+  try {
+    assertValidVisionLayoutOutput(doc)
+    return doc
+  } catch (e) {
+    const message = e instanceof Error ? e.message : String(e)
+    logStructured('warn', {
+      event: 'pipeline_us007_live_validation_failed',
+      job_id: jobId,
+      correlation_id: correlationId,
+      error: message.slice(0, 500),
+    })
+    return buildLiveVisionFallback(jobId, correlationId)
+  }
 }
 
 /** US-008 live: normative outlet placements from vision output + rules repo. */
