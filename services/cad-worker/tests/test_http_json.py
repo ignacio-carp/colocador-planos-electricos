@@ -22,3 +22,19 @@ def test_encode_result_header_is_ascii() -> None:
     meta = apply_layer_header_metadata(result)
     assert decoded == meta
     assert decoded["outlets_added"] == 2
+
+
+def test_encode_result_header_handles_non_json_values() -> None:
+    class LayerToken:
+        def __str__(self) -> str:
+            return "INSTALACIÓN_ELÉCTRICA"
+
+    result = {
+        "ok": True,
+        "layer": LayerToken(),
+        "outlets_added": 1,
+    }
+    token, _extra = encode_result_header(result)
+    decoded = json.loads(base64.b64decode(token).decode("ascii"))
+    assert decoded["layer"] == "INSTALACIÓN_ELÉCTRICA"
+    assert decoded["outlets_added"] == 1
