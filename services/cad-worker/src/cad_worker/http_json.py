@@ -30,9 +30,10 @@ def apply_layer_header_metadata(result: dict[str, object]) -> dict[str, object]:
 
 def encode_result_header(result: dict[str, object]) -> tuple[str, dict[str, str]]:
     """
-    HTTP headers must be ASCII. Use base64(utf-8 json) so metadata can include
-    any characters from upstream DXF / placements without codec errors.
+    HTTP headers must be ASCII. Encode base64(ascii-safe json) so metadata can
+    include Unicode (escaped) and non-JSON-native values without 500s.
     """
-    raw = json.dumps(apply_layer_header_metadata(result), ensure_ascii=False).encode("utf-8")
+    # Reuse the worker's safe serializer: ASCII-only payload + default=str.
+    raw = dumps_ascii_safe(apply_layer_header_metadata(result)).encode("ascii")
     token = base64.b64encode(raw).decode("ascii")
     return token, {CAD_WORKER_RESULT_ENCODING_HEADER: "base64-utf-8"}

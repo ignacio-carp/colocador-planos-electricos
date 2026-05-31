@@ -77,3 +77,30 @@ def test_apply_electrical_layer(client: TestClient, sample_dxf: Path) -> None:
     assert response.status_code == 200
     assert response.headers.get("content-type", "").startswith("application/dxf")
     assert response.headers.get("x-cad-worker-result")
+
+
+def test_apply_electrical_layer_header_serialization_does_not_500(
+    client: TestClient,
+    sample_dxf: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    server = importlib.import_module("cad_worker_server")
+
+    class LayerToken:
+        def __str__(self) -> str:
+            return "INSTALACIÓN_ELÉCTRICA"
+
+    def fake_apply(*_args: object, **_kwargs: object) -> dict[str, object]:
+        return {"ok": True, "layer": LayerToken(), "outlets_added": 0}
+
+    monkeypatch.setattr(server, "apply_electrical_layer", fake_apply)
+
+    with sample_dxf.open("rb") as handle:
+        response = client.post(
+            "/apply-electrical-layer",
+            files={"file": ("sample.dxf", handle, "application/octet-stream")},
+            data={"placements_json": "[]"},
+        )
+
+    assert response.status_code == 200
+    assert response.headers.get("x-cad-worker-result")
