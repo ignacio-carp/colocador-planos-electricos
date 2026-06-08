@@ -4,11 +4,14 @@ import { normalizeJobStatus } from './jobStatus'
 
 export type QueueMessageStatus = 'queued' | 'processing' | 'done' | 'failed'
 
+export type QueueRunType = 'full_pipeline' | 'preliminary_analysis'
+
 export type QueueMessage = {
   id: string
   job_id: string
   correlation_id: string
   status: QueueMessageStatus
+  run_type: QueueRunType
   attempts: number
   locked_at: string | null
   created_at: string
@@ -23,11 +26,11 @@ function nowIso(): string {
 
 /** Terminal job states — do not enqueue again. */
 function jobIsTerminal(status: JobStatus): boolean {
-  return status === 'procesado' || status === 'error'
+  return status === 'procesado' || status === 'listo_para_editar' || status === 'error'
 }
 
 /**
- * Enqueue pipeline run for a job (idempotent per job_id while queued/processing).
+ * Enqueue full pipeline run for a job (idempotent per job_id while queued/processing).
  */
 export async function enqueueJobPipeline(jobId: string, correlationId: string): Promise<QueueMessage | null> {
   const job = await findJob(jobId)
@@ -47,6 +50,40 @@ export async function enqueueJobPipeline(jobId: string, correlationId: string): 
     job_id: jobId,
     correlation_id: correlationId,
     status: 'queued',
+    run_type: 'full_pipeline',
+    attempts: 0,
+    locked_at: null,
+    created_at: nowIso(),
+  }
+  queue.push(msg)
+  return msg
+}
+
+/**
+ * Enqueue preliminary analysis for a job (US-012). Idempotent per job_id while queued/processing.
+ */
+export async function enqueuePreliminaryAnalysis(
+  jobId: string,
+  correlationId: string,
+): Promise<QueueMessage | null> {
+  const job = await findJob(jobId)
+  if (!job) return null
+
+  const status = normalizeJobStatus(job.status)
+  if (jobIsTerminal(status)) return null
+  if (status === 'analizando') return null
+
+  const existing = queue.find(
+    (m) => m.job_id === jobId && (m.status === 'queued' || m.status === 'processing'),
+  )
+  if (existing) return existing
+
+  const msg: QueueMessage = {
+    id: randomUUID(),
+    job_id: jobId,
+    correlation_id: correlationId,
+    status: 'queued',
+    run_type: 'preliminary_analysis',
     attempts: 0,
     locked_at: null,
     created_at: nowIso(),

@@ -6,14 +6,20 @@ export const JOB_STATUSES: readonly JobStatus[] = [
   'procesando',
   'procesado',
   'error',
+  'analizando',
+  'listo_para_editar',
 ] as const
 
 const ALLOWED_TRANSITIONS: Record<JobStatus, readonly JobStatus[]> = {
-  pendiente: ['procesando', 'error'],
+  pendiente: ['procesando', 'analizando', 'error'],
   procesando: ['procesado', 'error'],
   procesado: [],
   /** Retry after pipeline failure (POST /api/jobs/:id/process). */
   error: ['pendiente'],
+  /** Preliminary analysis in progress → done or error. */
+  analizando: ['listo_para_editar', 'error'],
+  /** Ready to edit: full processing can be triggered (US-013). */
+  listo_para_editar: ['procesando', 'error'],
 }
 
 export class InvalidJobStatusTransitionError extends Error {
@@ -45,4 +51,9 @@ export function normalizeJobStatus(status: string | undefined): JobStatus {
   if (s === 'error') return 'error'
   if (JOB_STATUSES.includes(s as JobStatus)) return s as JobStatus
   return 'pendiente'
+}
+
+/** Returns true when a job is in a terminal state where no further pipeline runs are expected. */
+export function isTerminalJobStatus(status: JobStatus): boolean {
+  return status === 'procesado' || status === 'listo_para_editar' || status === 'error'
 }

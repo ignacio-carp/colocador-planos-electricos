@@ -7,6 +7,8 @@ import {
   fileRowStatus,
   formatJobCreatedAt,
   hasRegisteredDxfInput,
+  isAnalyzing,
+  isReadyForWorkspace,
 } from '../lib/jobPresentation'
 import { getAppRole } from '../lib/roles'
 
@@ -19,6 +21,30 @@ type Job = {
   status?: string
   created_at?: string
   error?: { code: string; message: string; correlation_id: string }
+}
+
+type Room = {
+  id?: string
+  label?: string
+  room_type?: string
+  area_m2?: number
+}
+
+type PreliminaryRecommendation = {
+  room_id: string
+  room_label: string
+  recommendations: string[]
+  outlet_count: number
+  rule_ids: string[]
+}
+
+type WorkspaceSummary = {
+  status: string
+  normative_rules_enabled: boolean
+  rooms: Room[]
+  preliminary_recommendations: PreliminaryRecommendation[]
+  normative_rules_version: string | null
+  preliminary_analysis_completed_at: string | null
 }
 
 type JobDetailProps = {
@@ -36,10 +62,27 @@ export default function JobDetail({ jobId, onNavigate }: JobDetailProps) {
   const [processing, setProcessing] = useState(false)
   const [downloading, setDownloading] = useState(false)
   const [uploadLabel, setUploadLabel] = useState<string | null>(null)
+  const [workspace, setWorkspace] = useState<WorkspaceSummary | null>(null)
+  const [togglingRules, setTogglingRules] = useState(false)
   const fileRef = useRef<HTMLInputElement>(null)
 
   const isOwner = job?.owner_user_id === session?.user.id
   const canEdit = role === 'architect' && isOwner
+
+  const loadWorkspace = useCallback(async (currentSession: typeof session) => {
+    if (!currentSession) return
+    try {
+      const res = await fetch(`${apiBase}/api/jobs/${encodeURIComponent(jobId)}/workspace`, {
+        headers: { Authorization: `Bearer ${currentSession.access_token}` },
+      })
+      if (res.ok) {
+        const data = (await res.json()) as WorkspaceSummary
+        setWorkspace(data)
+      }
+    } catch {
+      // workspace not critical — ignore
+    }
+  }, [jobId])
 
   const load = useCallback(async () => {
     if (!session) return
@@ -74,11 +117,54 @@ export default function JobDetail({ jobId, onNavigate }: JobDetailProps) {
         setHasInput(false)
       }
     }
-  }, [session, jobId, role])
+    if (
+      found &&
+      (found.status === 'listo_para_editar' || found.status === 'analizando')
+    ) {
+      await loadWorkspace(session)
+    }
+  }, [session, jobId, role, loadWorkspace])
 
   useEffect(() => {
     void load()
   }, [load])
+
+  // Poll every 2s while job is analyzing
+  useEffect(() => {
+    if (!job || !isAnalyzing(job.status)) return
+    const timer = setInterval(() => {
+      void load()
+    }, 2000)
+    return () => clearInterval(timer)
+  }, [job, load])
+
+  async function toggleNormativeRules(enabled: boolean) {
+    if (!session || !job) return
+    setTogglingRules(true)
+    try {
+      const res = await fetch(
+        `${apiBase}/api/jobs/${encodeURIComponent(job.id)}/normative-rules`,
+        {
+          method: 'PATCH',
+          headers: {
+            Authorization: `Bearer ${session.access_token}`,
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({ normative_rules_enabled: enabled }),
+        },
+      )
+      if (!res.ok) {
+        const body = (await res.json().catch(() => ({}))) as { error?: string }
+        setError(body.error ?? `HTTP ${res.status}`)
+      } else {
+        setWorkspace((prev) =>
+          prev ? { ...prev, normative_rules_enabled: enabled } : prev,
+        )
+      }
+    } finally {
+      setTogglingRules(false)
+    }
+  }
 
   async function processJob() {
     if (!session || !job) return
@@ -282,6 +368,26 @@ export default function JobDetail({ jobId, onNavigate }: JobDetailProps) {
             </p>
           ) : null}
 
+          {isAnalyzing(job.status) ? (
+            <div className="mb-6 flex items-center gap-3 rounded-xl border border-outline-variant bg-surface-container-low px-6 py-4">
+              <div className="h-5 w-5 animate-spin rounded-full border-2 border-primary border-t-transparent" />
+              <p className="text-body-sm text-on-surface-variant">
+                Analizando plano DXF… Las acciones de procesamiento estarán disponibles al finalizar.
+              </p>
+            </div>
+          ) : null}
+
+          {(isReadyForWorkspace(job.status) || (isAnalyzing(job.status) && workspace)) &&
+          workspace ? (
+            <WorkspacePanel
+              workspace={workspace}
+              jobStatus={job.status}
+              canEdit={canEdit && job.status === 'pendiente'}
+              togglingRules={togglingRules}
+              onToggleRules={(v) => void toggleNormativeRules(v)}
+            />
+          ) : null}
+
           <div className="grid grid-cols-12 gap-6">
             {canEdit ? (
               <div className="col-span-12 flex flex-col lg:col-span-4">
@@ -463,6 +569,133 @@ export default function JobDetail({ jobId, onNavigate }: JobDetailProps) {
         </>
       )}
     </AppShell>
+  )
+}
+
+function WorkspacePanel({
+  workspace,
+  jobStatus,
+  canEdit,
+  togglingRules,
+  onToggleRules,
+}: {
+  workspace: WorkspaceSummary
+  jobStatus?: string
+  canEdit: boolean
+  togglingRules: boolean
+  onToggleRules: (enabled: boolean) => void
+}) {
+  const isReady = isReadyForWorkspace(jobStatus)
+  const roomCount = workspace.rooms.length
+  const recsMap = new Map<string, PreliminaryRecommendation>()
+  for (const rec of workspace.preliminary_recommendations) {
+    recsMap.set(rec.room_id, rec)
+  }
+
+  return (
+    <div className="mb-6 overflow-hidden rounded-xl border border-outline-variant bg-surface-container-lowest shadow-sm">
+      <div className="flex flex-wrap items-center justify-between gap-4 border-b border-outline-variant bg-surface-container-low/30 px-6 py-4">
+        <h3 className="flex items-center gap-2 font-bold text-on-surface">
+          <Icon name="home_work" className="text-[20px] text-primary" />
+          Análisis preliminar del plano
+          {!isReady ? (
+            <span className="ml-2 text-technical-label font-normal text-on-surface-variant uppercase">
+              — en proceso
+            </span>
+          ) : null}
+        </h3>
+        <div className="flex items-center gap-3">
+          {workspace.normative_rules_version ? (
+            <span className="text-technical-label text-outline">
+              v{workspace.normative_rules_version}
+            </span>
+          ) : null}
+          <label className="flex cursor-pointer items-center gap-2 select-none">
+            <span className="text-body-sm text-on-surface-variant">Reglas normativas</span>
+            <button
+              type="button"
+              role="switch"
+              aria-checked={workspace.normative_rules_enabled}
+              disabled={!canEdit || togglingRules}
+              onClick={() => onToggleRules(!workspace.normative_rules_enabled)}
+              className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors focus:outline-none disabled:opacity-50 ${workspace.normative_rules_enabled ? 'bg-primary' : 'bg-surface-container-high'}`}
+            >
+              <span
+                className={`inline-block h-4 w-4 transform rounded-full bg-white shadow transition-transform ${workspace.normative_rules_enabled ? 'translate-x-6' : 'translate-x-1'}`}
+              />
+            </button>
+          </label>
+        </div>
+      </div>
+
+      <div className="px-6 py-4">
+        <p className="text-body-sm mb-4 text-on-surface-variant">
+          {roomCount === 0
+            ? 'No se detectaron habitaciones en el plano.'
+            : `${roomCount} habitación${roomCount !== 1 ? 'es' : ''} detectada${roomCount !== 1 ? 's' : ''}.`}
+        </p>
+
+        {roomCount > 0 ? (
+          <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+            {workspace.rooms.map((room, i) => {
+              const roomId = room.id ?? `room-${i}`
+              const rec = recsMap.get(roomId)
+              return (
+                <div
+                  key={roomId}
+                  className="rounded-lg border border-outline-variant bg-surface-container-low p-4"
+                >
+                  <div className="mb-2 flex items-start justify-between gap-2">
+                    <div>
+                      <p className="font-semibold text-on-surface">
+                        {room.label ?? roomId}
+                      </p>
+                      <p className="text-technical-label text-outline uppercase">
+                        {room.room_type ?? '—'}
+                        {room.area_m2 ? ` · ${room.area_m2} m²` : ''}
+                      </p>
+                    </div>
+                    {rec && rec.outlet_count > 0 ? (
+                      <span className="flex-shrink-0 rounded-full bg-primary-fixed px-2 py-0.5 text-technical-label font-semibold text-primary uppercase">
+                        {rec.outlet_count} toma{rec.outlet_count !== 1 ? 's' : ''}
+                      </span>
+                    ) : null}
+                  </div>
+                  {rec ? (
+                    <ul className="space-y-1">
+                      {rec.recommendations.map((r, ri) => (
+                        <li key={ri} className="text-body-sm text-on-surface-variant">
+                          {r}
+                        </li>
+                      ))}
+                    </ul>
+                  ) : !workspace.normative_rules_enabled ? (
+                    <p className="text-body-sm text-outline italic">
+                      Reglas normativas desactivadas.
+                    </p>
+                  ) : (
+                    <p className="text-body-sm text-outline italic">Sin recomendaciones.</p>
+                  )}
+                </div>
+              )
+            })}
+          </div>
+        ) : null}
+
+        {workspace.preliminary_analysis_completed_at ? (
+          <p className="mt-4 text-technical-label text-outline">
+            Análisis completado:{' '}
+            {new Intl.DateTimeFormat('es', {
+              year: 'numeric',
+              month: '2-digit',
+              day: '2-digit',
+              hour: '2-digit',
+              minute: '2-digit',
+            }).format(new Date(workspace.preliminary_analysis_completed_at))}
+          </p>
+        ) : null}
+      </div>
+    </div>
   )
 }
 
