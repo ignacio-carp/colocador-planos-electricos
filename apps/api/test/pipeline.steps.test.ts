@@ -2,7 +2,7 @@ import assert from 'node:assert/strict'
 import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { afterEach, beforeEach, describe, it } from 'node:test'
-import { createJob } from '../src/jobsStore'
+import { clearJobsForTests, createJob } from '../src/jobsStore'
 import { runJobPipeline } from '../src/jobsPipeline'
 import { pipelineContractsDirectory } from '../src/pipelinePackageRoot'
 import {
@@ -47,10 +47,11 @@ describe('pipeline stubs + schema validation', () => {
   })
 })
 
-describe('runJobPipeline', () => {
+describe('runJobPipeline', { concurrency: false }, () => {
   const prev = process.env.CAD_IA_SIMULATE_FAILURE
 
   beforeEach(() => {
+    clearJobsForTests()
     delete process.env.CAD_IA_SIMULATE_FAILURE
   })
 

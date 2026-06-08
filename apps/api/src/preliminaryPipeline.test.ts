@@ -1,10 +1,10 @@
 import assert from 'node:assert/strict'
 import { describe, it, beforeEach } from 'node:test'
-import { clearJobsForTests, createJob } from './jobsStore'
+import { clearJobsForTests, createJob, patchJob } from './jobsStore'
 import { clearJobQueueForTests, enqueuePreliminaryAnalysis } from './jobQueue'
 import { runPreliminaryAnalysisPipeline } from './preliminaryPipeline'
 
-describe('runPreliminaryAnalysisPipeline (stub mode)', () => {
+describe('runPreliminaryAnalysisPipeline (stub mode)', { concurrency: false }, () => {
   beforeEach(() => {
     clearJobsForTests()
     clearJobQueueForTests()
@@ -60,7 +60,6 @@ describe('runPreliminaryAnalysisPipeline (stub mode)', () => {
   it('skips US-008 when normative_rules_enabled is false', async () => {
     const job = await createJob('user-1', 'No Rules Test')
     // Pre-set normative_rules_enabled=false in metadata
-    const { patchJob } = await import('./jobsStore')
     await patchJob(job.id, {
       pipeline_metadata: { normative_rules_enabled: false },
     })
@@ -103,7 +102,7 @@ describe('runPreliminaryAnalysisPipeline (stub mode)', () => {
   })
 })
 
-describe('enqueuePreliminaryAnalysis', () => {
+describe('enqueuePreliminaryAnalysis', { concurrency: false }, () => {
   beforeEach(() => {
     clearJobsForTests()
     clearJobQueueForTests()
