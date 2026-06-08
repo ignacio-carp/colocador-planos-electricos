@@ -306,8 +306,11 @@ export async function runPreliminaryAnalysisPipeline(
     return undefined
   }
 
-  const normativeRulesEnabled =
-    job.pipeline_metadata?.normative_rules_enabled !== false
+  function isNormativeRulesEnabled(meta: JobRow['pipeline_metadata'] | undefined): boolean {
+    return meta?.normative_rules_enabled !== false
+  }
+
+  let normativeRulesEnabled = isNormativeRulesEnabled(job.pipeline_metadata)
 
   await patchJob(jobId, { status: 'analizando' })
 
@@ -433,6 +436,8 @@ export async function runPreliminaryAnalysisPipeline(
     let normativeResult: Record<string, unknown> | undefined
     let preliminaryRecommendations: PreliminaryRecommendation[] = []
 
+    normativeRulesEnabled = isNormativeRulesEnabled((await findJob(jobId))?.pipeline_metadata)
+
     if (normativeRulesEnabled) {
       lastExecutedStep = 'normative_inference'
       await runTimedStep(jobId, correlationId, 'normative_inference', async () => {
@@ -492,16 +497,22 @@ export async function runPreliminaryAnalysisPipeline(
     }
 
     const completedAt = new Date().toISOString()
+    const existingMeta = { ...((await findJob(jobId))?.pipeline_metadata ?? {}) }
+    if (!normativeRulesEnabled) {
+      delete existingMeta.outlet_placements
+      delete existingMeta.normative_rules_version
+    }
+
     const done = await patchJob(jobId, {
       status: 'listo_para_editar',
       error: undefined,
       pipeline_metadata: {
-        ...(await findJob(jobId))?.pipeline_metadata,
+        ...existingMeta,
         preliminary_recommendations: preliminaryRecommendations,
         room_processing_state: roomProcessingState,
         preliminary_analysis_completed_at: completedAt,
         normative_rules_enabled: normativeRulesEnabled,
-        ...(normativeResult
+        ...(normativeRulesEnabled && normativeResult
           ? {
               outlet_placements: (normativeResult as { outlet_placements?: unknown[] })
                 .outlet_placements,
