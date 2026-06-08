@@ -1,6 +1,7 @@
 import { logStructured } from './logger'
 import { releaseQueueMessage, claimNextQueueMessage, markQueueMessageDone, markQueueMessageFailed } from './jobQueue'
 import { runJobPipeline } from './jobsPipeline'
+import { runPreliminaryAnalysisPipeline } from './preliminaryPipeline'
 import { findJob } from './jobsStore'
 import { normalizeJobStatus } from './jobStatus'
 
@@ -35,13 +36,21 @@ async function processOneMessage(): Promise<void> {
   }
 
   const status = normalizeJobStatus(job.status)
-  if (status === 'procesado' || status === 'error') {
+  if (
+    status === 'procesado' ||
+    status === 'listo_para_editar' ||
+    status === 'error'
+  ) {
     markQueueMessageDone(msg.job_id)
     return
   }
 
   try {
-    await runJobPipeline(msg.job_id, msg.correlation_id)
+    if (msg.run_type === 'preliminary_analysis') {
+      await runPreliminaryAnalysisPipeline(msg.job_id, msg.correlation_id)
+    } else {
+      await runJobPipeline(msg.job_id, msg.correlation_id)
+    }
     markQueueMessageDone(msg.job_id)
   } catch (e) {
     const message = e instanceof Error ? e.message : String(e)

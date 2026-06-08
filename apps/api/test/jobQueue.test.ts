@@ -5,7 +5,7 @@ import { clearJobsForTests, createJob, patchJob } from '../src/jobsStore'
 import { drainPipelineQueueOnce } from '../src/pipelineWorker'
 import { findJob } from '../src/jobsStore'
 
-describe('jobQueue S-01', () => {
+describe('jobQueue S-01', { concurrency: false }, () => {
   beforeEach(() => {
     clearJobsForTests()
     clearJobQueueForTests()

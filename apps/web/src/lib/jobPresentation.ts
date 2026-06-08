@@ -53,6 +53,18 @@ export function projectStatusChip(status?: string): ProjectStatusChip {
       className: 'bg-secondary-container/80 text-on-secondary-container',
     }
   }
+  if (s === 'analizando') {
+    return {
+      label: 'Analizando…',
+      className: 'bg-secondary-container/80 text-on-secondary-container',
+    }
+  }
+  if (s === 'listo_para_editar') {
+    return {
+      label: 'Listo para editar',
+      className: 'bg-success/10 text-success',
+    }
+  }
   if (s === 'failed' || s === 'error') {
     return {
       label: 'Error',
@@ -91,6 +103,22 @@ export function fileRowStatus(jobStatus?: string, hasInput?: boolean): FileRowSt
       downloadEnabled: false,
     }
   }
+  if (s === 'analizando') {
+    return {
+      label: 'Analizando…',
+      className: 'bg-secondary-container text-on-secondary-container',
+      showProgress: true,
+      progressPct: 45,
+      downloadEnabled: false,
+    }
+  }
+  if (s === 'listo_para_editar') {
+    return {
+      label: 'Listo para editar',
+      className: 'bg-success/10 text-success',
+      downloadEnabled: false,
+    }
+  }
   if (hasInput) {
     return {
       label: 'Pendiente',
@@ -109,6 +137,17 @@ export function fileRowStatus(jobStatus?: string, hasInput?: boolean): FileRowSt
 export function canDownloadProcessedDxf(status?: string): boolean {
   const s = (status ?? '').toLowerCase()
   return s === 'completed' || s === 'procesado'
+}
+
+/** Returns true when the job has completed preliminary analysis and workspace is available. */
+export function isReadyForWorkspace(status?: string): boolean {
+  const s = (status ?? '').toLowerCase()
+  return s === 'listo_para_editar'
+}
+
+/** Returns true when preliminary analysis is in progress (disable editing). */
+export function isAnalyzing(status?: string): boolean {
+  return (status ?? '').toLowerCase() === 'analizando'
 }
 
 /** @deprecated Use canDownloadProcessedDxf */

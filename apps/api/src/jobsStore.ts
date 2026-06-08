@@ -3,7 +3,13 @@ import type { SupabaseClient } from '@supabase/supabase-js'
 import { assertJobStatusTransition } from './jobStatus'
 import { getSupabaseServiceRole, isStorageConfigured } from './supabaseService'
 
-export type JobStatus = 'pendiente' | 'procesando' | 'procesado' | 'error'
+export type JobStatus =
+  | 'pendiente'
+  | 'procesando'
+  | 'procesado'
+  | 'error'
+  | 'analizando'
+  | 'listo_para_editar'
 
 export type JobErrorPayload = {
   code: string
@@ -11,13 +17,27 @@ export type JobErrorPayload = {
   correlation_id: string
 }
 
+export type PreliminaryRecommendation = {
+  room_id: string
+  room_label: string
+  recommendations: string[]
+  outlet_count: number
+  rule_ids: string[]
+}
+
 export type JobPipelineMetadata = {
   normative_rules_version?: string
+  normative_rules_enabled?: boolean
   cad_worker_inspect?: Record<string, unknown>
   cad_worker_apply?: Record<string, unknown>
   geometry_extract?: Record<string, unknown>
   cad_generation?: Record<string, unknown>
   pipeline_mode?: string
+  vision_layout?: Record<string, unknown>
+  outlet_placements?: unknown[]
+  preliminary_recommendations?: PreliminaryRecommendation[]
+  room_processing_state?: Record<string, 'pendiente' | 'procesando' | 'procesado'>
+  preliminary_analysis_completed_at?: string
 }
 
 export type JobRow = {

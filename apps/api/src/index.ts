@@ -31,7 +31,7 @@ import {
 } from './quota'
 import { cadWorkerConfigSummary, cadWorkerTransport, probeCadWorkerOnStartup } from './cadWorkerBridge'
 import { logStructured } from './logger'
-import { enqueueJobPipeline } from './jobQueue'
+import { enqueueJobPipeline, enqueuePreliminaryAnalysis } from './jobQueue'
 import { drainPipelineQueueOnce, pipelineWorkerEnabled, startPipelineWorker } from './pipelineWorker'
 import { formatPrometheusMetrics, getMetricsSnapshot } from './metrics'
 import { correlationMiddleware } from './middleware/correlation'
@@ -155,7 +155,7 @@ app.post(
       res.status(403).json({ error: 'Forbidden', code: 'NOT_JOB_OWNER' })
       return
     }
-    if (job.status === 'procesando') {
+    if (job.status === 'procesando' || job.status === 'analizando') {
       res.status(409).json({ error: 'Job already processing' })
       return
     }
@@ -376,7 +376,7 @@ app.post(
       })
       applyDxfQuotaHeaders(res.setHeader.bind(res))
       const correlationId = req.correlationId
-      const queued = await enqueueJobPipeline(job.id, correlationId)
+      const queued = await enqueuePreliminaryAnalysis(job.id, correlationId)
       if (pipelineWorkerEnabled() && queued) {
         void drainPipelineQueueOnce()
       }
@@ -582,6 +582,102 @@ app.post(
       console.error(e)
       res.status(500).json({ error: 'Could not register output file' })
     }
+  },
+)
+
+/**
+ * US-012: workspace summary — rooms + recommendations + normative flag.
+ * Disponible cuando job está en listo_para_editar, analizando o error.
+ */
+app.get(
+  '/api/jobs/:jobId/workspace',
+  requireAuth,
+  requireArchitectOrAdmin,
+  async (req, res) => {
+    const { user } = req as AuthedRequest
+    const role = getAppRole(user)
+    if (!role) {
+      res.status(403).json({ error: 'Missing role' })
+      return
+    }
+    const jobId = typeof req.params.jobId === 'string' ? req.params.jobId : req.params.jobId?.[0]
+    if (!jobId) {
+      res.status(400).json({ error: 'Missing jobId' })
+      return
+    }
+    const job = await findJob(jobId)
+    if (!job) {
+      res.status(404).json({ error: 'Job not found' })
+      return
+    }
+    if (!assertJobAccess(user.id, role, job)) {
+      res.status(403).json({ error: 'Forbidden', code: 'NOT_JOB_OWNER' })
+      return
+    }
+
+    const meta = job.pipeline_metadata ?? {}
+    const visionLayout = meta.vision_layout as
+      | { layout_interpretation?: { rooms?: unknown[] } }
+      | undefined
+    const rooms = visionLayout?.layout_interpretation?.rooms ?? []
+
+    res.json({
+      jobId: job.id,
+      status: job.status,
+      normative_rules_enabled: meta.normative_rules_enabled !== false,
+      rooms,
+      preliminary_recommendations: meta.preliminary_recommendations ?? [],
+      room_processing_state: meta.room_processing_state ?? {},
+      preliminary_analysis_completed_at: meta.preliminary_analysis_completed_at ?? null,
+      normative_rules_version: meta.normative_rules_version ?? null,
+      outlet_placements: meta.outlet_placements ?? [],
+    })
+  },
+)
+
+/**
+ * US-012: toggle normative_rules_enabled antes del análisis.
+ * Solo permitido cuando job está en pendiente.
+ */
+app.patch(
+  '/api/jobs/:jobId/normative-rules',
+  requireAuth,
+  requireRole('architect'),
+  async (req, res) => {
+    const { user } = req as AuthedRequest
+    const jobId = typeof req.params.jobId === 'string' ? req.params.jobId : req.params.jobId?.[0]
+    if (!jobId) {
+      res.status(400).json({ error: 'Missing jobId' })
+      return
+    }
+    const job = await findJob(jobId)
+    if (!job) {
+      res.status(404).json({ error: 'Job not found' })
+      return
+    }
+    if (job.owner_user_id !== user.id) {
+      res.status(403).json({ error: 'Forbidden', code: 'NOT_JOB_OWNER' })
+      return
+    }
+    if (job.status !== 'pendiente') {
+      res.status(409).json({
+        error: 'normative_rules_enabled can only be changed when job is in pendiente state',
+        code: 'WRONG_STATUS',
+      })
+      return
+    }
+    const body = req.body as { normative_rules_enabled?: boolean }
+    if (typeof body.normative_rules_enabled !== 'boolean') {
+      res.status(400).json({ error: 'normative_rules_enabled must be a boolean' })
+      return
+    }
+    const updated = await patchJob(jobId, {
+      pipeline_metadata: {
+        ...(job.pipeline_metadata ?? {}),
+        normative_rules_enabled: body.normative_rules_enabled,
+      },
+    })
+    res.json({ jobId, normative_rules_enabled: body.normative_rules_enabled, job: updated })
   },
 )
 
