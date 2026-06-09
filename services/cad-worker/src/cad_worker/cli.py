@@ -76,7 +76,10 @@ def main(argv: list[str] | None = None) -> None:
     p_layer.add_argument(
         "--output-layer-json",
         default=None,
-        help='Optional JSON: {"name":"Cambre_Electrical","block_name":"CAMBRE_OUTLET","color_aci":3}',
+        help=(
+            'Optional JSON: {"name":"Cambre_Electrical",'
+            '"block_name":"CAMBRE_OUTLET","color_aci":3}'
+        ),
     )
 
     args = parser.parse_args(argv)

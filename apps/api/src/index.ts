@@ -636,6 +636,107 @@ app.get(
 )
 
 /**
+ * US-011: payload de render 2D para el visor SVG.
+ * Disponible en listo_para_editar, parcialmente_procesado, procesado.
+ * En analizando se responde en modo degradado si hay datos parciales.
+ */
+app.get(
+  '/api/jobs/:jobId/workspace/render-data',
+  requireAuth,
+  requireArchitectOrAdmin,
+  async (req, res) => {
+    const { user } = req as AuthedRequest
+    const role = getAppRole(user)
+    if (!role) {
+      res.status(403).json({ error: 'Missing role' })
+      return
+    }
+    const jobId = typeof req.params.jobId === 'string' ? req.params.jobId : req.params.jobId?.[0]
+    if (!jobId) {
+      res.status(400).json({ error: 'Missing jobId' })
+      return
+    }
+    const job = await findJob(jobId)
+    if (!job) {
+      res.status(404).json({ error: 'Job not found' })
+      return
+    }
+    if (!assertJobAccess(user.id, role, job)) {
+      res.status(403).json({ error: 'Forbidden', code: 'NOT_JOB_OWNER' })
+      return
+    }
+
+    const renderableStatuses = new Set([
+      'listo_para_editar',
+      'parcialmente_procesado',
+      'procesado',
+      'analizando',
+    ])
+    if (!renderableStatuses.has(job.status)) {
+      res.status(409).json({
+        error: 'Render data not available in current job status',
+        code: 'WRONG_STATUS',
+        status: job.status,
+      })
+      return
+    }
+
+    const meta = job.pipeline_metadata ?? {}
+
+    const geometryExtract = meta.geometry_extract as
+      | {
+          paredes?: Array<{ inicio: { x: number; y: number }; fin: { x: number; y: number } }>
+          etiquetas_texto?: Array<{ texto: string; posicion: { x: number; y: number } }>
+        }
+      | undefined
+
+    const visionLayout = meta.vision_layout as
+      | {
+          layout_interpretation?: {
+            rooms?: Array<{
+              id?: string
+              label?: string
+              room_type?: string
+              polygon?: { vertices: Array<{ x: number; y: number }> }
+              area_m2?: number
+            }>
+            coordinate_system?: string
+            scale?: { pixels_per_meter?: number; known?: boolean }
+          }
+        }
+      | undefined
+
+    const layout = visionLayout?.layout_interpretation
+
+    const rooms = (layout?.rooms ?? [])
+      .filter(
+        (r) =>
+          r.id &&
+          Array.isArray(r.polygon?.vertices) &&
+          (r.polygon?.vertices.length ?? 0) >= 3,
+      )
+      .map((r) => ({
+        id: r.id,
+        label: r.label ?? r.id,
+        room_type: r.room_type ?? 'unknown',
+        polygon: { vertices: r.polygon!.vertices },
+        area_m2: r.area_m2 ?? null,
+      }))
+
+    res.json({
+      jobId: job.id,
+      status: job.status,
+      paredes: geometryExtract?.paredes ?? [],
+      etiquetas_texto: geometryExtract?.etiquetas_texto ?? [],
+      rooms,
+      coordinate_system: layout?.coordinate_system ?? null,
+      scale: layout?.scale ?? null,
+      room_processing_state: meta.room_processing_state ?? {},
+    })
+  },
+)
+
+/**
  * US-012: toggle normative_rules_enabled antes del análisis.
  * Solo permitido cuando job está en pendiente.
  */

@@ -8,9 +8,8 @@ from typing import Any
 
 import ezdxf
 
+from cad_worker.constants import OUTPUT_ELECTRICAL_LAYER_NAME
 from cad_worker.dxf_io import open_dxf_file
-
-from cad_worker.constants import LEGACY_ELECTRICAL_LAYER_NAME, OUTPUT_ELECTRICAL_LAYER_NAME
 
 ELECTRICAL_LAYER_NAME = OUTPUT_ELECTRICAL_LAYER_NAME
 

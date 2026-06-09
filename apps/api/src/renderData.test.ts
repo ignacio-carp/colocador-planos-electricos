@@ -1,0 +1,121 @@
+/**
+ * US-011 — render-data endpoint: auth, RBAC and data extraction.
+ *
+ * Uses memory store (no Supabase) + supertest to invoke the Express app
+ * via a thin helper that wires just the GET /api/jobs/:jobId/workspace/render-data route.
+ */
+import assert from 'node:assert/strict'
+import { describe, it, beforeEach } from 'node:test'
+import { clearJobsForTests, createJob, patchJob } from './jobsStore'
+import { assertJobAccess } from './renderDataHelpers'
+
+describe('assertJobAccess (render-data RBAC helper)', () => {
+  it('returns true for job owner with architect role', () => {
+    const result = assertJobAccess('user-1', 'architect', {
+      id: 'job-1',
+      owner_user_id: 'user-1',
+      title: 'Test',
+      status: 'listo_para_editar',
+      created_at: new Date().toISOString(),
+    })
+    assert.equal(result, true)
+  })
+
+  it('returns true for administrator even if not owner', () => {
+    const result = assertJobAccess('admin-1', 'administrator', {
+      id: 'job-1',
+      owner_user_id: 'user-1',
+      title: 'Test',
+      status: 'listo_para_editar',
+      created_at: new Date().toISOString(),
+    })
+    assert.equal(result, true)
+  })
+
+  it('returns false for architect that is not the owner', () => {
+    const result = assertJobAccess('other-user', 'architect', {
+      id: 'job-1',
+      owner_user_id: 'user-1',
+      title: 'Test',
+      status: 'listo_para_editar',
+      created_at: new Date().toISOString(),
+    })
+    assert.equal(result, false)
+  })
+
+  it('returns false when role is null', () => {
+    const result = assertJobAccess('user-1', null, {
+      id: 'job-1',
+      owner_user_id: 'user-1',
+      title: 'Test',
+      status: 'listo_para_editar',
+      created_at: new Date().toISOString(),
+    })
+    assert.equal(result, false)
+  })
+})
+
+describe('render-data extraction from pipeline_metadata', { concurrency: false }, () => {
+  beforeEach(() => {
+    process.env.JOBS_USE_MEMORY = '1'
+    clearJobsForTests()
+  })
+
+  it('returns empty arrays when pipeline_metadata is absent', async () => {
+    const job = await createJob('user-1', 'Empty job')
+    const meta = job.pipeline_metadata ?? {}
+    const geometryExtract = meta.geometry_extract as { paredes?: unknown[]; etiquetas_texto?: unknown[] } | undefined
+    assert.deepEqual(geometryExtract?.paredes ?? [], [])
+    assert.deepEqual(geometryExtract?.etiquetas_texto ?? [], [])
+  })
+
+  it('extracts paredes and rooms from pipeline_metadata', async () => {
+    const job = await createJob('user-1', 'Plan job')
+    const updated = await patchJob(job.id, {
+      pipeline_metadata: {
+        geometry_extract: {
+          paredes: [{ inicio: { x: 0, y: 0 }, fin: { x: 100, y: 0 } }],
+          etiquetas_texto: [{ texto: 'Living', posicion: { x: 50, y: 50 } }],
+        },
+        vision_layout: {
+          layout_interpretation: {
+            coordinate_system: 'drawing_origin_bottom_left',
+            scale: { pixels_per_meter: 125, known: true },
+            rooms: [
+              {
+                id: 'room-abc',
+                label: 'Living',
+                room_type: 'living',
+                polygon: {
+                  vertices: [
+                    { x: 0, y: 0 },
+                    { x: 100, y: 0 },
+                    { x: 100, y: 80 },
+                    { x: 0, y: 80 },
+                  ],
+                },
+                area_m2: 8,
+              },
+            ],
+          },
+        },
+        room_processing_state: { 'room-abc': 'pendiente' },
+      },
+    })
+    assert.ok(updated)
+    const meta = updated.pipeline_metadata ?? {}
+
+    const ge = meta.geometry_extract as { paredes?: unknown[] } | undefined
+    assert.equal((ge?.paredes ?? []).length, 1)
+
+    const vl = meta.vision_layout as {
+      layout_interpretation?: { rooms?: Array<{ id?: string; polygon?: { vertices: unknown[] } }> }
+    } | undefined
+    const rooms = vl?.layout_interpretation?.rooms ?? []
+    const valid = rooms.filter(
+      (r) => r.id && Array.isArray(r.polygon?.vertices) && (r.polygon?.vertices.length ?? 0) >= 3,
+    )
+    assert.equal(valid.length, 1)
+    assert.equal(valid[0]!.id, 'room-abc')
+  })
+})

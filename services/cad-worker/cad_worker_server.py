@@ -13,7 +13,11 @@ from fastapi import FastAPI, File, Form, HTTPException, Request, UploadFile
 from fastapi.responses import FileResponse
 from starlette.background import BackgroundTask
 
-from cad_worker.electrical_layer import INVALID_DXF_CODE, apply_electrical_layer, parse_output_layer_config
+from cad_worker.electrical_layer import (
+    INVALID_DXF_CODE,
+    apply_electrical_layer,
+    parse_output_layer_config,
+)
 from cad_worker.extract_geometry import extract_geometry
 from cad_worker.http_json import dumps_ascii_safe, encode_result_header
 from cad_worker.inspect_dxf import inspect_dxf_file

@@ -1,6 +1,7 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react'
 import { AppShell } from '../components/AppShell'
 import { Icon } from '../components/Icon'
+import PlanViewer2D, { type RenderData } from '../components/PlanViewer2D'
 import { useAuth } from '../context/AuthContext'
 import {
   canDownloadProcessedDxf,
@@ -64,6 +65,8 @@ export default function JobDetail({ jobId, onNavigate }: JobDetailProps) {
   const [uploadLabel, setUploadLabel] = useState<string | null>(null)
   const [workspace, setWorkspace] = useState<WorkspaceSummary | null>(null)
   const [togglingRules, setTogglingRules] = useState(false)
+  const [renderData, setRenderData] = useState<RenderData | null>(null)
+  const [selectedRoomId, setSelectedRoomId] = useState<string | null>(null)
   const fileRef = useRef<HTMLInputElement>(null)
 
   const isOwner = job?.owner_user_id === session?.user.id
@@ -81,6 +84,22 @@ export default function JobDetail({ jobId, onNavigate }: JobDetailProps) {
       }
     } catch {
       // workspace not critical — ignore
+    }
+  }, [jobId])
+
+  const loadRenderData = useCallback(async (currentSession: typeof session) => {
+    if (!currentSession) return
+    try {
+      const res = await fetch(
+        `${apiBase}/api/jobs/${encodeURIComponent(jobId)}/workspace/render-data`,
+        { headers: { Authorization: `Bearer ${currentSession.access_token}` } },
+      )
+      if (res.ok) {
+        const data = (await res.json()) as RenderData
+        setRenderData(data)
+      }
+    } catch {
+      // render data not critical — ignore
     }
   }, [jobId])
 
@@ -117,13 +136,11 @@ export default function JobDetail({ jobId, onNavigate }: JobDetailProps) {
         setHasInput(false)
       }
     }
-    if (
-      found &&
-      (found.status === 'listo_para_editar' || found.status === 'analizando')
-    ) {
-      await loadWorkspace(session)
+    const renderableStatuses = ['listo_para_editar', 'parcialmente_procesado', 'procesado', 'analizando']
+    if (found && renderableStatuses.includes(found.status ?? '')) {
+      await Promise.all([loadWorkspace(session), loadRenderData(session)])
     }
-  }, [session, jobId, role, loadWorkspace])
+  }, [session, jobId, role, loadWorkspace, loadRenderData])
 
   useEffect(() => {
     void load()
@@ -377,6 +394,20 @@ export default function JobDetail({ jobId, onNavigate }: JobDetailProps) {
             </div>
           ) : null}
 
+          {renderData ? (
+            <div className="mb-6">
+              <h3 className="mb-3 flex items-center gap-2 font-bold text-on-surface">
+                <Icon name="map" className="text-[20px] text-primary" />
+                Vista 2D del plano
+              </h3>
+              <PlanViewer2D
+                data={renderData}
+                selectedRoomId={selectedRoomId}
+                onRoomClick={(id) => setSelectedRoomId((prev) => (prev === id ? null : id))}
+              />
+            </div>
+          ) : null}
+
           {(isReadyForWorkspace(job.status) || (isAnalyzing(job.status) && workspace)) &&
           workspace ? (
             <WorkspacePanel
@@ -385,6 +416,8 @@ export default function JobDetail({ jobId, onNavigate }: JobDetailProps) {
               canEdit={canEdit && job.status === 'pendiente'}
               togglingRules={togglingRules}
               onToggleRules={(v) => void toggleNormativeRules(v)}
+              selectedRoomId={selectedRoomId}
+              onSelectRoom={(id) => setSelectedRoomId((prev) => (prev === id ? null : id))}
             />
           ) : null}
 
@@ -578,12 +611,16 @@ function WorkspacePanel({
   canEdit,
   togglingRules,
   onToggleRules,
+  selectedRoomId,
+  onSelectRoom,
 }: {
   workspace: WorkspaceSummary
   jobStatus?: string
   canEdit: boolean
   togglingRules: boolean
   onToggleRules: (enabled: boolean) => void
+  selectedRoomId?: string | null
+  onSelectRoom?: (id: string) => void
 }) {
   const isReady = isReadyForWorkspace(jobStatus)
   const roomCount = workspace.rooms.length
@@ -637,13 +674,23 @@ function WorkspacePanel({
 
         {roomCount > 0 ? (
           <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-            {workspace.rooms.map((room, i) => {
+              {workspace.rooms.map((room, i) => {
               const roomId = room.id ?? `room-${i}`
               const rec = recsMap.get(roomId)
+              const isSelected = selectedRoomId === roomId
               return (
                 <div
                   key={roomId}
-                  className="rounded-lg border border-outline-variant bg-surface-container-low p-4"
+                  className={`rounded-lg border p-4 transition-colors ${isSelected ? 'border-primary bg-primary-fixed/30' : 'border-outline-variant bg-surface-container-low'} ${onSelectRoom ? 'cursor-pointer' : ''}`}
+                  onClick={() => onSelectRoom?.(roomId)}
+                  role={onSelectRoom ? 'button' : undefined}
+                  tabIndex={onSelectRoom ? 0 : undefined}
+                  onKeyDown={(e) => {
+                    if (onSelectRoom && (e.key === 'Enter' || e.key === ' ')) {
+                      e.preventDefault()
+                      onSelectRoom(roomId)
+                    }
+                  }}
                 >
                   <div className="mb-2 flex items-start justify-between gap-2">
                     <div>

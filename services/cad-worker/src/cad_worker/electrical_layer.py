@@ -41,9 +41,19 @@ def parse_output_layer_config(raw: object | None) -> OutputLayerConfig:
     layer_name = raw.get("name")
     block_name = raw.get("block_name")
     color_aci = raw.get("color_aci")
+    resolved_layer = (
+        str(layer_name)
+        if isinstance(layer_name, str) and layer_name.strip()
+        else OUTPUT_ELECTRICAL_LAYER_NAME
+    )
+    resolved_block = (
+        str(block_name)
+        if isinstance(block_name, str) and block_name.strip()
+        else DEFAULT_OUTLET_BLOCK_NAME
+    )
     return OutputLayerConfig(
-        layer_name=str(layer_name) if isinstance(layer_name, str) and layer_name.strip() else OUTPUT_ELECTRICAL_LAYER_NAME,
-        block_name=str(block_name) if isinstance(block_name, str) and block_name.strip() else DEFAULT_OUTLET_BLOCK_NAME,
+        layer_name=resolved_layer,
+        block_name=resolved_block,
         color_aci=int(color_aci) if isinstance(color_aci, int) else DEFAULT_LAYER_COLOR_ACI,
     )
 
@@ -83,8 +93,17 @@ def _ensure_outlet_block(doc: Drawing, block_name: str, color_aci: int) -> None:
         return
     block = doc.blocks.new(name=block_name)
     block.add_circle((0, 0), OUTLET_BLOCK_RADIUS, dxfattribs={"color": color_aci})
-    block.add_line((-OUTLET_BLOCK_RADIUS * 0.7, 0), (OUTLET_BLOCK_RADIUS * 0.7, 0), dxfattribs={"color": color_aci})
-    block.add_line((0, -OUTLET_BLOCK_RADIUS * 0.7), (0, OUTLET_BLOCK_RADIUS * 0.7), dxfattribs={"color": color_aci})
+    radius = OUTLET_BLOCK_RADIUS * 0.7
+    block.add_line(
+        (-radius, 0),
+        (radius, 0),
+        dxfattribs={"color": color_aci},
+    )
+    block.add_line(
+        (0, -radius),
+        (0, radius),
+        dxfattribs={"color": color_aci},
+    )
 
 
 def _sha256_file(path: Path) -> str:
@@ -138,7 +157,9 @@ def apply_electrical_layer(
 
     preserved = _modelspace_entity_counts_by_layer(doc, exclude) == source_entity_counts
     if not preserved:
-        raise RuntimeError("Source modelspace entities were modified; US-009 requires non-destructive layer add")
+        raise RuntimeError(
+            "Source modelspace entities were modified; US-009 requires non-destructive layer add",
+        )
 
     save_dxf_file(doc, output_path)
 
