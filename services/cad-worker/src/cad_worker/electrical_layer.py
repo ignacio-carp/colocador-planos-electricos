@@ -1,4 +1,8 @@
-"""Add Cambre_Electrical layer with CAMBRE_OUTLET block inserts to a DXF copy (US-009)."""
+"""Add Cambre_Electrical layer with CAMBRE_OUTLET block inserts to a DXF copy (US-009).
+
+Supports incremental merge by room_id: blockrefs are tagged with XDATA so that
+reprocesar a room replaces only that room's entities (US-013).
+"""
 
 from __future__ import annotations
 
@@ -24,6 +28,8 @@ from cad_worker.extract_geometry import extract_geometry, geometry_bounding_box,
 logger = logging.getLogger(__name__)
 
 INVALID_DXF_CODE = "CAD_WORKER_INVALID_DXF"
+CAMBRE_APPID = "CAMBRE_ROOM"
+CAMBRE_ROOM_GROUP_CODE = 1000  # string xdata group code
 
 PlacementPoint = tuple[float, float, dict[str, object]]
 
@@ -106,6 +112,37 @@ def _ensure_outlet_block(doc: Drawing, block_name: str, color_aci: int) -> None:
     )
 
 
+def _ensure_appid(doc: Drawing) -> None:
+    """Register CAMBRE_ROOM APPID for xdata tagging (US-013 idempotent room merge)."""
+    if CAMBRE_APPID not in doc.appids:
+        doc.appids.new(CAMBRE_APPID)
+
+
+def _get_entity_room_id(entity: Any) -> str | None:
+    """Return the room_id xdata tag on a blockref, or None if not tagged."""
+    try:
+        xdata = entity.get_xdata(CAMBRE_APPID)
+        for item in xdata:
+            if item.code == CAMBRE_ROOM_GROUP_CODE:
+                return str(item.value)
+    except Exception:  # noqa: BLE001
+        pass
+    return None
+
+
+def _remove_room_entities(msp: Any, layer_name: str, room_id: str) -> int:
+    """Delete all blockrefs on layer_name tagged with room_id. Returns deleted count."""
+    to_delete = []
+    for entity in msp:
+        if entity.dxf.layer != layer_name:
+            continue
+        if _get_entity_room_id(entity) == room_id:
+            to_delete.append(entity)
+    for entity in to_delete:
+        msp.delete_entity(entity)
+    return len(to_delete)
+
+
 def _sha256_file(path: Path) -> str:
     return hashlib.sha256(path.read_bytes()).hexdigest()
 
@@ -117,7 +154,17 @@ def apply_electrical_layer(
     *,
     output_layer: OutputLayerConfig | None = None,
     bbox_margin: float = 500.0,
+    room_id: str | None = None,
 ) -> dict[str, object]:
+    """Apply outlet placements to a DXF copy.
+
+    When ``room_id`` is provided (US-013 incremental mode):
+    - Existing Cambre_Electrical blockrefs tagged with that room_id are removed first.
+    - New blockrefs are tagged with the room_id via XDATA for future idempotent reprocesar.
+    - Source layers (non-Cambre_Electrical) are preserved.
+
+    When ``room_id`` is None (batch mode): behaves like the original US-009 full-batch path.
+    """
     if not input_path.is_file():
         raise FileNotFoundError(f"Input file not found: {input_path}")
 
@@ -131,6 +178,12 @@ def apply_electrical_layer(
     source_entity_counts = _modelspace_entity_counts_by_layer(doc, exclude)
 
     _ensure_outlet_block(doc, config.block_name, config.color_aci)
+
+    removed = 0
+    if room_id is not None:
+        _ensure_appid(doc)
+        removed = _remove_room_entities(doc.modelspace(), layer_name, room_id)
+        logger.info("Incremental merge room_id=%s: removed %d existing entities", room_id, removed)
 
     geometry = extract_geometry(input_path)
     bbox = geometry_bounding_box(geometry)
@@ -148,11 +201,13 @@ def apply_electrical_layer(
                 bbox,
             )
             continue
-        msp.add_blockref(
+        ref = msp.add_blockref(
             config.block_name,
             (x, y),
             dxfattribs={"layer": layer_name, "xscale": 1, "yscale": 1, "zscale": 1},
         )
+        if room_id is not None:
+            ref.set_xdata(CAMBRE_APPID, [(CAMBRE_ROOM_GROUP_CODE, room_id)])
         added += 1
 
     preserved = _modelspace_entity_counts_by_layer(doc, exclude) == source_entity_counts
@@ -173,6 +228,9 @@ def apply_electrical_layer(
         "source_layers_preserved": preserved,
         "output_checksum_sha256": _sha256_file(output_path),
     }
+    if room_id is not None:
+        result["room_id"] = room_id
+        result["outlets_removed"] = removed
     if bbox is not None:
         result["bounding_box"] = bbox
     if skipped_out_of_bbox:
@@ -185,6 +243,7 @@ def apply_layer_cmd(
     output_path: str,
     placements_json: str,
     output_layer_json: str | None = None,
+    room_id: str | None = None,
 ) -> int:
     try:
         parsed = json.loads(placements_json)
@@ -206,6 +265,7 @@ def apply_layer_cmd(
             Path(output_path),
             placements,
             output_layer=layer_config,
+            room_id=room_id or None,
         )
         print(json.dumps(payload))
         return 0

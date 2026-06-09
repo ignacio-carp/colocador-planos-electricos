@@ -2,6 +2,10 @@ import React, { useCallback, useEffect, useRef, useState } from 'react'
 import { AppShell } from '../components/AppShell'
 import { Icon } from '../components/Icon'
 import PlanViewer2D, { type RenderData } from '../components/PlanViewer2D'
+import {
+  RoomProcessingPanel,
+  type RoomProcessingState,
+} from '../components/RoomProcessingPanel'
 import { useAuth } from '../context/AuthContext'
 import {
   canDownloadProcessedDxf,
@@ -10,6 +14,7 @@ import {
   hasRegisteredDxfInput,
   isAnalyzing,
   isReadyForWorkspace,
+  isRoomProcessingAvailable,
 } from '../lib/jobPresentation'
 import { getAppRole } from '../lib/roles'
 
@@ -44,6 +49,7 @@ type WorkspaceSummary = {
   normative_rules_enabled: boolean
   rooms: Room[]
   preliminary_recommendations: PreliminaryRecommendation[]
+  room_processing_state: RoomProcessingState
   normative_rules_version: string | null
   preliminary_analysis_completed_at: string | null
 }
@@ -136,7 +142,12 @@ export default function JobDetail({ jobId, onNavigate }: JobDetailProps) {
         setHasInput(false)
       }
     }
-    const renderableStatuses = ['listo_para_editar', 'parcialmente_procesado', 'procesado', 'analizando']
+    const renderableStatuses = [
+      'listo_para_editar',
+      'parcialmente_procesado',
+      'procesado',
+      'analizando',
+    ]
     if (found && renderableStatuses.includes(found.status ?? '')) {
       await Promise.all([loadWorkspace(session), loadRenderData(session)])
     }
@@ -146,14 +157,19 @@ export default function JobDetail({ jobId, onNavigate }: JobDetailProps) {
     void load()
   }, [load])
 
-  // Poll every 2s while job is analyzing
+  // Poll every 2s while job is analyzing or rooms are being processed
+  const hasProcessingRooms = workspace
+    ? Object.values(workspace.room_processing_state ?? {}).some((s) => s === 'procesando')
+    : false
+
   useEffect(() => {
-    if (!job || !isAnalyzing(job.status)) return
+    if (!job) return
+    if (!isAnalyzing(job.status) && !hasProcessingRooms) return
     const timer = setInterval(() => {
       void load()
     }, 2000)
     return () => clearInterval(timer)
-  }, [job, load])
+  }, [job, load, hasProcessingRooms])
 
   async function toggleNormativeRules(enabled: boolean) {
     if (!session || !job) return
@@ -418,6 +434,21 @@ export default function JobDetail({ jobId, onNavigate }: JobDetailProps) {
               onToggleRules={(v) => void toggleNormativeRules(v)}
               selectedRoomId={selectedRoomId}
               onSelectRoom={(id) => setSelectedRoomId((prev) => (prev === id ? null : id))}
+            />
+          ) : null}
+
+          {canEdit &&
+          isRoomProcessingAvailable(job.status) &&
+          workspace &&
+          session ? (
+            <RoomProcessingPanel
+              jobId={job.id}
+              jobStatus={job.status ?? 'pendiente'}
+              rooms={workspace.rooms}
+              roomProcessingState={workspace.room_processing_state ?? {}}
+              normativeRulesEnabled={workspace.normative_rules_enabled}
+              accessToken={session.access_token}
+              onStateChange={() => void load()}
             />
           ) : null}
 

@@ -64,6 +64,12 @@
         "country_code": { "type": "string", "pattern": "^[A-Z]{2}$", "default": "ES" },
         "notes": { "type": "string" }
       }
+    },
+    "room_ids": {
+      "type": "array",
+      "description": "US-013 — Scope inference to specific rooms; omit for full layout (preliminary analysis).",
+      "items": { "type": "string" },
+      "minItems": 1
     }
   }
 }

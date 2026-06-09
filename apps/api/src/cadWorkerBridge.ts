@@ -46,6 +46,8 @@ export type ApplyElectricalLayerOptions = {
     block_name?: string
     color_aci?: number
   }
+  /** US-013: room_id for incremental merge; tags new blockrefs and removes prior ones for this room. */
+  roomId?: string
 }
 
 export class CadWorkerError extends Error {
@@ -296,6 +298,9 @@ async function httpApplyElectricalLayer(
   form.append('placements_json', JSON.stringify(placements))
   if (options?.outputLayer) {
     form.append('output_layer_json', JSON.stringify(options.outputLayer))
+  }
+  if (options?.roomId) {
+    form.append('room_id', options.roomId)
   }
 
   const response = await fetchCadWorker('/apply-electrical-layer', {
@@ -577,6 +582,9 @@ export async function applyElectricalLayer(
   ]
   if (options?.outputLayer) {
     spawnArgs.push('--output-layer-json', JSON.stringify(options.outputLayer))
+  }
+  if (options?.roomId) {
+    spawnArgs.push('--room-id', options.roomId)
   }
   const parsed = await spawnCadWorkerJson(spawnArgs, inputPath)
   return parsed as CadWorkerApplyLayerResult

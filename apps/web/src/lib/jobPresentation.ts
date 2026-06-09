@@ -65,6 +65,12 @@ export function projectStatusChip(status?: string): ProjectStatusChip {
       className: 'bg-success/10 text-success',
     }
   }
+  if (s === 'parcialmente_procesado') {
+    return {
+      label: 'En proceso',
+      className: 'bg-secondary-container/80 text-on-secondary-container',
+    }
+  }
   if (s === 'failed' || s === 'error') {
     return {
       label: 'Error',
@@ -119,6 +125,13 @@ export function fileRowStatus(jobStatus?: string, hasInput?: boolean): FileRowSt
       downloadEnabled: false,
     }
   }
+  if (s === 'parcialmente_procesado') {
+    return {
+      label: 'En proceso',
+      className: 'bg-secondary-container/80 text-on-secondary-container',
+      downloadEnabled: true,
+    }
+  }
   if (hasInput) {
     return {
       label: 'Pendiente',
@@ -136,13 +149,23 @@ export function fileRowStatus(jobStatus?: string, hasInput?: boolean): FileRowSt
 /** Align with API `jobsStore` JobStatus plus legacy/Spanish labels. */
 export function canDownloadProcessedDxf(status?: string): boolean {
   const s = (status ?? '').toLowerCase()
-  return s === 'completed' || s === 'procesado'
+  return s === 'completed' || s === 'procesado' || s === 'parcialmente_procesado'
 }
 
 /** Returns true when the job has completed preliminary analysis and workspace is available. */
 export function isReadyForWorkspace(status?: string): boolean {
   const s = (status ?? '').toLowerCase()
-  return s === 'listo_para_editar'
+  return (
+    s === 'listo_para_editar' ||
+    s === 'parcialmente_procesado' ||
+    s === 'procesado'
+  )
+}
+
+/** Returns true when room processing botonera is available (US-013). */
+export function isRoomProcessingAvailable(status?: string): boolean {
+  const s = (status ?? '').toLowerCase()
+  return s === 'listo_para_editar' || s === 'parcialmente_procesado'
 }
 
 /** Returns true when preliminary analysis is in progress (disable editing). */

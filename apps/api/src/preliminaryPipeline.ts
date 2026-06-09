@@ -19,7 +19,13 @@ import { aiConfigured, getPipelineMode } from './pipelineMode'
 import { DXF_INPUT_BUCKET } from './dxfStorage'
 import { findLatestInputForJob } from './filesStore'
 import { logStructured } from './logger'
-import { findJob, patchJob, type JobRow, type PreliminaryRecommendation } from './jobsStore'
+import {
+  findJob,
+  patchJob,
+  type JobRow,
+  type PreliminaryRecommendation,
+  type RoomProcessingStatus,
+} from './jobsStore'
 import { resolveActiveNormativeRulesVersion } from './normativeRules'
 import {
   incrementPipelineError,
@@ -428,7 +434,7 @@ export async function runPreliminaryAnalysisPipeline(
       },
     })
 
-    const roomProcessingState: Record<string, 'pendiente' | 'procesando' | 'procesado'> = {}
+    const roomProcessingState: Record<string, RoomProcessingStatus> = {}
     for (const room of rooms) {
       if (room.id) roomProcessingState[room.id] = 'pendiente'
     }

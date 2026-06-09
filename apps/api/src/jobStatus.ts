@@ -8,6 +8,7 @@ export const JOB_STATUSES: readonly JobStatus[] = [
   'error',
   'analizando',
   'listo_para_editar',
+  'parcialmente_procesado',
 ] as const
 
 const ALLOWED_TRANSITIONS: Record<JobStatus, readonly JobStatus[]> = {
@@ -18,8 +19,10 @@ const ALLOWED_TRANSITIONS: Record<JobStatus, readonly JobStatus[]> = {
   error: ['pendiente'],
   /** Preliminary analysis in progress → done or error. */
   analizando: ['listo_para_editar', 'error'],
-  /** Ready to edit: full processing can be triggered (US-013). */
-  listo_para_editar: ['procesando', 'error'],
+  /** Ready to edit: incremental room processing (US-013). */
+  listo_para_editar: ['procesando', 'parcialmente_procesado', 'procesado', 'error'],
+  /** At least one room processed; more rooms can still be processed (US-013). */
+  parcialmente_procesado: ['parcialmente_procesado', 'procesado', 'error'],
 }
 
 export class InvalidJobStatusTransitionError extends Error {
@@ -56,4 +59,9 @@ export function normalizeJobStatus(status: string | undefined): JobStatus {
 /** Returns true when a job is in a terminal state where no further pipeline runs are expected. */
 export function isTerminalJobStatus(status: JobStatus): boolean {
   return status === 'procesado' || status === 'listo_para_editar' || status === 'error'
+}
+
+/** Returns true when incremental room processing is allowed on this job (US-013). */
+export function isRoomProcessingAllowed(status: JobStatus): boolean {
+  return status === 'listo_para_editar' || status === 'parcialmente_procesado'
 }

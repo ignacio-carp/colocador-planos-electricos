@@ -97,6 +97,12 @@
           "const": true
         }
       }
+    },
+    "room_ids": {
+      "type": "array",
+      "description": "US-013 — Rooms being processed incrementally; enables idempotent replace by room_id.",
+      "items": { "type": "string" },
+      "minItems": 1
     }
   }
 }

@@ -81,6 +81,15 @@ def main(argv: list[str] | None = None) -> None:
             '"block_name":"CAMBRE_OUTLET","color_aci":3}'
         ),
     )
+    p_layer.add_argument(
+        "--room-id",
+        default=None,
+        dest="room_id",
+        help=(
+            "US-013: room_id for incremental merge — removes prior entities "
+            "for this room and tags new ones."
+        ),
+    )
 
     args = parser.parse_args(argv)
 
@@ -94,7 +103,13 @@ def main(argv: list[str] | None = None) -> None:
         raise SystemExit(extract_geometry_cmd(args.input))
     if args.command == "apply-electrical-layer":
         raise SystemExit(
-            apply_layer_cmd(args.input, args.output, args.placements_json, args.output_layer_json),
+            apply_layer_cmd(
+                args.input,
+                args.output,
+                args.placements_json,
+                args.output_layer_json,
+                room_id=args.room_id,
+            ),
         )
 
     raise SystemExit(2)

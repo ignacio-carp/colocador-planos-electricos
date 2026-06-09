@@ -24,6 +24,11 @@ import {
 } from './invitesStore'
 import { createJob, findJob, listAllJobs, listJobsForOwner, patchJob, type JobRow } from './jobsStore'
 import {
+  markJobProcessed,
+  omitRooms,
+  runRoomProcessingPipeline,
+} from './roomProcessingPipeline'
+import {
   applyDxfQuotaHeaders,
   assertDxfUploadWithinQuota,
   checkJobCreationQuota,
@@ -628,6 +633,7 @@ app.get(
       rooms,
       preliminary_recommendations: meta.preliminary_recommendations ?? [],
       room_processing_state: meta.room_processing_state ?? {},
+      room_processing_runs: meta.room_processing_runs ?? [],
       preliminary_analysis_completed_at: meta.preliminary_analysis_completed_at ?? null,
       normative_rules_version: meta.normative_rules_version ?? null,
       outlet_placements: meta.outlet_placements ?? [],
@@ -779,6 +785,143 @@ app.patch(
       },
     })
     res.json({ jobId, normative_rules_enabled: body.normative_rules_enabled, job: updated })
+  },
+)
+
+/**
+ * US-013: process selected rooms incrementally.
+ * Allows job in listo_para_editar or parcialmente_procesado.
+ * With normative_rules_enabled=false returns 422 (botonera blocked, use chat US-014).
+ */
+app.post(
+  '/api/jobs/:jobId/workspace/process-rooms',
+  requireAuth,
+  requireRole('architect'),
+  async (req, res) => {
+    const { user } = req as AuthedRequest
+    const jobId = typeof req.params.jobId === 'string' ? req.params.jobId : req.params.jobId?.[0]
+    if (!jobId) {
+      res.status(400).json({ error: 'Missing jobId' })
+      return
+    }
+    const job = await findJob(jobId)
+    if (!job) {
+      res.status(404).json({ error: 'Job not found' })
+      return
+    }
+    if (job.owner_user_id !== user.id) {
+      res.status(403).json({ error: 'Forbidden', code: 'NOT_JOB_OWNER' })
+      return
+    }
+
+    const body = req.body as { room_ids?: unknown; idempotency_key?: unknown }
+    if (!Array.isArray(body.room_ids) || body.room_ids.length === 0) {
+      res.status(400).json({ error: 'room_ids must be a non-empty array' })
+      return
+    }
+    const roomIds = (body.room_ids as unknown[]).map(String).filter(Boolean)
+    if (roomIds.length === 0) {
+      res.status(400).json({ error: 'room_ids contains no valid ids' })
+      return
+    }
+    const idempotencyKey =
+      typeof body.idempotency_key === 'string' ? body.idempotency_key : undefined
+    const correlationId = req.correlationId ?? crypto.randomUUID()
+
+    try {
+      const result = await runRoomProcessingPipeline(jobId, roomIds, correlationId, idempotencyKey)
+      if (result.normative_rules_blocked) {
+        res.status(422).json({
+          error:
+            'Room processing blocked: normative_rules_enabled=false. Use chat (US-014) to process rooms.',
+          code: 'NORMATIVE_RULES_DISABLED',
+          job_id: jobId,
+        })
+        return
+      }
+      res.json(result)
+    } catch (e) {
+      const message = e instanceof Error ? e.message : 'Room processing failed'
+      const isStatus = message.includes('not allowed in status')
+      res.status(isStatus ? 409 : 500).json({ error: message })
+    }
+  },
+)
+
+/**
+ * US-013: omit rooms (mark as omitida without running pipeline).
+ */
+app.post(
+  '/api/jobs/:jobId/workspace/omit-rooms',
+  requireAuth,
+  requireRole('architect'),
+  async (req, res) => {
+    const { user } = req as AuthedRequest
+    const jobId = typeof req.params.jobId === 'string' ? req.params.jobId : req.params.jobId?.[0]
+    if (!jobId) {
+      res.status(400).json({ error: 'Missing jobId' })
+      return
+    }
+    const job = await findJob(jobId)
+    if (!job) {
+      res.status(404).json({ error: 'Job not found' })
+      return
+    }
+    if (job.owner_user_id !== user.id) {
+      res.status(403).json({ error: 'Forbidden', code: 'NOT_JOB_OWNER' })
+      return
+    }
+
+    const body = req.body as { room_ids?: unknown }
+    if (!Array.isArray(body.room_ids) || body.room_ids.length === 0) {
+      res.status(400).json({ error: 'room_ids must be a non-empty array' })
+      return
+    }
+    const roomIds = (body.room_ids as unknown[]).map(String).filter(Boolean)
+    const correlationId = req.correlationId ?? crypto.randomUUID()
+
+    try {
+      const updated = await omitRooms(jobId, roomIds, correlationId)
+      res.json({ job_id: jobId, omitted: roomIds, job: updated })
+    } catch (e) {
+      const message = e instanceof Error ? e.message : 'Omit rooms failed'
+      res.status(409).json({ error: message })
+    }
+  },
+)
+
+/**
+ * US-013: mark job as procesado (architect closes workspace).
+ */
+app.post(
+  '/api/jobs/:jobId/workspace/mark-complete',
+  requireAuth,
+  requireRole('architect'),
+  async (req, res) => {
+    const { user } = req as AuthedRequest
+    const jobId = typeof req.params.jobId === 'string' ? req.params.jobId : req.params.jobId?.[0]
+    if (!jobId) {
+      res.status(400).json({ error: 'Missing jobId' })
+      return
+    }
+    const job = await findJob(jobId)
+    if (!job) {
+      res.status(404).json({ error: 'Job not found' })
+      return
+    }
+    if (job.owner_user_id !== user.id) {
+      res.status(403).json({ error: 'Forbidden', code: 'NOT_JOB_OWNER' })
+      return
+    }
+    const correlationId = req.correlationId ?? crypto.randomUUID()
+
+    try {
+      const updated = await markJobProcessed(jobId, correlationId)
+      res.json({ job_id: jobId, status: updated?.status ?? 'procesado', job: updated })
+    } catch (e) {
+      const message = e instanceof Error ? e.message : 'Mark complete failed'
+      res.status(409).json({ error: message })
+    }
   },
 )
 

@@ -10,6 +10,7 @@ export type JobStatus =
   | 'error'
   | 'analizando'
   | 'listo_para_editar'
+  | 'parcialmente_procesado'
 
 export type JobErrorPayload = {
   code: string
@@ -25,6 +26,31 @@ export type PreliminaryRecommendation = {
   rule_ids: string[]
 }
 
+export type RoomProcessingStatus = 'pendiente' | 'procesando' | 'procesada' | 'error' | 'omitida'
+
+export type RoomProcessingError = {
+  code: string
+  message: string
+  correlation_id: string
+}
+
+export type RoomProcessingRun = {
+  room_id: string
+  correlation_id: string
+  rules_version?: string
+  started_at: string
+  completed_at?: string
+  outlet_count?: number
+  error?: RoomProcessingError
+}
+
+export type DxfCheckpoint = {
+  room_id: string
+  source: 'input_dxf' | 'output_dxf'
+  storage_ref?: string
+  created_at: string
+}
+
 export type JobPipelineMetadata = {
   normative_rules_version?: string
   normative_rules_enabled?: boolean
@@ -36,7 +62,9 @@ export type JobPipelineMetadata = {
   vision_layout?: Record<string, unknown>
   outlet_placements?: unknown[]
   preliminary_recommendations?: PreliminaryRecommendation[]
-  room_processing_state?: Record<string, 'pendiente' | 'procesando' | 'procesado'>
+  room_processing_state?: Record<string, RoomProcessingStatus>
+  room_processing_runs?: RoomProcessingRun[]
+  dxf_checkpoints?: DxfCheckpoint[]
   preliminary_analysis_completed_at?: string
 }
 

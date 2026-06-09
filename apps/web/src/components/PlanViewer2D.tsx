@@ -28,7 +28,10 @@ export type RenderData = {
   rooms: Room[]
   coordinate_system: string | null
   scale: { pixels_per_meter?: number; known?: boolean } | null
-  room_processing_state: Record<string, 'pendiente' | 'procesando' | 'procesado'>
+  room_processing_state: Record<
+    string,
+    'pendiente' | 'procesando' | 'procesada' | 'error' | 'omitida'
+  >
 }
 
 type Props = {
@@ -52,7 +55,9 @@ const ROOM_TYPE_COLORS: Record<string, string> = {
 const ROOM_PROCESSING_COLORS: Record<string, string> = {
   pendiente: '#e9ecef',
   procesando: '#fff3cd',
-  procesado: '#d4edda',
+  procesada: '#d4edda',
+  error: '#f8d7da',
+  omitida: '#e2e3e5',
 }
 
 const SELECTED_FILL = '#bfdbfe'
