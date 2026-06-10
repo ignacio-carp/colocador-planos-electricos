@@ -67,6 +67,21 @@ describe('planViewerMath', () => {
     expect(topLeft.y).toBeLessThan(80)
   })
 
+  it('returns null bbox when coordinates are invalid (cad-worker tuple read as object)', () => {
+    const broken = {
+      ...sampleData,
+      paredes: [
+        {
+          inicio: [0, 0] as unknown as { x: number; y: number },
+          fin: [100, 0] as unknown as { x: number; y: number },
+        },
+      ],
+      rooms: [],
+      etiquetas_texto: [],
+    }
+    expect(computeBBox(broken)).toBeNull()
+  })
+
   it('zooms in without exploding label size in screen pixels', () => {
     const bbox = computeBBox(sampleData)!
     const initial = computeFitTransform(bbox, 800, 480, true)

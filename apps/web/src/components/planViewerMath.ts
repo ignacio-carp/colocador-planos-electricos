@@ -10,6 +10,20 @@ export type ViewTransform = { x: number; y: number; scale: number }
 
 const VIEW_PAD = 40
 
+export function isValidBBox(bbox: BBox | null): bbox is BBox {
+  if (!bbox) return false
+  return [bbox.minX, bbox.minY, bbox.maxX, bbox.maxY].every(Number.isFinite)
+}
+
+export function isValidTransform(transform: ViewTransform): boolean {
+  return (
+    Number.isFinite(transform.x) &&
+    Number.isFinite(transform.y) &&
+    Number.isFinite(transform.scale) &&
+    transform.scale > 0
+  )
+}
+
 /** Compute axis-aligned bounding box of all renderable coordinates. */
 export function computeBBox(data: RenderGeometry): BBox | null {
   const xs: number[] = []
@@ -29,12 +43,13 @@ export function computeBBox(data: RenderGeometry): BBox | null {
     }
   }
   if (xs.length === 0) return null
-  return {
+  const bbox = {
     minX: Math.min(...xs),
     minY: Math.min(...ys),
     maxX: Math.max(...xs),
     maxY: Math.max(...ys),
   }
+  return isValidBBox(bbox) ? bbox : null
 }
 
 /** CAD drawings use Y-up; SVG uses Y-down. */
@@ -68,7 +83,8 @@ export function computeFitTransform(
   const ty = flipY
     ? pad + bbox.maxY * scale
     : (height - bh * scale) / 2 - bbox.minY * scale
-  return { x: tx, y: ty, scale }
+  const transform = { x: tx, y: ty, scale }
+  return isValidTransform(transform) ? transform : { x: 0, y: 0, scale: 1 }
 }
 
 /** Center viewport on a world point. */
