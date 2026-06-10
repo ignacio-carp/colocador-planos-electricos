@@ -4,12 +4,15 @@ import {
   centerViewBoxOn,
   computeBBox,
   fitViewBoxFromBBox,
+  isValidDxfSvgPreview,
   isValidViewBox,
   labelFontSize,
+  mapRoomToSvgSpace,
   panViewBox,
   toSvgGeometry,
   usesCadYUp,
   zoomViewBox,
+  type DxfSvgPreview,
   type ViewBox,
 } from './planViewerMath'
 
@@ -45,6 +48,7 @@ export type RenderData = {
     string,
     'pendiente' | 'procesando' | 'procesada' | 'error' | 'omitida'
   >
+  dxf_svg_preview?: DxfSvgPreview | null
 }
 
 type Props = {
@@ -95,21 +99,45 @@ export default function PlanViewer2D({ data, selectedRoomId, onRoomClick }: Prop
   const dragging = useRef(false)
   const lastPos = useRef({ x: 0, y: 0 })
 
+  const hybridPreview = useMemo(
+    () => (isValidDxfSvgPreview(data.dxf_svg_preview) ? data.dxf_svg_preview : null),
+    [data.dxf_svg_preview],
+  )
+  const hybridMode = hybridPreview !== null
+
   const cadYUp = usesCadYUp(data.coordinate_system)
   const normalized = useMemo(() => normalizeRenderData(data), [data])
   const sourceBBox = useMemo(() => computeBBox(normalized), [normalized])
+
   const renderGeometry = useMemo(() => {
+    if (hybridMode && hybridPreview) {
+      return {
+        paredes: [],
+        etiquetas_texto: [],
+        rooms: normalized.rooms.map((room) =>
+          mapRoomToSvgSpace(room, hybridPreview.dxf_bbox, hybridPreview.view_box),
+        ),
+      }
+    }
     if (!sourceBBox) return normalized
     return toSvgGeometry(normalized, sourceBBox, cadYUp)
-  }, [normalized, sourceBBox, cadYUp])
-  const bbox = useMemo(() => computeBBox(renderGeometry), [renderGeometry])
-  const bboxKey = bbox ? `${bbox.minX}:${bbox.minY}:${bbox.maxX}:${bbox.maxY}` : 'empty'
+  }, [normalized, sourceBBox, cadYUp, hybridMode, hybridPreview])
+
+  const geometryBBox = useMemo(() => computeBBox(renderGeometry), [renderGeometry])
+  const initialViewBox = useMemo((): ViewBox | null => {
+    if (hybridMode && hybridPreview) return hybridPreview.view_box
+    if (!geometryBBox) return null
+    return fitViewBoxFromBBox(geometryBBox)
+  }, [geometryBBox, hybridMode, hybridPreview])
+
+  const bboxKey = initialViewBox
+    ? `view:${initialViewBox.x}:${initialViewBox.y}:${initialViewBox.w}:${initialViewBox.h}`
+    : 'empty'
 
   const fitView = useCallback(() => {
-    if (!bbox) return
-    const next = fitViewBoxFromBBox(bbox)
-    if (isValidViewBox(next)) setViewBox(next)
-  }, [bbox])
+    if (!initialViewBox) return
+    if (isValidViewBox(initialViewBox)) setViewBox(initialViewBox)
+  }, [initialViewBox])
 
   useEffect(() => {
     fitView()
@@ -123,7 +151,7 @@ export default function PlanViewer2D({ data, selectedRoomId, onRoomClick }: Prop
     const cx = verts.reduce((s, v) => s + v.x, 0) / verts.length
     const cy = verts.reduce((s, v) => s + v.y, 0) / verts.length
     setViewBox((prev) => (prev ? centerViewBoxOn(prev, cx, cy) : prev))
-  }, [selectedRoomId, renderGeometry.rooms])
+  }, [selectedRoomId, renderGeometry.rooms, viewBox])
 
   const zoom = useCallback((delta: number, originX = 0.5, originY = 0.5) => {
     setViewBox((prev) => {
@@ -177,7 +205,8 @@ export default function PlanViewer2D({ data, selectedRoomId, onRoomClick }: Prop
 
   const hasWalls = renderGeometry.paredes.length > 0
   const hasRooms = renderGeometry.rooms.length > 0
-  const hasData = hasWalls || hasRooms
+  const hasHybridBase = hybridMode && Boolean(hybridPreview?.svg_inner)
+  const hasData = hasHybridBase || hasWalls || hasRooms
   const fontSize = viewBox ? labelFontSize(viewBox) : 12
   const strokeScale = viewBox ? Math.max(viewBox.w / 400, 0.5) : 1
 
@@ -188,6 +217,7 @@ export default function PlanViewer2D({ data, selectedRoomId, onRoomClick }: Prop
           Sin datos de geometría disponibles aún.
           <span className="mt-2 block text-technical-label text-outline">
             Paredes: {data.paredes.length} · Habitaciones: {data.rooms.length}
+            {hybridMode ? ' · SVG base: pendiente' : ''}
           </span>
         </p>
       </div>
@@ -226,6 +256,7 @@ export default function PlanViewer2D({ data, selectedRoomId, onRoomClick }: Prop
       </div>
 
       <div className="absolute bottom-3 left-3 z-10 rounded bg-surface-container-highest/80 px-3 py-2 text-technical-label text-on-surface-variant backdrop-blur-sm">
+        {hybridMode ? <div className="mb-1">Vista híbrida (DXF + habitaciones)</div> : null}
         {data.coordinate_system ? (
           <div className="mb-1 capitalize">{data.coordinate_system.replace(/_/g, ' ')}</div>
         ) : null}
@@ -233,7 +264,9 @@ export default function PlanViewer2D({ data, selectedRoomId, onRoomClick }: Prop
           <div>{data.scale.pixels_per_meter} px/m</div>
         ) : null}
         <div>
-          {renderGeometry.paredes.length} paredes · {renderGeometry.rooms.length} hab.
+          {hybridMode
+            ? `${renderGeometry.rooms.length} hab.`
+            : `${renderGeometry.paredes.length} paredes · ${renderGeometry.rooms.length} hab.`}
         </div>
       </div>
 
@@ -252,6 +285,13 @@ export default function PlanViewer2D({ data, selectedRoomId, onRoomClick }: Prop
           preserveAspectRatio="xMidYMid meet"
           xmlns="http://www.w3.org/2000/svg"
         >
+          {hybridPreview ? (
+            <g
+              className="dxf-base-layer"
+              dangerouslySetInnerHTML={{ __html: hybridPreview.svg_inner }}
+            />
+          ) : null}
+
           {renderGeometry.rooms.map((room) => {
             const isSelected = room.id === selectedRoomId
             const fill = isSelected ? SELECTED_FILL : roomFill(room, data.room_processing_state)
@@ -267,7 +307,7 @@ export default function PlanViewer2D({ data, selectedRoomId, onRoomClick }: Prop
                   fill={fill}
                   stroke={stroke}
                   strokeWidth={(isSelected ? 3 : 1.5) * strokeScale}
-                  fillOpacity={0.65}
+                  fillOpacity={0.45}
                   style={{ cursor: onRoomClick ? 'pointer' : 'default' }}
                   onClick={() => onRoomClick?.(room.id)}
                   role={onRoomClick ? 'button' : undefined}
@@ -289,32 +329,36 @@ export default function PlanViewer2D({ data, selectedRoomId, onRoomClick }: Prop
             )
           })}
 
-          {renderGeometry.paredes.map((wall, i) => (
-            <line
-              key={i}
-              x1={wall.inicio.x}
-              y1={wall.inicio.y}
-              x2={wall.fin.x}
-              y2={wall.fin.y}
-              stroke="#1f2937"
-              strokeWidth={2 * strokeScale}
-              strokeLinecap="round"
-            />
-          ))}
+          {!hybridMode
+            ? renderGeometry.paredes.map((wall, i) => (
+                <line
+                  key={i}
+                  x1={wall.inicio.x}
+                  y1={wall.inicio.y}
+                  x2={wall.fin.x}
+                  y2={wall.fin.y}
+                  stroke="#1f2937"
+                  strokeWidth={2 * strokeScale}
+                  strokeLinecap="round"
+                />
+              ))
+            : null}
 
-          {renderGeometry.etiquetas_texto.map((lbl, i) => (
-            <text
-              key={i}
-              x={lbl.posicion.x}
-              y={lbl.posicion.y}
-              fontSize={fontSize}
-              fill="#6b7280"
-              textAnchor="middle"
-              style={{ pointerEvents: 'none', userSelect: 'none' }}
-            >
-              {lbl.texto}
-            </text>
-          ))}
+          {!hybridMode
+            ? renderGeometry.etiquetas_texto.map((lbl, i) => (
+                <text
+                  key={i}
+                  x={lbl.posicion.x}
+                  y={lbl.posicion.y}
+                  fontSize={fontSize}
+                  fill="#6b7280"
+                  textAnchor="middle"
+                  style={{ pointerEvents: 'none', userSelect: 'none' }}
+                >
+                  {lbl.texto}
+                </text>
+              ))
+            : null}
         </svg>
       </div>
     </div>

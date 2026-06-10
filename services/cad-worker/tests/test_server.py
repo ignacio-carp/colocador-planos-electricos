@@ -67,6 +67,19 @@ def test_extract_geometry(client: TestClient, sample_dxf: Path) -> None:
     assert "paredes" in body
 
 
+def test_render_svg(client: TestClient, sample_dxf: Path) -> None:
+    with sample_dxf.open("rb") as handle:
+        response = client.post(
+            "/render-svg",
+            files={"file": ("sample.dxf", handle, "application/octet-stream")},
+        )
+    assert response.status_code == 200
+    body = response.json()
+    assert body.get("ok") is True
+    assert "svg_inner" in body
+    assert body.get("view_box") is not None
+
+
 def test_apply_electrical_layer(client: TestClient, sample_dxf: Path) -> None:
     with sample_dxf.open("rb") as handle:
         response = client.post(

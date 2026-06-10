@@ -57,6 +57,7 @@ export type JobPipelineMetadata = {
   cad_worker_inspect?: Record<string, unknown>
   cad_worker_apply?: Record<string, unknown>
   geometry_extract?: Record<string, unknown>
+  dxf_svg_preview?: Record<string, unknown>
   cad_generation?: Record<string, unknown>
   pipeline_mode?: string
   vision_layout?: Record<string, unknown>

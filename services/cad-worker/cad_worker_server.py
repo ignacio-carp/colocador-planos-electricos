@@ -21,6 +21,7 @@ from cad_worker.electrical_layer import (
 from cad_worker.extract_geometry import extract_geometry
 from cad_worker.http_json import dumps_ascii_safe, encode_result_header
 from cad_worker.inspect_dxf import inspect_dxf_file
+from cad_worker.render_svg import render_dxf_to_svg
 
 if hasattr(sys.stdout, "reconfigure"):
     try:
@@ -101,6 +102,26 @@ async def inspect(file: UploadFile = File(...)) -> dict[str, object]:
 
     try:
         return inspect_dxf_file(tmp_path)
+    except FileNotFoundError as exc:
+        raise _http_error(404, "CAD_WORKER_FILE_NOT_FOUND", str(exc)) from exc
+    except ezdxf.DXFStructureError as exc:
+        raise _http_error(400, INVALID_DXF_CODE, str(exc)) from exc
+    except Exception as exc:  # noqa: BLE001
+        raise _http_error(500, "CAD_WORKER_ERROR", str(exc)) from exc
+    finally:
+        tmp_path.unlink(missing_ok=True)
+
+
+@app.post("/render-svg")
+async def render_svg_endpoint(file: UploadFile = File(...)) -> dict[str, object]:
+    suffix = Path(file.filename or "input.dxf").suffix or ".dxf"
+    with NamedTemporaryFile(delete=False, suffix=suffix) as tmp:
+        tmp.write(await file.read())
+        tmp_path = Path(tmp.name)
+
+    try:
+        payload = render_dxf_to_svg(tmp_path)
+        return {"ok": True, **payload}
     except FileNotFoundError as exc:
         raise _http_error(404, "CAD_WORKER_FILE_NOT_FOUND", str(exc)) from exc
     except ezdxf.DXFStructureError as exc:

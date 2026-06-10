@@ -25,6 +25,31 @@ export type CadWorkerGeometryExtract = {
   code?: string
 }
 
+export type CadWorkerSvgBBox = {
+  min_x: number
+  min_y: number
+  max_x: number
+  max_y: number
+}
+
+export type CadWorkerSvgViewBox = {
+  x: number
+  y: number
+  w: number
+  h: number
+}
+
+export type CadWorkerSvgRender = {
+  ok: boolean
+  svg?: string
+  svg_inner?: string
+  view_box?: CadWorkerSvgViewBox | null
+  dxf_bbox?: CadWorkerSvgBBox
+  entity_count?: number
+  error?: string
+  code?: string
+}
+
 export type CadWorkerApplyLayerResult = {
   ok: boolean
   input?: string
@@ -550,6 +575,18 @@ export function extractGeometryFromDxf(inputPath: string): Promise<CadWorkerGeom
     inputPath,
     '/extract-geometry',
   ) as Promise<CadWorkerGeometryExtract>
+}
+
+export function renderSvgFromDxf(inputPath: string): Promise<CadWorkerSvgRender> {
+  if (cadWorkerDisabled()) {
+    return Promise.resolve({ ok: false, code: 'CAD_WORKER_DISABLED', error: 'CAD worker disabled' })
+  }
+  return invokeCadWorkerJson(
+    'render-svg',
+    ['render-svg', '--input', inputPath, '--json'],
+    inputPath,
+    '/render-svg',
+  ) as Promise<CadWorkerSvgRender>
 }
 
 /** @deprecated Use inspectDxfFile — platform is DXF-only. */

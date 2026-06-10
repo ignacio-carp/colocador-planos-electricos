@@ -9,6 +9,7 @@ import {
   extractGeometryFromDxf,
   inspectDxfFile,
 } from './cadWorkerBridge'
+import { runCadWorkerRenderSvg } from './renderSvgPreview'
 import { OpenAiClientError } from './openaiClient'
 import {
   buildLiveNormativeInferenceOutput,
@@ -344,6 +345,7 @@ export async function runPreliminaryAnalysisPipeline(
 
     let cadInspect: Record<string, unknown> | undefined
     let geometryExtract: Record<string, unknown> | undefined
+    let dxfSvgPreview: Record<string, unknown> | undefined
 
     if (!cadWorkerDisabled()) {
       try {
@@ -370,12 +372,25 @@ export async function runPreliminaryAnalysisPipeline(
           error: message,
         })
       }
-      if (cadInspect || geometryExtract) {
+      try {
+        const preview = await runCadWorkerRenderSvg(jobId, correlationId)
+        if (preview) dxfSvgPreview = preview
+      } catch (e) {
+        const message = e instanceof Error ? e.message : String(e)
+        logStructured('warn', {
+          event: 'cad_worker_render_svg_skipped',
+          job_id: jobId,
+          correlation_id: correlationId,
+          error: message,
+        })
+      }
+      if (cadInspect || geometryExtract || dxfSvgPreview) {
         await patchJob(jobId, {
           pipeline_metadata: {
             ...(await findJob(jobId))?.pipeline_metadata,
             ...(cadInspect ? { cad_worker_inspect: cadInspect } : {}),
             ...(geometryExtract ? { geometry_extract: geometryExtract } : {}),
+            ...(dxfSvgPreview ? { dxf_svg_preview: dxfSvgPreview } : {}),
             pipeline_mode: pipelineMode,
           },
         })

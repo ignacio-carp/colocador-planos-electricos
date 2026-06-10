@@ -49,6 +49,7 @@ import {
   normalizeRenderWalls,
   resolveLayoutInterpretation,
 } from './renderDataHelpers'
+import { resolveDxfSvgPreview } from './renderSvgPreview'
 import { getSupabaseServiceRole, isStorageConfigured } from './supabaseService'
 
 const app = express()
@@ -726,6 +727,13 @@ app.get(
       })
       .filter((r): r is NonNullable<typeof r> => r !== null)
 
+    const correlationId =
+      typeof req.headers['x-correlation-id'] === 'string'
+        ? req.headers['x-correlation-id']
+        : job.id
+
+    const dxfSvgPreview = await resolveDxfSvgPreview(jobId, meta, correlationId)
+
     res.json({
       jobId: job.id,
       status: job.status,
@@ -735,6 +743,7 @@ app.get(
       coordinate_system: layout?.coordinate_system ?? null,
       scale: layout?.scale ?? null,
       room_processing_state: meta.room_processing_state ?? {},
+      dxf_svg_preview: dxfSvgPreview,
     })
   },
 )

@@ -16,6 +16,17 @@ export type RenderGeometry = {
 
 export type ViewBox = { x: number; y: number; w: number; h: number }
 
+export type DxfBBox = { min_x: number; min_y: number; max_x: number; max_y: number }
+
+export type DxfSvgPreview = {
+  svg?: string
+  svg_inner: string
+  view_box: ViewBox
+  dxf_bbox: DxfBBox
+  entity_count?: number
+  generated_at?: string
+}
+
 const VIEW_PAD = 40
 
 export function parsePoint(raw: unknown): Point2D | null {
@@ -174,4 +185,39 @@ export function centerViewBoxOn(viewBox: ViewBox, cx: number, cy: number): ViewB
 /** Label size in user units for the current viewBox width. */
 export function labelFontSize(viewBox: ViewBox): number {
   return Math.max(viewBox.w / 80, 1)
+}
+
+export function isValidDxfSvgPreview(preview: DxfSvgPreview | null | undefined): preview is DxfSvgPreview {
+  if (!preview) return false
+  if (!preview.svg_inner?.trim()) return false
+  if (!isValidViewBox(preview.view_box)) return false
+  const b = preview.dxf_bbox
+  if (!b) return false
+  const dims = [b.min_x, b.min_y, b.max_x, b.max_y]
+  if (!dims.every(Number.isFinite)) return false
+  return b.max_x > b.min_x && b.max_y > b.min_y
+}
+
+/** Map DXF world coordinates (Y-up) into the ezdxf SVG viewBox (Y-down). */
+export function worldToSvg(point: Point2D, dxfBbox: DxfBBox, viewBox: ViewBox): Point2D {
+  const dx = dxfBbox.max_x - dxfBbox.min_x
+  const dy = dxfBbox.max_y - dxfBbox.min_y
+  if (dx <= 0 || dy <= 0) return point
+  return {
+    x: viewBox.x + ((point.x - dxfBbox.min_x) / dx) * viewBox.w,
+    y: viewBox.y + ((dxfBbox.max_y - point.y) / dy) * viewBox.h,
+  }
+}
+
+export function mapRoomToSvgSpace(
+  room: RenderGeometry['rooms'][number],
+  dxfBbox: DxfBBox,
+  viewBox: ViewBox,
+): RenderGeometry['rooms'][number] {
+  return {
+    ...room,
+    polygon: {
+      vertices: room.polygon.vertices.map((v) => worldToSvg(v, dxfBbox, viewBox)),
+    },
+  }
 }

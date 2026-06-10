@@ -7,6 +7,7 @@ from datetime import datetime, timezone
 from cad_worker.electrical_layer import apply_layer_cmd
 from cad_worker.extract_geometry import extract_geometry_cmd
 from cad_worker.inspect_dxf import inspect_cmd
+from cad_worker.render_svg import render_svg_cmd
 
 
 def _health_payload() -> dict[str, object]:
@@ -62,6 +63,13 @@ def main(argv: list[str] | None = None) -> None:
     p_extract.add_argument("--input", required=True, help="Path to .dxf file")
     p_extract.add_argument("--json", action="store_true", help="Emit JSON (default)")
 
+    p_render_svg = subparsers.add_parser(
+        "render-svg",
+        help="Render DXF modelspace to SVG preview (ezdxf drawing addon).",
+    )
+    p_render_svg.add_argument("--input", required=True, help="Path to .dxf file")
+    p_render_svg.add_argument("--json", action="store_true", help="Emit JSON (default)")
+
     p_layer = subparsers.add_parser(
         "apply-electrical-layer",
         help="Copy input DXF and add Cambre_Electrical outlet blocks from JSON placements.",
@@ -101,6 +109,8 @@ def main(argv: list[str] | None = None) -> None:
         raise SystemExit(inspect_cmd(args.input))
     if args.command == "extract-geometry":
         raise SystemExit(extract_geometry_cmd(args.input))
+    if args.command == "render-svg":
+        raise SystemExit(render_svg_cmd(args.input))
     if args.command == "apply-electrical-layer":
         raise SystemExit(
             apply_layer_cmd(
