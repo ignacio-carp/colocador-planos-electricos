@@ -43,6 +43,11 @@ import { correlationMiddleware } from './middleware/correlation'
 import { requireAuth, type AuthedRequest } from './middleware/requireAuth'
 import { requireArchitectOrAdmin, requireRole } from './middleware/requireRole'
 import { getAppRole } from './roles'
+import {
+  normalizeRenderLabels,
+  normalizeRenderRoomVertices,
+  normalizeRenderWalls,
+} from './renderDataHelpers'
 import { getSupabaseServiceRole, isStorageConfigured } from './supabaseService'
 
 const app = express()
@@ -715,25 +720,24 @@ app.get(
     const layout = visionLayout?.layout_interpretation
 
     const rooms = (layout?.rooms ?? [])
-      .filter(
-        (r) =>
-          r.id &&
-          Array.isArray(r.polygon?.vertices) &&
-          (r.polygon?.vertices.length ?? 0) >= 3,
-      )
-      .map((r) => ({
-        id: r.id,
-        label: r.label ?? r.id,
-        room_type: r.room_type ?? 'unknown',
-        polygon: { vertices: r.polygon!.vertices },
-        area_m2: r.area_m2 ?? null,
-      }))
+      .map((r) => {
+        const vertices = normalizeRenderRoomVertices(r.polygon?.vertices)
+        if (!r.id || vertices.length < 3) return null
+        return {
+          id: r.id,
+          label: r.label ?? r.id,
+          room_type: r.room_type ?? 'unknown',
+          polygon: { vertices },
+          area_m2: r.area_m2 ?? null,
+        }
+      })
+      .filter((r): r is NonNullable<typeof r> => r !== null)
 
     res.json({
       jobId: job.id,
       status: job.status,
-      paredes: geometryExtract?.paredes ?? [],
-      etiquetas_texto: geometryExtract?.etiquetas_texto ?? [],
+      paredes: normalizeRenderWalls(geometryExtract?.paredes),
+      etiquetas_texto: normalizeRenderLabels(geometryExtract?.etiquetas_texto),
       rooms,
       coordinate_system: layout?.coordinate_system ?? null,
       scale: layout?.scale ?? null,

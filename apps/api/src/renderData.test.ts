@@ -7,7 +7,12 @@
 import assert from 'node:assert/strict'
 import { describe, it, beforeEach } from 'node:test'
 import { clearJobsForTests, createJob, patchJob } from './jobsStore'
-import { assertJobAccess } from './renderDataHelpers'
+import {
+  assertJobAccess,
+  normalizeRenderLabels,
+  normalizeRenderWalls,
+  parseRenderPoint,
+} from './renderDataHelpers'
 
 describe('assertJobAccess (render-data RBAC helper)', () => {
   it('returns true for job owner with architect role', () => {
@@ -52,6 +57,30 @@ describe('assertJobAccess (render-data RBAC helper)', () => {
       created_at: new Date().toISOString(),
     })
     assert.equal(result, false)
+  })
+})
+
+describe('render-data coordinate normalization', () => {
+  it('parses cad-worker [x,y] tuples', () => {
+    assert.deepEqual(parseRenderPoint([0, 0]), { x: 0, y: 0 })
+    assert.deepEqual(parseRenderPoint({ x: 50, y: 25 }), { x: 50, y: 25 })
+    assert.equal(parseRenderPoint(undefined), null)
+  })
+
+  it('normalizes wall segments from cad-worker geometry_extract', () => {
+    const walls = normalizeRenderWalls([
+      { inicio: [0, 0], fin: [100, 0] },
+      { inicio: [100, 0], fin: [100, 50] },
+    ])
+    assert.equal(walls.length, 2)
+    assert.deepEqual(walls[0]!.inicio, { x: 0, y: 0 })
+    assert.deepEqual(walls[1]!.fin, { x: 100, y: 50 })
+  })
+
+  it('normalizes text labels with tuple positions', () => {
+    const labels = normalizeRenderLabels([{ texto: 'SALA', posicion: [10, 10] }])
+    assert.equal(labels.length, 1)
+    assert.deepEqual(labels[0]!.posicion, { x: 10, y: 10 })
   })
 })
 
