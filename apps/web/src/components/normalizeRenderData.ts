@@ -1,22 +1,5 @@
-import type { RenderData, TextLabel, WallSegment } from './PlanViewer2D'
-
-type Point2D = { x: number; y: number }
-
-function parsePoint(raw: unknown): Point2D | null {
-  if (raw == null) return null
-  if (Array.isArray(raw) && raw.length >= 2) {
-    const x = Number(raw[0])
-    const y = Number(raw[1])
-    return Number.isFinite(x) && Number.isFinite(y) ? { x, y } : null
-  }
-  if (typeof raw === 'object') {
-    const obj = raw as Record<string, unknown>
-    const x = Number(obj.x)
-    const y = Number(obj.y)
-    return Number.isFinite(x) && Number.isFinite(y) ? { x, y } : null
-  }
-  return null
-}
+import type { RenderData, Room, TextLabel, WallSegment } from './PlanViewer2D'
+import { parsePoint, parsePolygonVertices, type RenderGeometry } from './planViewerMath'
 
 function normalizeWalls(raw: WallSegment[] | unknown[]): WallSegment[] {
   const out: WallSegment[] = []
@@ -42,19 +25,20 @@ function normalizeLabels(raw: TextLabel[] | unknown[]): TextLabel[] {
   return out
 }
 
+function normalizeRooms(raw: Room[]): Room[] {
+  return raw
+    .map((room) => {
+      const vertices = parsePolygonVertices(room.polygon)
+      return { ...room, polygon: { vertices } }
+    })
+    .filter((room) => room.polygon.vertices.length >= 3)
+}
+
 /** Normalize cad-worker [x,y] tuples and drop invalid coordinates before rendering. */
-export function normalizeRenderData(data: RenderData): RenderData {
+export function normalizeRenderData(data: RenderData): RenderGeometry {
   return {
-    ...data,
     paredes: normalizeWalls(data.paredes),
     etiquetas_texto: normalizeLabels(data.etiquetas_texto),
-    rooms: data.rooms
-      .map((room) => {
-        const vertices = room.polygon.vertices
-          .map((vertex) => parsePoint(vertex))
-          .filter((vertex): vertex is Point2D => vertex !== null)
-        return { ...room, polygon: { vertices } }
-      })
-      .filter((room) => room.polygon.vertices.length >= 3),
+    rooms: normalizeRooms(data.rooms),
   }
 }

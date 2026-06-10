@@ -10,6 +10,7 @@ import { clearJobsForTests, createJob, patchJob } from './jobsStore'
 import {
   assertJobAccess,
   normalizeRenderLabels,
+  normalizeRenderRoomVertices,
   normalizeRenderWalls,
   parseRenderPoint,
 } from './renderDataHelpers'
@@ -81,6 +82,21 @@ describe('render-data coordinate normalization', () => {
     const labels = normalizeRenderLabels([{ texto: 'SALA', posicion: [10, 10] }])
     assert.equal(labels.length, 1)
     assert.deepEqual(labels[0]!.posicion, { x: 10, y: 10 })
+  })
+
+  it('normalizes GeoJSON room polygons', () => {
+    const vertices = normalizeRenderRoomVertices({
+      coordinates: [
+        [
+          [0, 0],
+          [100, 0],
+          [100, 80],
+          [0, 80],
+        ],
+      ],
+    })
+    assert.equal(vertices.length, 4)
+    assert.deepEqual(vertices[0], { x: 0, y: 0 })
   })
 })
 

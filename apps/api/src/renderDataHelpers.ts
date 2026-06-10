@@ -60,12 +60,30 @@ export function normalizeRenderLabels(
   return out
 }
 
-export function normalizeRenderRoomVertices(raw: unknown): Point2D[] {
-  if (!Array.isArray(raw)) return []
-  const out: Point2D[] = []
-  for (const vertex of raw) {
-    const point = parseRenderPoint(vertex)
-    if (point) out.push(point)
+export function normalizeRenderRoomVertices(polygon: unknown): Point2D[] {
+  if (!polygon || typeof polygon !== 'object') return []
+  const poly = polygon as Record<string, unknown>
+  if (Array.isArray(poly.vertices)) {
+    const out: Point2D[] = []
+    for (const vertex of poly.vertices) {
+      const point = parseRenderPoint(vertex)
+      if (point) out.push(point)
+    }
+    return out
   }
-  return out
+  const coords = poly.coordinates
+  if (!Array.isArray(coords) || coords.length === 0) return []
+  let ring: unknown = coords[0]
+  if (Array.isArray(ring) && Array.isArray(ring[0]) && !Array.isArray(ring[0][0])) {
+    return (ring as unknown[])
+      .map((vertex) => parseRenderPoint(vertex))
+      .filter((point): point is Point2D => point !== null)
+  }
+  if (Array.isArray(ring) && Array.isArray(ring[0]) && Array.isArray(ring[0][0])) {
+    ring = ring[0]
+    return (ring as unknown[])
+      .map((vertex) => parseRenderPoint(vertex))
+      .filter((point): point is Point2D => point !== null)
+  }
+  return []
 }
