@@ -1,17 +1,15 @@
 import { describe, expect, it } from 'vitest'
-import type { RenderData } from './PlanViewer2D'
 import {
   computeBBox,
   computeFitTransform,
+  parsePolygonVertices,
   screenConstantSize,
-  usesYFlip,
-  worldToScreen,
+  toSvgGeometry,
+  usesCadYUp,
   zoomTransform,
 } from './planViewerMath'
 
-const sampleData: RenderData = {
-  jobId: 'demo',
-  status: 'listo_para_editar',
+const sampleGeometry = {
   paredes: [
     { inicio: { x: 0, y: 0 }, fin: { x: 7800, y: 0 } },
     { inicio: { x: 7800, y: 0 }, fin: { x: 7800, y: 4100 } },
@@ -33,21 +31,48 @@ const sampleData: RenderData = {
       area_m2: 21.32,
     },
   ],
-  coordinate_system: 'drawing_origin_bottom_left',
-  scale: { pixels_per_meter: 120.5, known: true },
-  room_processing_state: {},
 }
 
 describe('planViewerMath', () => {
   it('computes bbox from walls, labels and rooms', () => {
-    const bbox = computeBBox(sampleData)
+    const bbox = computeBBox(sampleGeometry)
     expect(bbox).toEqual({ minX: 0, minY: 0, maxX: 7800, maxY: 4100 })
   })
 
-  it('detects CAD coordinate systems that need Y flip', () => {
-    expect(usesYFlip('drawing_origin_bottom_left')).toBe(true)
-    expect(usesYFlip('screen_top_left')).toBe(false)
-    expect(usesYFlip(null)).toBe(true)
+  it('parses GeoJSON polygon coordinates', () => {
+    const vertices = parsePolygonVertices({
+      coordinates: [
+        [
+          [0, 0],
+          [100, 0],
+          [100, 80],
+          [0, 80],
+          [0, 0],
+        ],
+      ],
+    })
+    expect(vertices).toEqual([
+      { x: 0, y: 0 },
+      { x: 100, y: 0 },
+      { x: 100, y: 80 },
+      { x: 0, y: 80 },
+      { x: 0, y: 0 },
+    ])
+  })
+
+  it('detects CAD coordinate systems that need Y conversion', () => {
+    expect(usesCadYUp('drawing_origin_bottom_left')).toBe(true)
+    expect(usesCadYUp('screen_top_left')).toBe(false)
+    expect(usesCadYUp(null)).toBe(true)
+  })
+
+  it('flips CAD geometry into SVG Y-down space', () => {
+    const bbox = computeBBox(sampleGeometry)!
+    const svgGeometry = toSvgGeometry(sampleGeometry, bbox, true)
+    const svgBBox = computeBBox(svgGeometry)!
+    expect(svgBBox.minY).toBe(0)
+    expect(svgBBox.maxY).toBe(4100)
+    expect(svgGeometry.paredes[0]!.inicio).toEqual({ x: 0, y: 4100 })
   })
 
   it('keeps stroke/text sizes stable in screen space when zooming in', () => {
@@ -56,20 +81,17 @@ describe('planViewerMath', () => {
     expect(screenConstantSize(2, 5)).toBeCloseTo(0.4)
   })
 
-  it('fits bbox with CAD Y-up orientation (bottom row near viewport bottom)', () => {
-    const bbox = computeBBox(sampleData)!
-    const transform = computeFitTransform(bbox, 800, 480, true)
-    const bottomLeft = worldToScreen(0, 0, transform, true)
-    const topLeft = worldToScreen(0, 4100, transform, true)
-
-    expect(bottomLeft.y).toBeGreaterThan(topLeft.y)
-    expect(bottomLeft.y).toBeGreaterThan(400)
-    expect(topLeft.y).toBeLessThan(80)
+  it('fits bbox with finite transform', () => {
+    const bbox = computeBBox(sampleGeometry)!
+    const transform = computeFitTransform(bbox, 800, 480)
+    expect(Number.isFinite(transform.x)).toBe(true)
+    expect(Number.isFinite(transform.y)).toBe(true)
+    expect(transform.scale).toBeGreaterThan(0)
   })
 
   it('returns null bbox when coordinates are invalid (cad-worker tuple read as object)', () => {
     const broken = {
-      ...sampleData,
+      ...sampleGeometry,
       paredes: [
         {
           inicio: [0, 0] as unknown as { x: number; y: number },
@@ -83,10 +105,9 @@ describe('planViewerMath', () => {
   })
 
   it('zooms in without exploding label size in screen pixels', () => {
-    const bbox = computeBBox(sampleData)!
-    const initial = computeFitTransform(bbox, 800, 480, true)
-    const zoomed = zoomTransform(initial, 1, 400, 240, true)
-
+    const bbox = computeBBox(sampleGeometry)!
+    const initial = computeFitTransform(bbox, 800, 480)
+    const zoomed = zoomTransform(initial, 1, 400, 240)
     const labelScreenSize = screenConstantSize(8, zoomed.scale)
     expect(labelScreenSize * zoomed.scale).toBeCloseTo(8, 5)
   })

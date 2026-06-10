@@ -721,7 +721,7 @@ app.get(
 
     const rooms = (layout?.rooms ?? [])
       .map((r) => {
-        const vertices = normalizeRenderRoomVertices(r.polygon?.vertices)
+        const vertices = normalizeRenderRoomVertices(r.polygon)
         if (!r.id || vertices.length < 3) return null
         return {
           id: r.id,

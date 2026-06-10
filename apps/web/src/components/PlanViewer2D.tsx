@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import React, { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import { normalizeRenderData } from './normalizeRenderData'
 import {
   centerOnPoint,
@@ -6,7 +6,8 @@ import {
   computeFitTransform,
   isValidTransform,
   screenConstantSize,
-  usesYFlip,
+  toSvgGeometry,
+  usesCadYUp,
   zoomTransform,
   type ViewTransform,
 } from './planViewerMath'
@@ -95,49 +96,65 @@ export default function PlanViewer2D({ data, selectedRoomId, onRoomClick }: Prop
   const [initialized, setInitialized] = useState(false)
   const dragging = useRef(false)
   const lastPos = useRef({ x: 0, y: 0 })
-  const flipY = usesYFlip(data.coordinate_system)
-  const renderData = useMemo(() => normalizeRenderData(data), [data])
 
-  const bbox = useMemo(() => computeBBox(renderData), [renderData])
+  const cadYUp = usesCadYUp(data.coordinate_system)
+  const normalized = useMemo(() => normalizeRenderData(data), [data])
+  const sourceBBox = useMemo(() => computeBBox(normalized), [normalized])
+  const renderGeometry = useMemo(() => {
+    if (!sourceBBox) return normalized
+    return toSvgGeometry(normalized, sourceBBox, cadYUp)
+  }, [normalized, sourceBBox, cadYUp])
+  const bbox = useMemo(() => computeBBox(renderGeometry), [renderGeometry])
   const bboxKey = bbox ? `${bbox.minX}:${bbox.minY}:${bbox.maxX}:${bbox.maxY}` : 'empty'
 
-  /** Fit bbox into container on first render or when geometry changes. */
   const fitView = useCallback(() => {
-    if (!containerRef.current || !bbox) return
+    if (!containerRef.current || !bbox) return false
     const { width, height } = containerRef.current.getBoundingClientRect()
-    if (width === 0 || height === 0) return
-    setTransform(computeFitTransform(bbox, width, height, flipY, MAX_ZOOM))
+    if (width <= 0 || height <= 0) return false
+    const next = computeFitTransform(bbox, width, height, MAX_ZOOM)
+    if (!isValidTransform(next)) return false
+    setTransform(next)
     setInitialized(true)
-  }, [bbox, flipY])
+    return true
+  }, [bbox])
 
-  useEffect(() => {
+  useLayoutEffect(() => {
     setInitialized(false)
     fitView()
-  }, [renderData.jobId, bboxKey, flipY, fitView])
+  }, [data.jobId, bboxKey, fitView])
 
-  /** Center on selected room when selectedRoomId changes. */
+  useEffect(() => {
+    const container = containerRef.current
+    if (!container || typeof ResizeObserver === 'undefined') return
+    const observer = new ResizeObserver(() => {
+      fitView()
+    })
+    observer.observe(container)
+    return () => observer.disconnect()
+  }, [bboxKey, fitView])
+
   useEffect(() => {
     if (!selectedRoomId || !containerRef.current) return
-    const room = renderData.rooms.find((r) => r.id === selectedRoomId)
+    const room = renderGeometry.rooms.find((r) => r.id === selectedRoomId)
     if (!room) return
     const verts = room.polygon.vertices
     const cx = verts.reduce((s, v) => s + v.x, 0) / verts.length
     const cy = verts.reduce((s, v) => s + v.y, 0) / verts.length
     const { width, height } = containerRef.current.getBoundingClientRect()
     setTransform((prev) => {
-      const next = centerOnPoint(prev, width, height, cx, cy, flipY)
+      const next = centerOnPoint(prev, width, height, cx, cy)
       return isValidTransform(next) ? next : prev
     })
-  }, [selectedRoomId, renderData.rooms, flipY])
+  }, [selectedRoomId, renderGeometry.rooms])
 
   const zoom = useCallback((delta: number, originX?: number, originY?: number) => {
     setTransform((prev) => {
       const ox = originX ?? (containerRef.current?.getBoundingClientRect().width ?? 0) / 2
       const oy = originY ?? (containerRef.current?.getBoundingClientRect().height ?? 0) / 2
-      const next = zoomTransform(prev, delta, ox, oy, flipY, ZOOM_FACTOR, MIN_ZOOM, MAX_ZOOM)
+      const next = zoomTransform(prev, delta, ox, oy, ZOOM_FACTOR, MIN_ZOOM, MAX_ZOOM)
       return isValidTransform(next) ? next : prev
     })
-  }, [flipY])
+  }, [])
 
   const zoomRef = useRef(zoom)
   zoomRef.current = zoom
@@ -173,10 +190,9 @@ export default function PlanViewer2D({ data, selectedRoomId, onRoomClick }: Prop
     ;(e.currentTarget as HTMLElement).releasePointerCapture(e.pointerId)
   }
 
-  const hasWalls = renderData.paredes.length > 0
-  const hasRooms = renderData.rooms.length > 0
+  const hasWalls = renderGeometry.paredes.length > 0
+  const hasRooms = renderGeometry.rooms.length > 0
   const hasData = hasWalls || hasRooms
-  const canRender = isValidTransform(transform)
 
   if (!hasData) {
     return (
@@ -188,14 +204,12 @@ export default function PlanViewer2D({ data, selectedRoomId, onRoomClick }: Prop
     )
   }
 
-  const yScale = flipY ? -transform.scale : transform.scale
-  const svgTransform = canRender
-    ? `translate(${transform.x}, ${transform.y}) scale(${transform.scale}, ${yScale})`
+  const svgTransform = isValidTransform(transform)
+    ? `translate(${transform.x}, ${transform.y}) scale(${transform.scale})`
     : undefined
 
   return (
     <div className="relative overflow-hidden rounded-xl border border-outline-variant bg-surface-container-lowest">
-      {/* Toolbar */}
       <div className="absolute right-3 top-3 z-10 flex flex-col gap-1">
         <button
           type="button"
@@ -223,7 +237,6 @@ export default function PlanViewer2D({ data, selectedRoomId, onRoomClick }: Prop
         </button>
       </div>
 
-      {/* Legend */}
       <div className="absolute bottom-3 left-3 z-10 rounded bg-surface-container-highest/80 px-3 py-2 text-technical-label text-on-surface-variant backdrop-blur-sm">
         {data.coordinate_system ? (
           <div className="mb-1 capitalize">{data.coordinate_system.replace(/_/g, ' ')}</div>
@@ -234,7 +247,6 @@ export default function PlanViewer2D({ data, selectedRoomId, onRoomClick }: Prop
         {!initialized ? <div>Calculando vista…</div> : null}
       </div>
 
-      {/* SVG canvas */}
       <div
         ref={containerRef}
         className="h-[480px] w-full cursor-grab active:cursor-grabbing select-none"
@@ -245,11 +257,9 @@ export default function PlanViewer2D({ data, selectedRoomId, onRoomClick }: Prop
       >
         <svg width="100%" height="100%" xmlns="http://www.w3.org/2000/svg">
           <g transform={svgTransform}>
-            {/* Room polygons (drawn before walls so walls appear on top) */}
-            {canRender
-              ? renderData.rooms.map((room) => {
+            {renderGeometry.rooms.map((room) => {
               const isSelected = room.id === selectedRoomId
-              const fill = isSelected ? SELECTED_FILL : roomFill(room, renderData.room_processing_state)
+              const fill = isSelected ? SELECTED_FILL : roomFill(room, data.room_processing_state)
               const stroke = isSelected ? SELECTED_STROKE : DEFAULT_ROOM_STROKE
               const strokeWidth = screenConstantSize(isSelected ? 3 : 1.5, transform.scale)
               const centroidX =
@@ -272,25 +282,21 @@ export default function PlanViewer2D({ data, selectedRoomId, onRoomClick }: Prop
                   />
                   <text
                     x={centroidX}
-                    y={flipY ? -centroidY : centroidY}
+                    y={centroidY}
                     textAnchor="middle"
                     dominantBaseline="middle"
                     fontSize={fontSize}
                     fill={isSelected ? '#1d4ed8' : '#374151'}
                     fontWeight={isSelected ? 'bold' : 'normal'}
-                    transform={flipY ? 'scale(1, -1)' : undefined}
                     style={{ pointerEvents: 'none', userSelect: 'none' }}
                   >
                     {room.label}
                   </text>
                 </g>
               )
-            })
-              : null}
+            })}
 
-            {/* Wall segments */}
-            {canRender
-              ? renderData.paredes.map((wall, i) => (
+            {renderGeometry.paredes.map((wall, i) => (
               <line
                 key={i}
                 x1={wall.inicio.x}
@@ -301,29 +307,24 @@ export default function PlanViewer2D({ data, selectedRoomId, onRoomClick }: Prop
                 strokeWidth={screenConstantSize(2, transform.scale)}
                 strokeLinecap="round"
               />
-            ))
-              : null}
+            ))}
 
-            {/* Text labels */}
-            {canRender
-              ? renderData.etiquetas_texto.map((lbl, i) => {
+            {renderGeometry.etiquetas_texto.map((lbl, i) => {
               const fontSize = screenConstantSize(8, transform.scale)
               return (
                 <text
                   key={i}
                   x={lbl.posicion.x}
-                  y={flipY ? -lbl.posicion.y : lbl.posicion.y}
+                  y={lbl.posicion.y}
                   fontSize={fontSize}
                   fill="#6b7280"
                   textAnchor="middle"
-                  transform={flipY ? 'scale(1, -1)' : undefined}
                   style={{ pointerEvents: 'none', userSelect: 'none' }}
                 >
                   {lbl.texto}
                 </text>
               )
-            })
-              : null}
+            })}
           </g>
         </svg>
       </div>
