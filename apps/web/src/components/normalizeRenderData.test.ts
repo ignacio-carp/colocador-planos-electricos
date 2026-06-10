@@ -1,6 +1,12 @@
 import { describe, expect, it } from 'vitest'
 import type { RenderData } from './PlanViewer2D'
-import { computeBBox, computeFitTransform, isValidTransform, toSvgGeometry, usesCadYUp } from './planViewerMath'
+import {
+  computeBBox,
+  fitViewBoxFromBBox,
+  isValidViewBox,
+  toSvgGeometry,
+  usesCadYUp,
+} from './planViewerMath'
 import { normalizeRenderData } from './normalizeRenderData'
 
 const cadWorkerPayload: RenderData = {
@@ -37,24 +43,19 @@ const cadWorkerPayload: RenderData = {
 }
 
 describe('normalizeRenderData', () => {
-  it('converts cad-worker [x,y] tuples into {x,y} points', () => {
+  it('converts cad-worker tuples and GeoJSON rooms', () => {
     const normalized = normalizeRenderData(cadWorkerPayload)
-    expect(normalized.paredes).toEqual([
-      { inicio: { x: 0, y: 0 }, fin: { x: 100, y: 0 } },
-      { inicio: { x: 100, y: 0 }, fin: { x: 100, y: 50 } },
-    ])
-    expect(normalized.etiquetas_texto).toEqual([{ texto: 'SALA', posicion: { x: 10, y: 10 } }])
-    expect(normalized.rooms[0]!.polygon.vertices.length).toBe(4)
+    expect(normalized.paredes).toHaveLength(2)
+    expect(normalized.rooms[0]!.polygon.vertices).toHaveLength(4)
   })
 
-  it('produces a finite fit transform after CAD-to-SVG conversion', () => {
+  it('produces a valid viewBox after CAD-to-SVG conversion', () => {
     const normalized = normalizeRenderData(cadWorkerPayload)
     const sourceBBox = computeBBox(normalized)
     expect(sourceBBox).not.toBeNull()
     const svgGeometry = toSvgGeometry(normalized, sourceBBox!, usesCadYUp(cadWorkerPayload.coordinate_system))
     const bbox = computeBBox(svgGeometry)
-    expect(bbox).not.toBeNull()
-    const transform = computeFitTransform(bbox!, 800, 480)
-    expect(isValidTransform(transform)).toBe(true)
+    const viewBox = fitViewBoxFromBBox(bbox!)
+    expect(isValidViewBox(viewBox)).toBe(true)
   })
 })

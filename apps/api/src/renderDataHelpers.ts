@@ -38,8 +38,8 @@ export function normalizeRenderWalls(
   for (const wall of raw) {
     if (!wall || typeof wall !== 'object') continue
     const segment = wall as Record<string, unknown>
-    const inicio = parseRenderPoint(segment.inicio)
-    const fin = parseRenderPoint(segment.fin)
+    const inicio = parseRenderPoint(segment.inicio ?? segment.start)
+    const fin = parseRenderPoint(segment.fin ?? segment.end)
     if (inicio && fin) out.push({ inicio, fin })
   }
   return out
@@ -86,4 +86,18 @@ export function normalizeRenderRoomVertices(polygon: unknown): Point2D[] {
       .filter((point): point is Point2D => point !== null)
   }
   return []
+}
+
+/** vision_layout may be the full US-007 doc or a bare layout_interpretation object. */
+export function resolveLayoutInterpretation(
+  visionLayout: unknown,
+): Record<string, unknown> | undefined {
+  if (!visionLayout || typeof visionLayout !== 'object') return undefined
+  const raw = visionLayout as Record<string, unknown>
+  const nested = raw.layout_interpretation
+  if (nested && typeof nested === 'object' && !Array.isArray(nested)) {
+    return nested as Record<string, unknown>
+  }
+  if (Array.isArray(raw.rooms)) return raw
+  return undefined
 }

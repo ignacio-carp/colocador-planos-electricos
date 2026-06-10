@@ -6,8 +6,8 @@ function normalizeWalls(raw: WallSegment[] | unknown[]): WallSegment[] {
   for (const wall of raw) {
     if (!wall || typeof wall !== 'object') continue
     const segment = wall as Record<string, unknown>
-    const inicio = parsePoint(segment.inicio)
-    const fin = parsePoint(segment.fin)
+    const inicio = parsePoint(segment.inicio ?? segment.start)
+    const fin = parsePoint(segment.fin ?? segment.end)
     if (inicio && fin) out.push({ inicio, fin })
   }
   return out

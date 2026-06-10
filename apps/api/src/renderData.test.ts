@@ -13,6 +13,7 @@ import {
   normalizeRenderRoomVertices,
   normalizeRenderWalls,
   parseRenderPoint,
+  resolveLayoutInterpretation,
 } from './renderDataHelpers'
 
 describe('assertJobAccess (render-data RBAC helper)', () => {
@@ -82,6 +83,21 @@ describe('render-data coordinate normalization', () => {
     const labels = normalizeRenderLabels([{ texto: 'SALA', posicion: [10, 10] }])
     assert.equal(labels.length, 1)
     assert.deepEqual(labels[0]!.posicion, { x: 10, y: 10 })
+  })
+
+  it('resolves layout_interpretation from full vision_layout doc or bare object', () => {
+    const full = resolveLayoutInterpretation({
+      layout_interpretation: { rooms: [{ id: 'room-1' }], coordinate_system: 'drawing_origin_bottom_left' },
+    })
+    assert.ok(full?.rooms)
+    const bare = resolveLayoutInterpretation({ rooms: [{ id: 'room-2' }] })
+    assert.equal((bare?.rooms as unknown[]).length, 1)
+  })
+
+  it('normalizes vision walls with start/end points', () => {
+    const walls = normalizeRenderWalls([{ start: { x: 0, y: 0 }, end: { x: 50, y: 0 } }])
+    assert.equal(walls.length, 1)
+    assert.deepEqual(walls[0]!.fin, { x: 50, y: 0 })
   })
 
   it('normalizes GeoJSON room polygons', () => {

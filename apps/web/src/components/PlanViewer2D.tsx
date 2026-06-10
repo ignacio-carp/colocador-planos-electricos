@@ -1,15 +1,16 @@
-import React, { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { normalizeRenderData } from './normalizeRenderData'
 import {
-  centerOnPoint,
+  centerViewBoxOn,
   computeBBox,
-  computeFitTransform,
-  isValidTransform,
-  screenConstantSize,
+  fitViewBoxFromBBox,
+  isValidViewBox,
+  labelFontSize,
+  panViewBox,
   toSvgGeometry,
   usesCadYUp,
-  zoomTransform,
-  type ViewTransform,
+  zoomViewBox,
+  type ViewBox,
 } from './planViewerMath'
 
 export type WallSegment = {
@@ -77,8 +78,6 @@ const SELECTED_STROKE = '#2563eb'
 const DEFAULT_ROOM_STROKE = '#6b7280'
 
 const ZOOM_FACTOR = 1.2
-const MIN_ZOOM = 0.05
-const MAX_ZOOM = 50
 
 function roomFill(room: Room, processingState: Record<string, string>): string {
   const ps = processingState[room.id]
@@ -92,8 +91,7 @@ function polygonPoints(vertices: RoomVertex[]): string {
 
 export default function PlanViewer2D({ data, selectedRoomId, onRoomClick }: Props) {
   const containerRef = useRef<HTMLDivElement>(null)
-  const [transform, setTransform] = useState<ViewTransform>({ x: 0, y: 0, scale: 1 })
-  const [initialized, setInitialized] = useState(false)
+  const [viewBox, setViewBox] = useState<ViewBox | null>(null)
   const dragging = useRef(false)
   const lastPos = useRef({ x: 0, y: 0 })
 
@@ -108,51 +106,30 @@ export default function PlanViewer2D({ data, selectedRoomId, onRoomClick }: Prop
   const bboxKey = bbox ? `${bbox.minX}:${bbox.minY}:${bbox.maxX}:${bbox.maxY}` : 'empty'
 
   const fitView = useCallback(() => {
-    if (!containerRef.current || !bbox) return false
-    const { width, height } = containerRef.current.getBoundingClientRect()
-    if (width <= 0 || height <= 0) return false
-    const next = computeFitTransform(bbox, width, height, MAX_ZOOM)
-    if (!isValidTransform(next)) return false
-    setTransform(next)
-    setInitialized(true)
-    return true
+    if (!bbox) return
+    const next = fitViewBoxFromBBox(bbox)
+    if (isValidViewBox(next)) setViewBox(next)
   }, [bbox])
 
-  useLayoutEffect(() => {
-    setInitialized(false)
+  useEffect(() => {
     fitView()
   }, [data.jobId, bboxKey, fitView])
 
   useEffect(() => {
-    const container = containerRef.current
-    if (!container || typeof ResizeObserver === 'undefined') return
-    const observer = new ResizeObserver(() => {
-      fitView()
-    })
-    observer.observe(container)
-    return () => observer.disconnect()
-  }, [bboxKey, fitView])
-
-  useEffect(() => {
-    if (!selectedRoomId || !containerRef.current) return
+    if (!selectedRoomId) return
     const room = renderGeometry.rooms.find((r) => r.id === selectedRoomId)
-    if (!room) return
+    if (!room || !viewBox) return
     const verts = room.polygon.vertices
     const cx = verts.reduce((s, v) => s + v.x, 0) / verts.length
     const cy = verts.reduce((s, v) => s + v.y, 0) / verts.length
-    const { width, height } = containerRef.current.getBoundingClientRect()
-    setTransform((prev) => {
-      const next = centerOnPoint(prev, width, height, cx, cy)
-      return isValidTransform(next) ? next : prev
-    })
+    setViewBox((prev) => (prev ? centerViewBoxOn(prev, cx, cy) : prev))
   }, [selectedRoomId, renderGeometry.rooms])
 
-  const zoom = useCallback((delta: number, originX?: number, originY?: number) => {
-    setTransform((prev) => {
-      const ox = originX ?? (containerRef.current?.getBoundingClientRect().width ?? 0) / 2
-      const oy = originY ?? (containerRef.current?.getBoundingClientRect().height ?? 0) / 2
-      const next = zoomTransform(prev, delta, ox, oy, ZOOM_FACTOR, MIN_ZOOM, MAX_ZOOM)
-      return isValidTransform(next) ? next : prev
+  const zoom = useCallback((delta: number, originX = 0.5, originY = 0.5) => {
+    setViewBox((prev) => {
+      if (!prev) return prev
+      const factor = delta > 0 ? ZOOM_FACTOR : 1 / ZOOM_FACTOR
+      return zoomViewBox(prev, factor, originX, originY)
     })
   }, [])
 
@@ -164,7 +141,12 @@ export default function PlanViewer2D({ data, selectedRoomId, onRoomClick }: Prop
     const onWheel = (e: WheelEvent) => {
       e.preventDefault()
       const rect = container.getBoundingClientRect()
-      zoomRef.current(-e.deltaY, e.clientX - rect.left, e.clientY - rect.top)
+      if (rect.width <= 0 || rect.height <= 0) return
+      zoomRef.current(
+        -e.deltaY,
+        (e.clientX - rect.left) / rect.width,
+        (e.clientY - rect.top) / rect.height,
+      )
     }
     container.addEventListener('wheel', onWheel, { passive: false })
     return () => container.removeEventListener('wheel', onWheel)
@@ -178,11 +160,14 @@ export default function PlanViewer2D({ data, selectedRoomId, onRoomClick }: Prop
   }
 
   function onPointerMove(e: React.PointerEvent) {
-    if (!dragging.current) return
+    if (!dragging.current || !containerRef.current) return
+    const rect = containerRef.current.getBoundingClientRect()
     const dx = e.clientX - lastPos.current.x
     const dy = e.clientY - lastPos.current.y
     lastPos.current = { x: e.clientX, y: e.clientY }
-    setTransform((prev) => ({ ...prev, x: prev.x + dx, y: prev.y + dy }))
+    setViewBox((prev) =>
+      prev ? panViewBox(prev, dx, dy, rect.width, rect.height) : prev,
+    )
   }
 
   function onPointerUp(e: React.PointerEvent) {
@@ -193,20 +178,23 @@ export default function PlanViewer2D({ data, selectedRoomId, onRoomClick }: Prop
   const hasWalls = renderGeometry.paredes.length > 0
   const hasRooms = renderGeometry.rooms.length > 0
   const hasData = hasWalls || hasRooms
+  const fontSize = viewBox ? labelFontSize(viewBox) : 12
+  const strokeScale = viewBox ? Math.max(viewBox.w / 400, 0.5) : 1
 
   if (!hasData) {
     return (
       <div className="flex min-h-[320px] items-center justify-center rounded-xl border border-outline-variant bg-surface-container-lowest p-8 text-center">
         <p className="text-body-sm text-on-surface-variant">
           Sin datos de geometría disponibles aún.
+          <span className="mt-2 block text-technical-label text-outline">
+            Paredes: {data.paredes.length} · Habitaciones: {data.rooms.length}
+          </span>
         </p>
       </div>
     )
   }
 
-  const svgTransform = isValidTransform(transform)
-    ? `translate(${transform.x}, ${transform.y}) scale(${transform.scale})`
-    : undefined
+  const viewBoxAttr = viewBox ? `${viewBox.x} ${viewBox.y} ${viewBox.w} ${viewBox.h}` : undefined
 
   return (
     <div className="relative overflow-hidden rounded-xl border border-outline-variant bg-surface-container-lowest">
@@ -244,88 +232,89 @@ export default function PlanViewer2D({ data, selectedRoomId, onRoomClick }: Prop
         {data.scale?.known && data.scale.pixels_per_meter ? (
           <div>{data.scale.pixels_per_meter} px/m</div>
         ) : null}
-        {!initialized ? <div>Calculando vista…</div> : null}
+        <div>
+          {renderGeometry.paredes.length} paredes · {renderGeometry.rooms.length} hab.
+        </div>
       </div>
 
       <div
         ref={containerRef}
-        className="h-[480px] w-full cursor-grab active:cursor-grabbing select-none"
+        className="h-[480px] w-full cursor-grab active:cursor-grabbing select-none bg-white"
         style={{ touchAction: 'none' }}
         onPointerDown={onPointerDown}
         onPointerMove={onPointerMove}
         onPointerUp={onPointerUp}
       >
-        <svg width="100%" height="100%" xmlns="http://www.w3.org/2000/svg">
-          <g transform={svgTransform}>
-            {renderGeometry.rooms.map((room) => {
-              const isSelected = room.id === selectedRoomId
-              const fill = isSelected ? SELECTED_FILL : roomFill(room, data.room_processing_state)
-              const stroke = isSelected ? SELECTED_STROKE : DEFAULT_ROOM_STROKE
-              const strokeWidth = screenConstantSize(isSelected ? 3 : 1.5, transform.scale)
-              const centroidX =
-                room.polygon.vertices.reduce((s, v) => s + v.x, 0) / room.polygon.vertices.length
-              const centroidY =
-                room.polygon.vertices.reduce((s, v) => s + v.y, 0) / room.polygon.vertices.length
-              const fontSize = screenConstantSize(8, transform.scale)
-              return (
-                <g key={room.id}>
-                  <polygon
-                    points={polygonPoints(room.polygon.vertices)}
-                    fill={fill}
-                    stroke={stroke}
-                    strokeWidth={strokeWidth}
-                    fillOpacity={0.65}
-                    style={{ cursor: onRoomClick ? 'pointer' : 'default' }}
-                    onClick={() => onRoomClick?.(room.id)}
-                    role={onRoomClick ? 'button' : undefined}
-                    aria-label={room.label}
-                  />
-                  <text
-                    x={centroidX}
-                    y={centroidY}
-                    textAnchor="middle"
-                    dominantBaseline="middle"
-                    fontSize={fontSize}
-                    fill={isSelected ? '#1d4ed8' : '#374151'}
-                    fontWeight={isSelected ? 'bold' : 'normal'}
-                    style={{ pointerEvents: 'none', userSelect: 'none' }}
-                  >
-                    {room.label}
-                  </text>
-                </g>
-              )
-            })}
-
-            {renderGeometry.paredes.map((wall, i) => (
-              <line
-                key={i}
-                x1={wall.inicio.x}
-                y1={wall.inicio.y}
-                x2={wall.fin.x}
-                y2={wall.fin.y}
-                stroke="#1f2937"
-                strokeWidth={screenConstantSize(2, transform.scale)}
-                strokeLinecap="round"
-              />
-            ))}
-
-            {renderGeometry.etiquetas_texto.map((lbl, i) => {
-              const fontSize = screenConstantSize(8, transform.scale)
-              return (
+        <svg
+          width="100%"
+          height="100%"
+          viewBox={viewBoxAttr}
+          preserveAspectRatio="xMidYMid meet"
+          xmlns="http://www.w3.org/2000/svg"
+        >
+          {renderGeometry.rooms.map((room) => {
+            const isSelected = room.id === selectedRoomId
+            const fill = isSelected ? SELECTED_FILL : roomFill(room, data.room_processing_state)
+            const stroke = isSelected ? SELECTED_STROKE : DEFAULT_ROOM_STROKE
+            const centroidX =
+              room.polygon.vertices.reduce((s, v) => s + v.x, 0) / room.polygon.vertices.length
+            const centroidY =
+              room.polygon.vertices.reduce((s, v) => s + v.y, 0) / room.polygon.vertices.length
+            return (
+              <g key={room.id}>
+                <polygon
+                  points={polygonPoints(room.polygon.vertices)}
+                  fill={fill}
+                  stroke={stroke}
+                  strokeWidth={(isSelected ? 3 : 1.5) * strokeScale}
+                  fillOpacity={0.65}
+                  style={{ cursor: onRoomClick ? 'pointer' : 'default' }}
+                  onClick={() => onRoomClick?.(room.id)}
+                  role={onRoomClick ? 'button' : undefined}
+                  aria-label={room.label}
+                />
                 <text
-                  key={i}
-                  x={lbl.posicion.x}
-                  y={lbl.posicion.y}
-                  fontSize={fontSize}
-                  fill="#6b7280"
+                  x={centroidX}
+                  y={centroidY}
                   textAnchor="middle"
+                  dominantBaseline="middle"
+                  fontSize={fontSize}
+                  fill={isSelected ? '#1d4ed8' : '#374151'}
+                  fontWeight={isSelected ? 'bold' : 'normal'}
                   style={{ pointerEvents: 'none', userSelect: 'none' }}
                 >
-                  {lbl.texto}
+                  {room.label}
                 </text>
-              )
-            })}
-          </g>
+              </g>
+            )
+          })}
+
+          {renderGeometry.paredes.map((wall, i) => (
+            <line
+              key={i}
+              x1={wall.inicio.x}
+              y1={wall.inicio.y}
+              x2={wall.fin.x}
+              y2={wall.fin.y}
+              stroke="#1f2937"
+              strokeWidth={2 * strokeScale}
+              strokeLinecap="round"
+            />
+          ))}
+
+          {renderGeometry.etiquetas_texto.map((lbl, i) => (
+            <text
+              key={i}
+              x={lbl.posicion.x}
+              y={lbl.posicion.y}
+              fontSize={fontSize}
+              fill="#6b7280"
+              textAnchor="middle"
+              style={{ pointerEvents: 'none', userSelect: 'none' }}
+            >
+              {lbl.texto}
+            </text>
+          ))}
         </svg>
       </div>
     </div>

@@ -47,6 +47,7 @@ import {
   normalizeRenderLabels,
   normalizeRenderRoomVertices,
   normalizeRenderWalls,
+  resolveLayoutInterpretation,
 } from './renderDataHelpers'
 import { getSupabaseServiceRole, isStorageConfigured } from './supabaseService'
 
@@ -701,34 +702,26 @@ app.get(
         }
       | undefined
 
-    const visionLayout = meta.vision_layout as
-      | {
-          layout_interpretation?: {
-            rooms?: Array<{
-              id?: string
-              label?: string
-              room_type?: string
-              polygon?: { vertices: Array<{ x: number; y: number }> }
-              area_m2?: number
-            }>
-            coordinate_system?: string
-            scale?: { pixels_per_meter?: number; known?: boolean }
-          }
-        }
-      | undefined
+    const layout = resolveLayoutInterpretation(meta.vision_layout)
+    const layoutRooms = layout?.rooms
 
-    const layout = visionLayout?.layout_interpretation
+    const geometryWalls = normalizeRenderWalls(geometryExtract?.paredes)
+    const visionWalls = normalizeRenderWalls(layout?.walls)
+    const paredes = geometryWalls.length > 0 ? geometryWalls : visionWalls
 
-    const rooms = (layout?.rooms ?? [])
-      .map((r) => {
+    const rooms = (Array.isArray(layoutRooms) ? layoutRooms : [])
+      .map((room) => {
+        if (!room || typeof room !== 'object') return null
+        const r = room as Record<string, unknown>
         const vertices = normalizeRenderRoomVertices(r.polygon)
-        if (!r.id || vertices.length < 3) return null
+        const id = typeof r.id === 'string' ? r.id : null
+        if (!id || vertices.length < 3) return null
         return {
-          id: r.id,
-          label: r.label ?? r.id,
-          room_type: r.room_type ?? 'unknown',
+          id,
+          label: typeof r.label === 'string' ? r.label : id,
+          room_type: typeof r.room_type === 'string' ? r.room_type : 'unknown',
           polygon: { vertices },
-          area_m2: r.area_m2 ?? null,
+          area_m2: typeof r.area_m2 === 'number' ? r.area_m2 : null,
         }
       })
       .filter((r): r is NonNullable<typeof r> => r !== null)
@@ -736,7 +729,7 @@ app.get(
     res.json({
       jobId: job.id,
       status: job.status,
-      paredes: normalizeRenderWalls(geometryExtract?.paredes),
+      paredes,
       etiquetas_texto: normalizeRenderLabels(geometryExtract?.etiquetas_texto),
       rooms,
       coordinate_system: layout?.coordinate_system ?? null,

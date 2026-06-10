@@ -72,6 +72,7 @@ export default function JobDetail({ jobId, onNavigate }: JobDetailProps) {
   const [workspace, setWorkspace] = useState<WorkspaceSummary | null>(null)
   const [togglingRules, setTogglingRules] = useState(false)
   const [renderData, setRenderData] = useState<RenderData | null>(null)
+  const [renderError, setRenderError] = useState<string | null>(null)
   const [selectedRoomId, setSelectedRoomId] = useState<string | null>(null)
   const fileRef = useRef<HTMLInputElement>(null)
 
@@ -100,12 +101,25 @@ export default function JobDetail({ jobId, onNavigate }: JobDetailProps) {
         `${apiBase}/api/jobs/${encodeURIComponent(jobId)}/workspace/render-data`,
         { headers: { Authorization: `Bearer ${currentSession.access_token}` } },
       )
+      const body = (await res.json().catch(() => ({}))) as RenderData & {
+        error?: string
+        code?: string
+        status?: string
+      }
       if (res.ok) {
-        const data = (await res.json()) as RenderData
-        setRenderData(data)
+        setRenderData(body)
+        setRenderError(null)
+      } else {
+        setRenderData(null)
+        setRenderError(
+          body.error ??
+            (body.code === 'WRONG_STATUS'
+              ? `Datos de render no disponibles (estado: ${body.status ?? 'desconocido'})`
+              : `No se pudo cargar el plano (HTTP ${res.status})`),
+        )
       }
     } catch {
-      // render data not critical — ignore
+      setRenderError('Error de red al cargar datos del plano.')
     }
   }, [jobId])
 
@@ -407,6 +421,16 @@ export default function JobDetail({ jobId, onNavigate }: JobDetailProps) {
               <p className="text-body-sm text-on-surface-variant">
                 Analizando plano DXF… Las acciones de procesamiento estarán disponibles al finalizar.
               </p>
+            </div>
+          ) : null}
+
+          {renderError ? (
+            <div className="mb-6 rounded-xl border border-outline-variant bg-surface-container-low px-6 py-4">
+              <h3 className="mb-2 flex items-center gap-2 font-bold text-on-surface">
+                <Icon name="map" className="text-[20px] text-primary" />
+                Vista 2D del plano
+              </h3>
+              <p className="text-body-sm text-on-surface-variant">{renderError}</p>
             </div>
           ) : null}
 

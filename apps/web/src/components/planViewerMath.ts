@@ -14,7 +14,7 @@ export type RenderGeometry = {
   }>
 }
 
-export type ViewTransform = { x: number; y: number; scale: number }
+export type ViewBox = { x: number; y: number; w: number; h: number }
 
 const VIEW_PAD = 40
 
@@ -58,13 +58,9 @@ export function isValidBBox(bbox: BBox | null): bbox is BBox {
   return [bbox.minX, bbox.minY, bbox.maxX, bbox.maxY].every(Number.isFinite)
 }
 
-export function isValidTransform(transform: ViewTransform): boolean {
-  return (
-    Number.isFinite(transform.x) &&
-    Number.isFinite(transform.y) &&
-    Number.isFinite(transform.scale) &&
-    transform.scale > 0
-  )
+export function isValidViewBox(viewBox: ViewBox | null): viewBox is ViewBox {
+  if (!viewBox) return false
+  return [viewBox.x, viewBox.y, viewBox.w, viewBox.h].every(Number.isFinite) && viewBox.w > 0 && viewBox.h > 0
 }
 
 /** Compute axis-aligned bounding box of all renderable coordinates. */
@@ -120,65 +116,62 @@ export function toSvgGeometry(data: RenderGeometry, bbox: BBox, cadYUp: boolean)
   }
 }
 
-/** World-space size that renders at roughly `screenPx` on screen at the given zoom scale. */
-export function screenConstantSize(screenPx: number, scale: number): number {
-  if (!Number.isFinite(scale) || scale <= 0) return screenPx
-  return screenPx / scale
-}
-
-/** Fit drawing bbox into a viewport (SVG Y-down coordinates). */
-export function computeFitTransform(
-  bbox: BBox,
-  width: number,
-  height: number,
-  maxZoom = 50,
-  pad = VIEW_PAD,
-): ViewTransform {
-  if (width <= 0 || height <= 0) {
-    return { x: 0, y: 0, scale: 1 }
-  }
-  const bw = bbox.maxX - bbox.minX || 1
-  const bh = bbox.maxY - bbox.minY || 1
-  const scaleX = (width - pad * 2) / bw
-  const scaleY = (height - pad * 2) / bh
-  const scale = Math.min(scaleX, scaleY, maxZoom)
-  const tx = (width - bw * scale) / 2 - bbox.minX * scale
-  const ty = (height - bh * scale) / 2 - bbox.minY * scale
-  const transform = { x: tx, y: ty, scale }
-  return isValidTransform(transform) ? transform : { x: 0, y: 0, scale: 1 }
-}
-
-/** Center viewport on a world point. */
-export function centerOnPoint(
-  transform: ViewTransform,
-  width: number,
-  height: number,
-  cx: number,
-  cy: number,
-): ViewTransform {
+/** Fit bbox into an SVG viewBox with padding. */
+export function fitViewBoxFromBBox(bbox: BBox, pad = VIEW_PAD): ViewBox {
   return {
-    ...transform,
-    x: width / 2 - cx * transform.scale,
-    y: height / 2 - cy * transform.scale,
+    x: bbox.minX - pad,
+    y: bbox.minY - pad,
+    w: Math.max(bbox.maxX - bbox.minX + pad * 2, 1),
+    h: Math.max(bbox.maxY - bbox.minY + pad * 2, 1),
   }
 }
 
-/** Zoom around a screen-space origin, preserving the world point under the cursor. */
-export function zoomTransform(
-  transform: ViewTransform,
-  delta: number,
-  originX: number,
-  originY: number,
-  zoomFactor = 1.2,
+/** Zoom viewBox around a point in normalized container coordinates [0,1]. */
+export function zoomViewBox(
+  viewBox: ViewBox,
+  factor: number,
+  originX = 0.5,
+  originY = 0.5,
   minZoom = 0.05,
   maxZoom = 50,
-): ViewTransform {
-  const factor = delta > 0 ? zoomFactor : 1 / zoomFactor
-  const newScale = Math.min(maxZoom, Math.max(minZoom, transform.scale * factor))
-  const ratio = newScale / transform.scale
+): ViewBox {
+  const clamped = Math.min(maxZoom, Math.max(minZoom, factor))
+  const newW = viewBox.w / clamped
+  const newH = viewBox.h / clamped
   return {
-    scale: newScale,
-    x: originX - (originX - transform.x) * ratio,
-    y: originY - (originY - transform.y) * ratio,
+    x: viewBox.x + (viewBox.w - newW) * originX,
+    y: viewBox.y + (viewBox.h - newH) * originY,
+    w: newW,
+    h: newH,
   }
+}
+
+/** Pan viewBox by screen pixel delta. */
+export function panViewBox(
+  viewBox: ViewBox,
+  dxScreen: number,
+  dyScreen: number,
+  containerW: number,
+  containerH: number,
+): ViewBox {
+  if (containerW <= 0 || containerH <= 0) return viewBox
+  return {
+    ...viewBox,
+    x: viewBox.x - (dxScreen / containerW) * viewBox.w,
+    y: viewBox.y - (dyScreen / containerH) * viewBox.h,
+  }
+}
+
+/** Center viewBox on a world point while preserving zoom level. */
+export function centerViewBoxOn(viewBox: ViewBox, cx: number, cy: number): ViewBox {
+  return {
+    ...viewBox,
+    x: cx - viewBox.w / 2,
+    y: cy - viewBox.h / 2,
+  }
+}
+
+/** Label size in user units for the current viewBox width. */
+export function labelFontSize(viewBox: ViewBox): number {
+  return Math.max(viewBox.w / 80, 1)
 }
