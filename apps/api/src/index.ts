@@ -12,7 +12,13 @@ import {
   DXF_OUTPUT_BUCKET,
   objectPathMatchesJobAndOwner,
 } from './dxfStorage'
-import { findLatestOutputForJob, insertFileRow, listFilesForJob } from './filesStore'
+import {
+  findLatestInputForJob,
+  findLatestOutputForJob,
+  insertFileRow,
+  listFilesForJob,
+} from './filesStore'
+import { suggestLayersFromInspect } from './layerSuggestions'
 import { acceptInvitation } from './inviteAccept'
 import { createInviteRateLimiter } from './inviteRateLimit'
 import {
@@ -631,6 +637,8 @@ app.get(
       | { layout_interpretation?: { rooms?: unknown[] } }
       | undefined
     const rooms = visionLayout?.layout_interpretation?.rooms ?? []
+    const cadInspect = meta.cad_worker_inspect as { layers?: unknown } | undefined
+    const layerSuggestions = suggestLayersFromInspect(cadInspect)
 
     res.json({
       jobId: job.id,
@@ -643,7 +651,67 @@ app.get(
       preliminary_analysis_completed_at: meta.preliminary_analysis_completed_at ?? null,
       normative_rules_version: meta.normative_rules_version ?? null,
       outlet_placements: meta.outlet_placements ?? [],
+      layer_suggestions: layerSuggestions,
+      dxf_stream_url: `/api/jobs/${encodeURIComponent(jobId)}/workspace/dxf-stream`,
     })
+  },
+)
+
+/**
+ * US-011 Flow B: stream autenticado del DXF para visor en cliente.
+ * Prefiere output_dxf (con capa eléctrica) si existe; si no, input_dxf.
+ */
+app.get(
+  '/api/jobs/:jobId/workspace/dxf-stream',
+  requireAuth,
+  requireStorage,
+  requireArchitectOrAdmin,
+  async (req, res) => {
+    const { user } = req as AuthedRequest
+    const role = getAppRole(user)
+    if (!role) {
+      res.status(403).json({ error: 'Missing role' })
+      return
+    }
+    const jobId = typeof req.params.jobId === 'string' ? req.params.jobId : req.params.jobId?.[0]
+    if (!jobId) {
+      res.status(400).json({ error: 'Missing jobId' })
+      return
+    }
+    const job = await findJob(jobId)
+    if (!job) {
+      res.status(404).json({ error: 'Job not found' })
+      return
+    }
+    if (!assertJobAccess(user.id, role, job)) {
+      res.status(403).json({ error: 'Forbidden', code: 'NOT_JOB_OWNER' })
+      return
+    }
+    try {
+      const sb = getSupabaseServiceRole()
+      const output = await findLatestOutputForJob(sb, jobId)
+      const input = await findLatestInputForJob(sb, jobId)
+      const file = output ?? input
+      if (!file) {
+        res.status(404).json({ error: 'No DXF file registered for this job' })
+        return
+      }
+      const { data, error } = await sb.storage.from(file.bucket_id).download(file.object_path)
+      if (error || !data) {
+        console.error(error)
+        res.status(502).json({ error: 'Could not read DXF from storage' })
+        return
+      }
+      const buf = Buffer.from(await data.arrayBuffer())
+      const ct = file.content_type ?? 'application/dxf'
+      res.setHeader('Content-Type', ct)
+      res.setHeader('X-Dxf-Kind', file.kind)
+      res.setHeader('Content-Disposition', `inline; filename="job-${jobId}.dxf"`)
+      res.send(buf)
+    } catch (e) {
+      console.error(e)
+      res.status(500).json({ error: 'DXF stream error' })
+    }
   },
 )
 

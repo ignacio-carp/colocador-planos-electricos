@@ -13,6 +13,8 @@
     "test": "vitest run"
   },
   "dependencies": {
+    "@cadview/core": "^0.5.0",
+    "@cadview/react": "^0.5.0",
     "@supabase/supabase-js": "^2.49.8",
     "react": "^19.2.6",
     "react-dom": "^19.2.6"

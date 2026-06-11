@@ -1,7 +1,9 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react'
 import { AppShell } from '../components/AppShell'
 import { Icon } from '../components/Icon'
-import PlanViewer2D, { type RenderData } from '../components/PlanViewer2D'
+import DxfWorkspaceViewer from '../components/DxfWorkspaceViewer'
+import type { LayerSuggestions } from '../components/DxfLayerPanel'
+import { type RenderData } from '../components/PlanViewer2D'
 import {
   RoomProcessingPanel,
   type RoomProcessingState,
@@ -52,6 +54,8 @@ type WorkspaceSummary = {
   room_processing_state: RoomProcessingState
   normative_rules_version: string | null
   preliminary_analysis_completed_at: string | null
+  layer_suggestions?: LayerSuggestions | null
+  dxf_stream_url?: string | null
 }
 
 type JobDetailProps = {
@@ -434,14 +438,23 @@ export default function JobDetail({ jobId, onNavigate }: JobDetailProps) {
             </div>
           ) : null}
 
-          {renderData ? (
+          {renderData && session ? (
             <div className="mb-6">
               <h3 className="mb-3 flex items-center gap-2 font-bold text-on-surface">
                 <Icon name="map" className="text-[20px] text-primary" />
                 Vista 2D del plano
               </h3>
-              <PlanViewer2D
-                data={renderData}
+              <p className="mb-3 text-body-sm text-on-surface-variant">
+                Plano DXF original con control de capas. La capa eléctrica (
+                <span className="font-mono text-xs">Cambre_Electrical</span>) se añade al procesar
+                habitaciones.
+              </p>
+              <DxfWorkspaceViewer
+                jobId={jobId}
+                apiBase={apiBase}
+                accessToken={session.access_token}
+                layerSuggestions={workspace?.layer_suggestions ?? null}
+                renderData={renderData}
                 selectedRoomId={selectedRoomId}
                 onRoomClick={(id) => setSelectedRoomId((prev) => (prev === id ? null : id))}
               />
