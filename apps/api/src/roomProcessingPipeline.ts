@@ -58,6 +58,14 @@ export type RoomProcessingPipelineResult = {
   normative_rules_blocked: boolean
 }
 
+export type RoomProcessingOptions = {
+  /**
+   * US-014: explicit chat prompts may process rooms even with
+   * normative_rules_enabled=false (chat is the only channel in that mode).
+   */
+  viaChat?: boolean
+}
+
 function sleep(ms: number): Promise<void> {
   return new Promise((r) => setTimeout(r, ms))
 }
@@ -115,6 +123,7 @@ export async function runRoomProcessingPipeline(
   roomIds: string[],
   correlationId: string,
   idempotencyKey?: string,
+  options?: RoomProcessingOptions,
 ): Promise<RoomProcessingPipelineResult> {
   const job = await findJob(jobId)
   if (!job) {
@@ -135,7 +144,7 @@ export async function runRoomProcessingPipeline(
     idempotency_key: idempotencyKey,
   })
 
-  if (!normativeRulesEnabled) {
+  if (!normativeRulesEnabled && !options?.viaChat) {
     logStructured('info', {
       event: 'room_processing_blocked_normative_disabled',
       job_id: jobId,

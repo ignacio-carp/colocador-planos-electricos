@@ -50,16 +50,25 @@ import { requireAuth, type AuthedRequest } from './middleware/requireAuth'
 import { requireArchitectOrAdmin, requireRole } from './middleware/requireRole'
 import { getAppRole } from './roles'
 import {
+  normalizeElectricalElements,
   normalizeRenderLabels,
   normalizeRenderRoomVertices,
   normalizeRenderWalls,
   resolveLayoutInterpretation,
 } from './renderDataHelpers'
+import { listElectricalCatalog } from './electricalCatalog'
+import { listChatMessages } from './chatStore'
+import {
+  CHAT_ALLOWED_STATUSES,
+  handleWorkspaceChatMessage,
+  WorkspaceChatError,
+} from './workspaceChat'
 import { getSupabaseServiceRole, isStorageConfigured } from './supabaseService'
 
 const app = express()
 app.use(cors(getCorsOptions()))
-app.use(express.json())
+// 8mb: workspace chat may attach a base64 screenshot of the rendered viewport.
+app.use(express.json({ limit: '8mb' }))
 app.use(correlationMiddleware)
 
 const inviteRateLimiter = createInviteRateLimiter()
@@ -639,6 +648,9 @@ app.get(
     const rooms = visionLayout?.layout_interpretation?.rooms ?? []
     const cadInspect = meta.cad_worker_inspect as { layers?: unknown } | undefined
     const layerSuggestions = suggestLayersFromInspect(cadInspect)
+    const geometryExtract = meta.geometry_extract as
+      | { capas_clasificadas?: Record<string, string[]> }
+      | undefined
 
     res.json({
       jobId: job.id,
@@ -652,6 +664,7 @@ app.get(
       normative_rules_version: meta.normative_rules_version ?? null,
       outlet_placements: meta.outlet_placements ?? [],
       layer_suggestions: layerSuggestions,
+      layer_classification: geometryExtract?.capas_clasificadas ?? null,
       dxf_stream_url: `/api/jobs/${encodeURIComponent(jobId)}/workspace/dxf-stream`,
     })
   },
@@ -803,7 +816,140 @@ app.get(
       coordinate_system: layout?.coordinate_system ?? null,
       scale: layout?.scale ?? null,
       room_processing_state: meta.room_processing_state ?? {},
+      electrical_elements: normalizeElectricalElements(meta.outlet_placements),
     })
+  },
+)
+
+/** Catálogo de elementos eléctricos disponibles para el chat / motor de reglas. */
+app.get('/api/catalog/electrical', requireAuth, requireArchitectOrAdmin, async (_req, res) => {
+  try {
+    const items = await listElectricalCatalog()
+    res.json({ items })
+  } catch (e) {
+    console.error(e)
+    res.status(500).json({ error: 'Could not list electrical catalog' })
+  }
+})
+
+/** US-014: historial del chat del workspace (dueño o admin lectura). */
+app.get(
+  '/api/jobs/:jobId/workspace/chat',
+  requireAuth,
+  requireArchitectOrAdmin,
+  async (req, res) => {
+    const { user } = req as AuthedRequest
+    const role = getAppRole(user)
+    if (!role) {
+      res.status(403).json({ error: 'Missing role' })
+      return
+    }
+    const jobId = typeof req.params.jobId === 'string' ? req.params.jobId : req.params.jobId?.[0]
+    if (!jobId) {
+      res.status(400).json({ error: 'Missing jobId' })
+      return
+    }
+    const job = await findJob(jobId)
+    if (!job) {
+      res.status(404).json({ error: 'Job not found' })
+      return
+    }
+    if (!assertJobAccess(user.id, role, job)) {
+      res.status(403).json({ error: 'Forbidden', code: 'NOT_JOB_OWNER' })
+      return
+    }
+    try {
+      const messages = await listChatMessages(jobId)
+      res.json({ jobId, messages })
+    } catch (e) {
+      console.error(e)
+      res.status(500).json({ error: 'Could not list chat messages' })
+    }
+  },
+)
+
+/**
+ * US-014: mensaje de chat con la IA sobre la capa eléctrica.
+ * Body: { message, viewport_image? } — viewport_image es un data URL PNG con la
+ * captura de lo renderizado al momento de enviar el prompt.
+ */
+app.post(
+  '/api/jobs/:jobId/workspace/chat',
+  requireAuth,
+  requireRole('architect'),
+  async (req, res) => {
+    const { user } = req as AuthedRequest
+    const jobId = typeof req.params.jobId === 'string' ? req.params.jobId : req.params.jobId?.[0]
+    if (!jobId) {
+      res.status(400).json({ error: 'Missing jobId' })
+      return
+    }
+    const job = await findJob(jobId)
+    if (!job) {
+      res.status(404).json({ error: 'Job not found' })
+      return
+    }
+    if (job.owner_user_id !== user.id) {
+      res.status(403).json({ error: 'Forbidden', code: 'NOT_JOB_OWNER' })
+      return
+    }
+    if (!CHAT_ALLOWED_STATUSES.has(job.status)) {
+      res.status(409).json({
+        error: `Chat no disponible con el trabajo en estado '${job.status}'.`,
+        code: 'WRONG_STATUS',
+        status: job.status,
+      })
+      return
+    }
+
+    const body = req.body as { message?: unknown; viewport_image?: unknown }
+    const message = typeof body.message === 'string' ? body.message.trim() : ''
+    if (!message) {
+      res.status(400).json({ error: 'message is required' })
+      return
+    }
+    if (message.length > 4000) {
+      res.status(400).json({ error: 'message too long (max 4000 chars)' })
+      return
+    }
+    let viewportImage: string | undefined
+    if (typeof body.viewport_image === 'string' && body.viewport_image.length > 0) {
+      if (!body.viewport_image.startsWith('data:image/')) {
+        res.status(400).json({ error: 'viewport_image must be a data:image/* URL' })
+        return
+      }
+      if (body.viewport_image.length > 6 * 1024 * 1024) {
+        res.status(413).json({ error: 'viewport_image too large (max ~6MB)' })
+        return
+      }
+      viewportImage = body.viewport_image
+    }
+
+    const correlationId = req.correlationId ?? crypto.randomUUID()
+    try {
+      const result = await handleWorkspaceChatMessage({
+        jobId,
+        userId: user.id,
+        message,
+        viewportImage,
+        correlationId,
+      })
+      res.json({
+        job_id: jobId,
+        reply: result.reply,
+        intent: result.intent,
+        mutations_applied: result.mutations_applied,
+        process_result: result.process_result ?? null,
+        messages: result.messages,
+      })
+    } catch (e) {
+      if (e instanceof WorkspaceChatError) {
+        res.status(e.code === 'WRONG_STATUS' ? 409 : 500).json({ error: e.message, code: e.code })
+        return
+      }
+      console.error(e)
+      res.status(500).json({ error: 'Chat processing failed' })
+    }
   },
 )
 

@@ -88,6 +88,42 @@ export function normalizeRenderRoomVertices(polygon: unknown): Point2D[] {
   return []
 }
 
+export type RenderElectricalElement = {
+  id: string
+  room_id: string | null
+  position: Point2D
+  outlet_type: string
+  catalog_sku: string | null
+  source: string | null
+  label: string | null
+}
+
+/**
+ * Normalizes pipeline_metadata.outlet_placements (US-008 or chat-sourced)
+ * into render-ready electrical elements for the viewer overlay.
+ */
+export function normalizeElectricalElements(raw: unknown): RenderElectricalElement[] {
+  if (!Array.isArray(raw)) return []
+  const out: RenderElectricalElement[] = []
+  for (let i = 0; i < raw.length; i += 1) {
+    const item = raw[i]
+    if (!item || typeof item !== 'object') continue
+    const p = item as Record<string, unknown>
+    const position = parseRenderPoint(p.position ?? p.coordenadas)
+    if (!position) continue
+    out.push({
+      id: typeof p.id === 'string' ? p.id : `element-${i}`,
+      room_id: typeof p.room_id === 'string' ? p.room_id : null,
+      position,
+      outlet_type: typeof p.outlet_type === 'string' ? p.outlet_type : 'standard',
+      catalog_sku: typeof p.catalog_sku === 'string' ? p.catalog_sku : null,
+      source: typeof p.source === 'string' ? p.source : null,
+      label: typeof p.label === 'string' ? p.label : null,
+    })
+  }
+  return out
+}
+
 /** vision_layout may be the full US-007 doc or a bare layout_interpretation object. */
 export function resolveLayoutInterpretation(
   visionLayout: unknown,

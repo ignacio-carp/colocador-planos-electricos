@@ -3,7 +3,8 @@ import { CadViewer, type CadViewerRef } from '@cadview/react'
 import type { ViewTransform } from '@cadview/core'
 import DxfLayerPanel, { type LayerSuggestions } from './DxfLayerPanel'
 import { buildInitialLayerVisibility, isElectricalLayerName } from './dxfLayerUtils'
-import { normalizeRenderData } from './normalizeRenderData'
+import ElectricalSvgOverlay from './ElectricalSvgOverlay'
+import { normalizeElectricalElements, normalizeRenderData } from './normalizeRenderData'
 import type { RenderData } from './PlanViewer2D'
 import RoomSvgOverlay from './RoomSvgOverlay'
 
@@ -15,6 +16,13 @@ type Props = {
   renderData?: RenderData | null
   selectedRoomId?: string | null
   onRoomClick?: (roomId: string) => void
+  /**
+   * Receives a function that captures the current rendered view as a PNG data
+   * URL (chat screenshot reference). Called with null on unmount.
+   */
+  onCaptureReady?: (capture: (() => string | null) | null) => void
+  /** Re-fetches the DXF stream when this value changes (e.g. after chat edits). */
+  reloadToken?: number
 }
 
 export default function DxfWorkspaceViewer({
@@ -25,6 +33,8 @@ export default function DxfWorkspaceViewer({
   renderData,
   selectedRoomId,
   onRoomClick,
+  onCaptureReady,
+  reloadToken,
 }: Props) {
   const viewerRef = useRef<CadViewerRef>(null)
   const containerRef = useRef<HTMLDivElement>(null)
@@ -35,6 +45,7 @@ export default function DxfWorkspaceViewer({
   const [layerVisibility, setLayerVisibility] = useState<Record<string, boolean>>({})
   const [cadLayerNames, setCadLayerNames] = useState<string[]>([])
   const [showRoomOverlay, setShowRoomOverlay] = useState(true)
+  const [showElectricalOverlay, setShowElectricalOverlay] = useState(true)
   const [viewTransform, setViewTransform] = useState<ViewTransform | null>(null)
   const [canvasSize, setCanvasSize] = useState({ width: 0, height: 0 })
 
@@ -42,6 +53,11 @@ export default function DxfWorkspaceViewer({
     if (!renderData) return []
     return normalizeRenderData(renderData).rooms
   }, [renderData])
+
+  const electricalElements = useMemo(
+    () => normalizeElectricalElements(renderData?.electrical_elements),
+    [renderData],
+  )
 
   const fetchDxf = useCallback(async () => {
     setLoading(true)
@@ -67,7 +83,23 @@ export default function DxfWorkspaceViewer({
 
   useEffect(() => {
     void fetchDxf()
-  }, [fetchDxf])
+  }, [fetchDxf, reloadToken])
+
+  // Expose a capture function: the viewer canvas as a PNG data URL.
+  useEffect(() => {
+    if (!onCaptureReady) return
+    const capture = (): string | null => {
+      const canvas = containerRef.current?.querySelector('canvas')
+      if (!canvas) return null
+      try {
+        return canvas.toDataURL('image/png')
+      } catch {
+        return null
+      }
+    }
+    onCaptureReady(capture)
+    return () => onCaptureReady(null)
+  }, [onCaptureReady])
 
   useEffect(() => {
     const el = containerRef.current
@@ -184,6 +216,17 @@ export default function DxfWorkspaceViewer({
               Habitaciones IA
             </label>
           ) : null}
+          {electricalElements.length > 0 ? (
+            <label className="flex items-center gap-2 rounded bg-surface-container-highest/90 px-2 py-1 text-technical-label text-on-surface-variant backdrop-blur-sm">
+              <input
+                type="checkbox"
+                checked={showElectricalOverlay}
+                onChange={(e) => setShowElectricalOverlay(e.target.checked)}
+                className="h-3.5 w-3.5 accent-primary"
+              />
+              Eléctrico ({electricalElements.length})
+            </label>
+          ) : null}
           <button
             type="button"
             className="rounded bg-surface-container-highest/90 px-2 py-1 text-technical-label text-on-surface-variant backdrop-blur-sm hover:bg-surface-container-high"
@@ -214,6 +257,14 @@ export default function DxfWorkspaceViewer({
               selectedRoomId={selectedRoomId}
               roomProcessingState={renderData?.room_processing_state ?? {}}
               onRoomClick={onRoomClick}
+            />
+          ) : null}
+          {showElectricalOverlay && electricalElements.length > 0 ? (
+            <ElectricalSvgOverlay
+              elements={electricalElements}
+              viewTransform={viewTransform}
+              width={canvasSize.width}
+              height={canvasSize.height}
             />
           ) : null}
         </div>

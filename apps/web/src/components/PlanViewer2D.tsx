@@ -33,6 +33,16 @@ export type Room = {
   area_m2: number | null
 }
 
+export type ElectricalElement = {
+  id: string
+  room_id: string | null
+  position: { x: number; y: number }
+  outlet_type: string
+  catalog_sku: string | null
+  source: string | null
+  label: string | null
+}
+
 export type RenderData = {
   jobId: string
   status: string
@@ -45,6 +55,7 @@ export type RenderData = {
     string,
     'pendiente' | 'procesando' | 'procesada' | 'error' | 'omitida'
   >
+  electrical_elements?: ElectricalElement[]
 }
 
 type Props = {

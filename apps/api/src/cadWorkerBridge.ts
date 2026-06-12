@@ -19,8 +19,14 @@ export type CadWorkerInspectResult = {
 
 export type CadWorkerGeometryExtract = {
   ok: boolean
-  paredes?: { inicio: number[]; fin: number[] }[]
+  paredes?: { inicio: number[]; fin: number[]; capa?: string }[]
   etiquetas_texto?: { texto: string; posicion: number[] }[]
+  /** Segments/blocks on door/window layers (puertas, ventanas). */
+  aberturas?: Record<string, unknown>[]
+  /** Block references on furniture layers (mobiliario). */
+  muebles?: { bloque?: string; posicion?: number[]; capa?: string }[]
+  /** Layer names classified by heuristic: paredes | aberturas | muebles. */
+  capas_clasificadas?: Record<string, string[]>
   error?: string
   code?: string
 }
