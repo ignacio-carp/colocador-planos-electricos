@@ -55,7 +55,15 @@ function resolveLlmApiConfig(): LlmApiConfig {
   )
 }
 
-/** Chat Completions with JSON object response (OpenAI API or OpenRouter). */
+type UserContentPart =
+  | { type: 'text'; text: string }
+  | { type: 'image_url'; image_url: { url: string } }
+
+/**
+ * Chat Completions with JSON object response (OpenAI API or OpenRouter).
+ * `imageDataUrl` (optional) attaches a rendered-viewport screenshot as a
+ * multimodal reference (US-014 interactive chat).
+ */
 export async function openaiChatJsonObject(params: {
   model: string
   system: string
@@ -64,6 +72,7 @@ export async function openaiChatJsonObject(params: {
   jobId: string
   correlationId: string
   step: string
+  imageDataUrl?: string
 }): Promise<Record<string, unknown>> {
   const llm = resolveLlmApiConfig()
   const controller = new AbortController()
@@ -91,7 +100,15 @@ export async function openaiChatJsonObject(params: {
         response_format: { type: 'json_object' },
         messages: [
           { role: 'system', content: params.system },
-          { role: 'user', content: params.user },
+          {
+            role: 'user',
+            content: params.imageDataUrl
+              ? ([
+                  { type: 'text', text: params.user },
+                  { type: 'image_url', image_url: { url: params.imageDataUrl } },
+                ] satisfies UserContentPart[])
+              : params.user,
+          },
         ],
       }),
       signal: controller.signal,
