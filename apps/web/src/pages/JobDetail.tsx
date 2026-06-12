@@ -8,6 +8,7 @@ import {
   RoomProcessingPanel,
   type RoomProcessingState,
 } from '../components/RoomProcessingPanel'
+import WorkspaceChatPanel from '../components/WorkspaceChatPanel'
 import { useAuth } from '../context/AuthContext'
 import {
   canDownloadProcessedDxf,
@@ -78,7 +79,13 @@ export default function JobDetail({ jobId, onNavigate }: JobDetailProps) {
   const [renderData, setRenderData] = useState<RenderData | null>(null)
   const [renderError, setRenderError] = useState<string | null>(null)
   const [selectedRoomId, setSelectedRoomId] = useState<string | null>(null)
+  const [dxfReloadToken, setDxfReloadToken] = useState(0)
   const fileRef = useRef<HTMLInputElement>(null)
+  const captureViewRef = useRef<(() => string | null) | null>(null)
+
+  const handleCaptureReady = useCallback((capture: (() => string | null) | null) => {
+    captureViewRef.current = capture
+  }, [])
 
   const isOwner = job?.owner_user_id === session?.user.id
   const canEdit = role === 'architect' && isOwner
@@ -446,18 +453,33 @@ export default function JobDetail({ jobId, onNavigate }: JobDetailProps) {
               </h3>
               <p className="mb-3 text-body-sm text-on-surface-variant">
                 Plano DXF original con control de capas. La capa eléctrica (
-                <span className="font-mono text-xs">Cambre_Electrical</span>) se añade al procesar
-                habitaciones.
+                <span className="font-mono text-xs">Cambre_Electrical</span>) se modifica desde el
+                chat o al procesar habitaciones con el motor de reglas.
               </p>
-              <DxfWorkspaceViewer
-                jobId={jobId}
-                apiBase={apiBase}
-                accessToken={session.access_token}
-                layerSuggestions={workspace?.layer_suggestions ?? null}
-                renderData={renderData}
-                selectedRoomId={selectedRoomId}
-                onRoomClick={(id) => setSelectedRoomId((prev) => (prev === id ? null : id))}
-              />
+              <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_340px]">
+                <DxfWorkspaceViewer
+                  jobId={jobId}
+                  apiBase={apiBase}
+                  accessToken={session.access_token}
+                  layerSuggestions={workspace?.layer_suggestions ?? null}
+                  renderData={renderData}
+                  selectedRoomId={selectedRoomId}
+                  onRoomClick={(id) => setSelectedRoomId((prev) => (prev === id ? null : id))}
+                  onCaptureReady={handleCaptureReady}
+                  reloadToken={dxfReloadToken}
+                />
+                <WorkspaceChatPanel
+                  jobId={jobId}
+                  apiBase={apiBase}
+                  accessToken={session.access_token}
+                  captureView={() => captureViewRef.current?.() ?? null}
+                  canSend={canEdit && isReadyForWorkspace(job.status)}
+                  onWorkspaceMutated={() => {
+                    setDxfReloadToken((t) => t + 1)
+                    void load()
+                  }}
+                />
+              </div>
             </div>
           ) : null}
 

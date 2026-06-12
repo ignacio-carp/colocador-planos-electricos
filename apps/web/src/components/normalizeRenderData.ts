@@ -1,4 +1,4 @@
-import type { RenderData, Room, TextLabel, WallSegment } from './PlanViewer2D'
+import type { ElectricalElement, RenderData, Room, TextLabel, WallSegment } from './PlanViewer2D'
 import { parsePoint, parsePolygonVertices, type RenderGeometry } from './planViewerMath'
 
 function normalizeWalls(raw: WallSegment[] | unknown[]): WallSegment[] {
@@ -41,4 +41,27 @@ export function normalizeRenderData(data: RenderData): RenderGeometry {
     etiquetas_texto: normalizeLabels(data.etiquetas_texto),
     rooms: normalizeRooms(data.rooms),
   }
+}
+
+/** Normalize electrical elements (chat / rules placements) for the viewer overlay. */
+export function normalizeElectricalElements(raw: unknown): ElectricalElement[] {
+  if (!Array.isArray(raw)) return []
+  const out: ElectricalElement[] = []
+  for (let i = 0; i < raw.length; i += 1) {
+    const item = raw[i]
+    if (!item || typeof item !== 'object') continue
+    const e = item as Record<string, unknown>
+    const position = parsePoint(e.position ?? e.coordenadas)
+    if (!position) continue
+    out.push({
+      id: typeof e.id === 'string' ? e.id : `element-${i}`,
+      room_id: typeof e.room_id === 'string' ? e.room_id : null,
+      position,
+      outlet_type: typeof e.outlet_type === 'string' ? e.outlet_type : 'standard',
+      catalog_sku: typeof e.catalog_sku === 'string' ? e.catalog_sku : null,
+      source: typeof e.source === 'string' ? e.source : null,
+      label: typeof e.label === 'string' ? e.label : null,
+    })
+  }
+  return out
 }
