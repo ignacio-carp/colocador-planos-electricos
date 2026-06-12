@@ -1,0 +1,11 @@
+{
+  "mcpServers": {
+    "supabase-vanguardia": {
+      "command": "npx",
+      "args": ["-y", "@supabase/mcp-server-supabase@latest"],
+      "env": {
+        "SUPABASE_ACCESS_TOKEN": "${env:SUPABASE_VANGUARDIA_TOKEN}"
+      }
+    }
+  }
+}
