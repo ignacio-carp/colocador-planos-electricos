@@ -3,7 +3,8 @@ import {
   canDownloadProcessedDxf,
   formatJobCreatedAt,
   hasRegisteredDxfInput,
-  JOB_ANALYSIS_POLL_MS,
+  JOB_ANALYSIS_INITIAL_WAIT_MS,
+  JOB_ANALYSIS_RETRY_WAIT_MS,
   projectStatusChip,
 } from './jobPresentation'
 
@@ -28,7 +29,8 @@ describe('jobPresentation', () => {
     expect(canDownloadProcessedDxf('pending')).toBe(false)
   })
 
-  it('uses a 60s poll interval during DXF analysis', () => {
-    expect(JOB_ANALYSIS_POLL_MS).toBe(60_000)
+  it('waits 60s before first analysis check, then 30s between retries', () => {
+    expect(JOB_ANALYSIS_INITIAL_WAIT_MS).toBe(60_000)
+    expect(JOB_ANALYSIS_RETRY_WAIT_MS).toBe(30_000)
   })
 })
