@@ -3,6 +3,7 @@ import {
   canDownloadProcessedDxf,
   formatJobCreatedAt,
   hasRegisteredDxfInput,
+  JOB_ANALYSIS_POLL_MS,
   projectStatusChip,
 } from './jobPresentation'
 
@@ -25,5 +26,9 @@ describe('jobPresentation', () => {
   it('allows download when procesado', () => {
     expect(canDownloadProcessedDxf('procesado')).toBe(true)
     expect(canDownloadProcessedDxf('pending')).toBe(false)
+  })
+
+  it('uses a 60s poll interval during DXF analysis', () => {
+    expect(JOB_ANALYSIS_POLL_MS).toBe(60_000)
   })
 })

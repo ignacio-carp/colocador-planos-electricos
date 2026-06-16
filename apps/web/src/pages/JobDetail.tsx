@@ -18,6 +18,8 @@ import {
   isAnalyzing,
   isReadyForWorkspace,
   isRoomProcessingAvailable,
+  JOB_ANALYSIS_POLL_MS,
+  ROOM_PROCESSING_POLL_MS,
 } from '../lib/jobPresentation'
 import { getAppRole } from '../lib/roles'
 
@@ -134,24 +136,29 @@ export default function JobDetail({ jobId, onNavigate }: JobDetailProps) {
     }
   }, [jobId])
 
-  const load = useCallback(async () => {
+  const load = useCallback(async (options?: { silent?: boolean }) => {
     if (!session) return
-    setLoading(true)
-    setError(null)
+    const silent = options?.silent === true
+    if (!silent) {
+      setLoading(true)
+      setError(null)
+    }
     const res = await fetch(`${apiBase}/api/jobs`, {
       headers: { Authorization: `Bearer ${session.access_token}` },
     })
     const body = (await res.json().catch(() => ({}))) as { jobs?: Job[]; error?: string }
-    setLoading(false)
+    if (!silent) setLoading(false)
     if (!res.ok) {
-      setError(body.error ?? `HTTP ${res.status}`)
-      setJob(null)
+      if (!silent) {
+        setError(body.error ?? `HTTP ${res.status}`)
+        setJob(null)
+      }
       return
     }
     const found = (body.jobs ?? []).find((j) => j.id === jobId) ?? null
     setJob(found)
     if (!found) {
-      setError('Proyecto no encontrado.')
+      if (!silent) setError('Proyecto no encontrado.')
       return
     }
     if (role === 'architect' && found.owner_user_id === session.user.id) {
@@ -164,7 +171,7 @@ export default function JobDetail({ jobId, onNavigate }: JobDetailProps) {
           setHasInput(hasRegisteredDxfInput(fb.files ?? []))
         }
       } catch {
-        setHasInput(false)
+        if (!silent) setHasInput(false)
       }
     }
     const renderableStatuses = [
@@ -174,7 +181,10 @@ export default function JobDetail({ jobId, onNavigate }: JobDetailProps) {
       'analizando',
     ]
     if (found && renderableStatuses.includes(found.status ?? '')) {
-      await Promise.all([loadWorkspace(session), loadRenderData(session)])
+      const skipRenderRefresh = silent && isAnalyzing(found.status)
+      const tasks: Promise<void>[] = [loadWorkspace(session)]
+      if (!skipRenderRefresh) tasks.push(loadRenderData(session))
+      await Promise.all(tasks)
     }
   }, [session, jobId, role, loadWorkspace, loadRenderData])
 
@@ -182,19 +192,21 @@ export default function JobDetail({ jobId, onNavigate }: JobDetailProps) {
     void load()
   }, [load])
 
-  // Poll every 2s while job is analyzing or rooms are being processed
+  // Background refresh while IA analyzes the plan or rooms are processing (no full-page loading).
   const hasProcessingRooms = workspace
     ? Object.values(workspace.room_processing_state ?? {}).some((s) => s === 'procesando')
     : false
+  const analyzing = job ? isAnalyzing(job.status) : false
 
   useEffect(() => {
     if (!job) return
-    if (!isAnalyzing(job.status) && !hasProcessingRooms) return
+    if (!analyzing && !hasProcessingRooms) return
+    const intervalMs = analyzing ? JOB_ANALYSIS_POLL_MS : ROOM_PROCESSING_POLL_MS
     const timer = setInterval(() => {
-      void load()
-    }, 2000)
+      void load({ silent: true })
+    }, intervalMs)
     return () => clearInterval(timer)
-  }, [job, load, hasProcessingRooms])
+  }, [job, load, analyzing, hasProcessingRooms])
 
   async function toggleNormativeRules(enabled: boolean) {
     if (!session || !job) return
@@ -430,7 +442,7 @@ export default function JobDetail({ jobId, onNavigate }: JobDetailProps) {
             <div className="mb-6 flex items-center gap-3 rounded-xl border border-outline-variant bg-surface-container-low px-6 py-4">
               <div className="h-5 w-5 animate-spin rounded-full border-2 border-primary border-t-transparent" />
               <p className="text-body-sm text-on-surface-variant">
-                Analizando plano DXF… Las acciones de procesamiento estarán disponibles al finalizar.
+                Analizando plano DXF… Podés seguir navegando; el estado se actualiza cada minuto.
               </p>
             </div>
           ) : null}
