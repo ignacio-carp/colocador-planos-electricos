@@ -49,8 +49,8 @@ export default function Invites({ onNavigate }: { onNavigate: (path: string) => 
     setEmail('')
     setMessage(
       body.invitationId
-        ? `Invitación enviada (id ${body.invitationId}). El arquitecto recibirá el correo con el enlace.`
-        : 'Invitación enviada. El arquitecto debe recibir el correo con el enlace.',
+        ? `Invitación enviada (id ${body.invitationId}). El arquitecto recibirá el correo de Supabase con el enlace.`
+        : 'Invitación enviada. El arquitecto recibirá el correo de Supabase con el enlace.',
     )
   }
 
@@ -61,7 +61,7 @@ export default function Invites({ onNavigate }: { onNavigate: (path: string) => 
           <div className="rounded-xl border border-outline-variant bg-surface-container-lowest p-8 shadow-[var(--shadow-ambient)]">
             <h1 className="text-headline-md text-primary">Invitar arquitecto</h1>
             <p className="text-body-sm mt-2 text-on-surface-variant">
-              Solo el administrador puede enviar invitaciones (US-001).
+              Solo el administrador puede enviar invitaciones (US-001). El correo lo envía Supabase Auth.
             </p>
             <label className="mt-6 block space-y-2" htmlFor="invite-email">
               <span className="text-button text-on-surface">Correo del arquitecto</span>

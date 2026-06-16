@@ -4,7 +4,9 @@ loadEnv()
 import cors from 'cors'
 import express from 'express'
 import { getCorsOptions } from './corsConfig'
-import { sendInvitationEmail } from './email/sendInvitationEmail'
+import { sendSupabaseInvitation } from './email/sendSupabaseInvitation'
+import { findUserByEmail } from './bootstrapAdmin'
+import { completeSupabaseInvitation } from './inviteComplete'
 import {
   assertAllowedDxfContentType,
   buildDxfObjectPath,
@@ -1171,11 +1173,28 @@ app.get('/api/invites/verify', async (req, res) => {
   }
 })
 
-/** US-001 + T-06: administrador envía invitación por correo (Resend). */
+/** US-002: arquitecto completa perfil tras aceptar invitación de Supabase Auth. */
+app.post('/api/invites/complete', requireAuth, async (req, res) => {
+  const { user } = req as AuthedRequest
+  const fullName = String((req.body as { fullName?: string })?.fullName ?? '').trim()
+  const result = await completeSupabaseInvitation({
+    userId: user.id,
+    email: user.email ?? '',
+    fullName,
+  })
+  if (!result.ok) {
+    res.status(result.status).json({ error: result.message, code: result.code })
+    return
+  }
+  res.json({ ok: true })
+})
+
+/** US-001 + T-06: administrador envía invitación por correo (Supabase Auth). */
 app.post(
   '/api/invites',
   requireAuth,
   requireRole('administrator'),
+  requireStorage,
   inviteRateLimiter,
   async (req, res) => {
     const { user } = req as AuthedRequest
@@ -1194,9 +1213,25 @@ app.post(
       return
     }
 
+    const sb = getSupabaseServiceRole()
+    try {
+      const existingUser = await findUserByEmail(sb.auth.admin, email)
+      if (existingUser) {
+        res.status(409).json({
+          error: 'Ya existe una cuenta con este correo.',
+          code: 'USER_ALREADY_EXISTS',
+        })
+        return
+      }
+    } catch (e) {
+      console.error(e)
+      res.status(500).json({ error: 'Could not verify email availability' })
+      return
+    }
+
     const token = generateInviteToken()
     const base = publicWebBase()
-    const inviteUrl = `${base}/invite?token=${encodeURIComponent(token)}`
+    const redirectTo = `${base}/invite`
     const inviterDisplay =
       (typeof user.user_metadata?.full_name === 'string' && user.user_metadata.full_name) ||
       user.email ||
@@ -1216,19 +1251,31 @@ app.post(
       return
     }
 
-    const sent = await sendInvitationEmail({ to: email, inviteUrl, inviterDisplay })
+    const sent = await sendSupabaseInvitation({
+      email,
+      redirectTo,
+      inviterDisplay,
+      supabase: sb,
+    })
     if (!sent.ok) {
       await removeInvitationById(row.id)
-      if (sent.code === 'MISSING_API_KEY' || sent.code === 'MISSING_FROM') {
+      if (sent.code === 'AUTH_NOT_CONFIGURED') {
         res.status(503).json({
-          error: 'Email provider not configured (RESEND_API_KEY / EMAIL_FROM).',
+          error: 'Supabase Auth no configurado (SUPABASE_URL / SUPABASE_SERVICE_ROLE_KEY).',
+          code: sent.code,
+        })
+        return
+      }
+      if (sent.code === 'USER_ALREADY_EXISTS') {
+        res.status(409).json({
+          error: 'Ya existe una cuenta con este correo.',
           code: sent.code,
         })
         return
       }
       res.status(502).json({
-        error: 'No se pudo enviar el correo. Reintenta más tarde.',
-        code: 'EMAIL_SEND_FAILED',
+        error: 'No se pudo enviar la invitación. Revisá la configuración de correo en Supabase.',
+        code: 'INVITE_SEND_FAILED',
         detail: sent.detail,
       })
       return
@@ -1238,7 +1285,7 @@ app.post(
       ok: true,
       invitationId: row.id,
       email: row.email_normalized,
-      providerMessageId: sent.providerMessageId,
+      userId: sent.userId,
     })
   },
 )

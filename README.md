@@ -80,8 +80,7 @@ Completa en `.env` (raíz) al menos:
 | `SUPABASE_SERVICE_ROLE_KEY` | Solo servidor (storage, invitaciones, pipeline) |
 | `VITE_API_URL` | `http://localhost:3001` en local |
 | `CORS_ORIGIN` | Orígenes del front local (p. ej. `http://localhost:5173,http://localhost:5174`) |
-| `PUBLIC_WEB_URL` | URL del front para enlaces en correos |
-| `RESEND_API_KEY` / `EMAIL_FROM` | Invitaciones (ver `docs/adr/ADR-002-transactional-email-provider.md`) |
+| `PUBLIC_WEB_URL` | URL del front para redirects de invitación Supabase Auth |
 
 Token de Supabase CLI (una vez): copiar `.supabase/access-token.example` → `.supabase/access-token` con un token `sbp_...` de [Account → Access Tokens](https://supabase.com/dashboard/account/tokens). Está en `.gitignore`.
 
@@ -301,9 +300,7 @@ cd apps/api && node dist/index.js
 | `SUPABASE_ANON_KEY` | Sí | |
 | `SUPABASE_SERVICE_ROLE_KEY` | Sí | Server only |
 | `CORS_ORIGIN` | Sí | URL del front en Vercel (coma si hay preview + prod) |
-| `PUBLIC_WEB_URL` | Sí | Misma URL pública del front |
-| `RESEND_API_KEY` | Sí* | *Si usas invitaciones por email |
-| `EMAIL_FROM` | Sí* | Dominio verificado en Resend |
+| `PUBLIC_WEB_URL` | Sí | Redirect del correo de invitación Supabase → `/invite` |
 | `BOOTSTRAP_ADMIN_EMAIL` | Setup | Solo para `npm run bootstrap:admin` (ejecutar en CI o local, no en runtime) |
 | `SIGNED_URL_TTL_SECONDS` | No | Default `3600` |
 | `PIPELINE_WORKER_ENABLED` | No | `true` en host Node; `false` en serverless experimental |
@@ -327,8 +324,7 @@ npm --workspace api run bootstrap:admin   # solo si aún no hay admin
 Configura en Supabase Dashboard:
 
 - **Storage:** buckets `job-dwg-input` y `job-dwg-output` (migración T-05).
-- **Auth:** Site URL y redirects con la URL de Vercel.
-- **SMTP / Auth templates** si usas invitaciones y recovery.
+- **Auth:** Site URL y redirects con la URL de Vercel; plantilla **Invite** y SMTP si aplica (ver `docs/adr/ADR-002-transactional-email-provider.md`).
 
 ### D. cad-worker (fuera de Vercel)
 
@@ -341,7 +337,7 @@ No desplegar `services/cad-worker` en Vercel (binarios ezdxf, timeouts). Alterna
 
 1. `GET <api>/healthz` → `200`.
 2. Abrir el front en Vercel → login Supabase.
-3. Como admin: invitar arquitecto (email real + Resend configurado).
+3. Como admin: invitar arquitecto (email real; correo enviado por Supabase Auth).
 4. Como arquitecto: crear trabajo, subir `.dwg`, ver estado `procesando` → `procesado`, descargar resultado.
 5. Revisar logs del host de la API si el pipeline falla (`correlation_id` en respuesta de error).
 
@@ -359,7 +355,7 @@ Configura secretos en el repositorio (o entornos **staging** / **production**) c
 | `BOOTSTRAP_ADMIN_EMAIL` | Email del primer administrador para ejecutar `npm --workspace api run bootstrap:admin`. |
 | `CORS_ORIGIN` | Orígenes permitidos para la API en ese entorno (p. ej. URL del front desplegado). |
 | `VITE_API_URL` | URL base de la API consumida por el web en build. |
-| `EMAIL_API_KEY` / `EMAIL_PROVIDER_*` | Envío transaccional (invitaciones, notificaciones); nombres según proveedor. |
+| `EMAIL_PROVIDER_*` | Solo si configurás SMTP custom en Supabase (no en la API). |
 | `OPENAI_API_KEY` u otras `*_API_KEY` | Proveedores de IA en servidor o jobs. |
 
 **Notas**
