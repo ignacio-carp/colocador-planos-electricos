@@ -173,5 +173,11 @@ export function isAnalyzing(status?: string): boolean {
   return (status ?? '').toLowerCase() === 'analizando'
 }
 
+/** Background refresh interval while IA analyzes the DXF (avoid UI flicker). */
+export const JOB_ANALYSIS_POLL_MS = 60_000
+
+/** Faster refresh while individual rooms are being processed. */
+export const ROOM_PROCESSING_POLL_MS = 5_000
+
 /** @deprecated Use canDownloadProcessedDxf */
 export const canDownloadProcessedDwg = canDownloadProcessedDxf
