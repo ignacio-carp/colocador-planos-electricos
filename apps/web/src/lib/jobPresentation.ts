@@ -173,8 +173,11 @@ export function isAnalyzing(status?: string): boolean {
   return (status ?? '').toLowerCase() === 'analizando'
 }
 
-/** Background refresh interval while IA analyzes the DXF (avoid UI flicker). */
-export const JOB_ANALYSIS_POLL_MS = 60_000
+/** Wait before the first background status check while IA analyzes the DXF. */
+export const JOB_ANALYSIS_INITIAL_WAIT_MS = 60_000
+
+/** Wait between subsequent checks if the job is still analyzing. */
+export const JOB_ANALYSIS_RETRY_WAIT_MS = 30_000
 
 /** Faster refresh while individual rooms are being processed. */
 export const ROOM_PROCESSING_POLL_MS = 5_000

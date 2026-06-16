@@ -18,7 +18,8 @@ import {
   isAnalyzing,
   isReadyForWorkspace,
   isRoomProcessingAvailable,
-  JOB_ANALYSIS_POLL_MS,
+  JOB_ANALYSIS_INITIAL_WAIT_MS,
+  JOB_ANALYSIS_RETRY_WAIT_MS,
   ROOM_PROCESSING_POLL_MS,
 } from '../lib/jobPresentation'
 import { getAppRole } from '../lib/roles'
@@ -188,23 +189,67 @@ export default function JobDetail({ jobId, onNavigate }: JobDetailProps) {
     }
   }, [session, jobId, role, loadWorkspace, loadRenderData])
 
+  const fetchJobStatus = useCallback(async (): Promise<string | null> => {
+    if (!session) return null
+    try {
+      const res = await fetch(`${apiBase}/api/jobs`, {
+        headers: { Authorization: `Bearer ${session.access_token}` },
+      })
+      if (!res.ok) return null
+      const body = (await res.json()) as { jobs?: Job[] }
+      return body.jobs?.find((j) => j.id === jobId)?.status ?? null
+    } catch {
+      return null
+    }
+  }, [session, jobId])
+
   useEffect(() => {
     void load()
   }, [load])
 
-  // Background refresh while IA analyzes the plan or rooms are processing (no full-page loading).
+  // While IA analyzes: check status in the background without updating the UI until it changes.
   const hasProcessingRooms = workspace
     ? Object.values(workspace.room_processing_state ?? {}).some((s) => s === 'procesando')
     : false
   const analyzing = job ? isAnalyzing(job.status) : false
 
   useEffect(() => {
+    if (!session || !job || !analyzing) return
+
+    let cancelled = false
+    let timeoutId: ReturnType<typeof setTimeout> | undefined
+
+    const schedule = (delayMs: number) => {
+      timeoutId = window.setTimeout(() => {
+        void checkStatus()
+      }, delayMs)
+    }
+
+    const checkStatus = async () => {
+      if (cancelled) return
+      const status = await fetchJobStatus()
+      if (cancelled) return
+      if (!status || isAnalyzing(status)) {
+        schedule(JOB_ANALYSIS_RETRY_WAIT_MS)
+        return
+      }
+      await load()
+    }
+
+    schedule(JOB_ANALYSIS_INITIAL_WAIT_MS)
+
+    return () => {
+      cancelled = true
+      if (timeoutId !== undefined) window.clearTimeout(timeoutId)
+    }
+  }, [session, job?.id, analyzing, fetchJobStatus, load])
+
+  useEffect(() => {
     if (!job) return
-    if (!analyzing && !hasProcessingRooms) return
-    const intervalMs = analyzing ? JOB_ANALYSIS_POLL_MS : ROOM_PROCESSING_POLL_MS
+    if (analyzing || !hasProcessingRooms) return
     const timer = setInterval(() => {
       void load({ silent: true })
-    }, intervalMs)
+    }, ROOM_PROCESSING_POLL_MS)
     return () => clearInterval(timer)
   }, [job, load, analyzing, hasProcessingRooms])
 
@@ -442,7 +487,7 @@ export default function JobDetail({ jobId, onNavigate }: JobDetailProps) {
             <div className="mb-6 flex items-center gap-3 rounded-xl border border-outline-variant bg-surface-container-low px-6 py-4">
               <div className="h-5 w-5 animate-spin rounded-full border-2 border-primary border-t-transparent" />
               <p className="text-body-sm text-on-surface-variant">
-                Analizando plano DXF… Podés seguir navegando; el estado se actualiza cada minuto.
+                Analizando plano DXF… La página no se actualizará hasta que el análisis termine.
               </p>
             </div>
           ) : null}
