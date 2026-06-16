@@ -30,17 +30,19 @@ describe('jobStatus transitions', () => {
     assert.doesNotThrow(() => assertJobStatusTransition('listo_para_editar', 'procesando'))
   })
 
+  it('allows DXF replace transitions back to pendiente', () => {
+    assert.doesNotThrow(() => assertJobStatusTransition('listo_para_editar', 'pendiente'))
+    assert.doesNotThrow(() => assertJobStatusTransition('parcialmente_procesado', 'pendiente'))
+    assert.doesNotThrow(() => assertJobStatusTransition('procesado', 'pendiente'))
+  })
+
   it('rejects illegal transitions', () => {
     assert.throws(
-      () => assertJobStatusTransition('procesado', 'pendiente'),
+      () => assertJobStatusTransition('analizando', 'pendiente'),
       InvalidJobStatusTransitionError,
     )
     assert.throws(
       () => assertJobStatusTransition('error', 'procesando'),
-      InvalidJobStatusTransitionError,
-    )
-    assert.throws(
-      () => assertJobStatusTransition('listo_para_editar', 'pendiente'),
       InvalidJobStatusTransitionError,
     )
   })

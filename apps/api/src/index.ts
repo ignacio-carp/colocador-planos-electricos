@@ -14,6 +14,7 @@ import {
   DXF_OUTPUT_BUCKET,
   objectPathMatchesJobAndOwner,
 } from './dxfStorage'
+import { DxfReplaceError, replaceDxfInput } from './dxfInputReplace'
 import {
   findLatestInputForJob,
   findLatestOutputForJob,
@@ -417,6 +418,80 @@ app.post(
       }
       console.error(e)
       res.status(500).json({ error: 'Could not register file' })
+    }
+  },
+)
+
+/**
+ * Replace active input DXF and restart preliminary analysis (resets workspace progress).
+ */
+app.post(
+  '/api/jobs/:jobId/dxf-input/replace',
+  requireAuth,
+  requireStorage,
+  requireRole('architect'),
+  async (req, res) => {
+    const { user } = req as AuthedRequest
+    const jobId = typeof req.params.jobId === 'string' ? req.params.jobId : req.params.jobId?.[0]
+    if (!jobId) {
+      res.status(400).json({ error: 'Missing jobId' })
+      return
+    }
+    const job = await findJob(jobId)
+    if (!job) {
+      res.status(404).json({ error: 'Job not found' })
+      return
+    }
+    if (job.owner_user_id !== user.id) {
+      res.status(403).json({ error: 'Forbidden', code: 'NOT_JOB_OWNER' })
+      return
+    }
+    const body = req.body as { objectPath?: string; contentType?: string; sizeBytes?: number }
+    const objectPath = String(body.objectPath ?? '').trim()
+    const parsed = objectPathMatchesJobAndOwner(objectPath, job.owner_user_id, job.id)
+    if (!parsed) {
+      res.status(400).json({ error: 'objectPath does not match job/owner or is not a valid .dxf path' })
+      return
+    }
+    try {
+      assertAllowedDxfContentType(body.contentType)
+    } catch (e) {
+      res.status(400).json({ error: e instanceof Error ? e.message : 'Invalid content type' })
+      return
+    }
+    const sizeBytes = body.sizeBytes
+    if (typeof sizeBytes !== 'number' || !Number.isFinite(sizeBytes) || sizeBytes < 1) {
+      res.status(400).json({ error: 'sizeBytes must be a positive number' })
+      return
+    }
+    try {
+      assertDxfUploadWithinQuota({ sizeBytes, userId: user.id, jobId: job.id })
+    } catch (e) {
+      if (e instanceof QuotaExceededError) {
+        respondQuotaExceeded(res, e)
+        return
+      }
+      throw e
+    }
+    try {
+      const result = await replaceDxfInput({
+        jobId: job.id,
+        ownerUserId: job.owner_user_id,
+        objectPath,
+        contentType: String(body.contentType).split(';')[0]?.trim() ?? null,
+        sizeBytes,
+        correlationId: req.correlationId,
+      })
+      applyDxfQuotaHeaders(res.setHeader.bind(res))
+      res.status(200).json(result)
+    } catch (e) {
+      if (e instanceof DxfReplaceError) {
+        const status = e.code === 'JOB_NOT_FOUND' ? 404 : e.code === 'NOT_JOB_OWNER' ? 403 : 409
+        res.status(status).json({ error: e.message, code: e.code })
+        return
+      }
+      console.error(e)
+      res.status(500).json({ error: 'Could not replace DXF input' })
     }
   },
 )

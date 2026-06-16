@@ -28,8 +28,7 @@ describe('jobsStore (memory)', () => {
 
   it('rejects invalid status transitions', async () => {
     const job = await createJob('cccccccc-cccc-4ccc-8ccc-cccccccccccc', 'x')
-    await patchJob(job.id, { status: 'procesando' })
-    await patchJob(job.id, { status: 'procesado' })
+    await patchJob(job.id, { status: 'analizando' })
     await assert.rejects(
       () => patchJob(job.id, { status: 'pendiente' }),
       (e: unknown) => e instanceof InvalidJobStatusTransitionError,

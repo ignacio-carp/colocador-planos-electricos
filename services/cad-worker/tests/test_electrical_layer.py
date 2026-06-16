@@ -43,6 +43,29 @@ def test_apply_electrical_layer_adds_block_inserts(tmp_path: Path) -> None:
     assert len(lines) == 1
 
 
+def test_apply_electrical_layer_uses_outlet_type_block(tmp_path: Path) -> None:
+    src = tmp_path / "in.dxf"
+    out = tmp_path / "out.dxf"
+    doc = ezdxf.new()
+    doc.modelspace().add_line((0, 0), (5000, 0))
+    doc.saveas(str(src))
+
+    placements = [
+        {
+            "position": {"x": 1000, "y": 0},
+            "outlet_type": "switch",
+        }
+    ]
+    result = apply_electrical_layer(src, out, placements)
+    assert result["outlets_added"] == 1
+    assert "CAMBRE_SWITCH" in result.get("blocks_used", [])
+
+    out_doc = ezdxf.readfile(str(out))
+    assert "CAMBRE_SWITCH" in [b.name for b in out_doc.blocks]
+    inserts = [e for e in out_doc.modelspace() if e.dxftype() == "INSERT"]
+    assert inserts[0].dxf.name == "CAMBRE_SWITCH"
+
+
 def test_apply_electrical_layer_nuevas_tomas_format(tmp_path: Path) -> None:
     src = tmp_path / "in.dxf"
     out = tmp_path / "out.dxf"

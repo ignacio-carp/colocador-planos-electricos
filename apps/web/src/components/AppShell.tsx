@@ -11,6 +11,7 @@ type AppShellProps = {
   onNavigate: (path: string) => void
   headerTitle?: string
   showExport?: boolean
+  onExportClick?: () => void
 }
 
 export function AppShell({
@@ -19,6 +20,7 @@ export function AppShell({
   onNavigate,
   headerTitle = 'Portal de gestión de proyectos',
   showExport = false,
+  onExportClick,
 }: AppShellProps) {
   const { session, signOut } = useAuth()
   const role = getAppRole(session?.user)
@@ -112,8 +114,9 @@ export function AppShell({
             <button
               type="button"
               className="rounded-lg bg-secondary-container px-4 py-2 text-button font-semibold text-on-secondary-container transition-all hover:brightness-95"
+              onClick={onExportClick}
             >
-              EXPORT_DXF
+              Descargar DXF
             </button>
           ) : null}
         </div>

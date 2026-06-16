@@ -24,6 +24,12 @@ from cad_worker.constants import (
 )
 from cad_worker.dxf_io import open_dxf_file, save_dxf_file
 from cad_worker.extract_geometry import extract_geometry, geometry_bounding_box, point_inside_bbox
+from cad_worker.symbol_catalog import (
+    CROSS_ARM_RATIO,
+    SymbolDef,
+    compute_symbol_scale,
+    resolve_symbol,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -94,21 +100,44 @@ def _modelspace_entity_counts_by_layer(doc: Drawing, exclude_layers: set[str]) -
     return counts
 
 
-def _ensure_outlet_block(doc: Drawing, block_name: str, color_aci: int) -> None:
-    if block_name in doc.blocks:
+def _add_cross_arms(block: Any, radius: float, color_aci: int) -> None:
+    arm = radius * CROSS_ARM_RATIO
+    block.add_line((-arm, 0), (arm, 0), dxfattribs={"color": color_aci})
+    block.add_line((0, -arm), (0, arm), dxfattribs={"color": color_aci})
+
+
+def _ensure_symbol_block(doc: Drawing, symbol: SymbolDef) -> None:
+    if symbol.block_name in doc.blocks:
         return
-    block = doc.blocks.new(name=block_name)
-    block.add_circle((0, 0), OUTLET_BLOCK_RADIUS, dxfattribs={"color": color_aci})
-    radius = OUTLET_BLOCK_RADIUS * 0.7
-    block.add_line(
-        (-radius, 0),
-        (radius, 0),
-        dxfattribs={"color": color_aci},
-    )
-    block.add_line(
-        (0, -radius),
-        (0, radius),
-        dxfattribs={"color": color_aci},
+    block = doc.blocks.new(name=symbol.block_name)
+    color = symbol.color_aci
+    r = OUTLET_BLOCK_RADIUS
+    block.add_circle((0, 0), r, dxfattribs={"color": color})
+
+    if symbol.geometry == "circle_cross":
+        _add_cross_arms(block, r, color)
+    elif symbol.geometry == "circle_cross_double":
+        _add_cross_arms(block, r, color)
+        inner = r * 0.45
+        block.add_line((-inner, -inner), (inner, inner), dxfattribs={"color": color})
+        block.add_line((-inner, inner), (inner, -inner), dxfattribs={"color": color})
+    elif symbol.geometry == "circle_s":
+        # Simplified switch: diagonal stroke inside circle
+        s = r * 0.55
+        block.add_line((-s * 0.6, s * 0.5), (s * 0.6, -s * 0.5), dxfattribs={"color": color})
+        block.add_line((-s * 0.3, s * 0.8), (s * 0.8, -s * 0.2), dxfattribs={"color": color})
+    elif symbol.geometry == "circle_cross_emergency":
+        _add_cross_arms(block, r, color)
+        block.add_circle((0, 0), r * 0.35, dxfattribs={"color": color})
+    else:
+        _add_cross_arms(block, r, color)
+
+
+def _ensure_outlet_block(doc: Drawing, block_name: str, color_aci: int) -> None:
+    """Legacy helper — ensures standard circle+cross block."""
+    _ensure_symbol_block(
+        doc,
+        SymbolDef(block_name=block_name, geometry="circle_cross", color_aci=color_aci),
     )
 
 
@@ -187,11 +216,13 @@ def apply_electrical_layer(
 
     geometry = extract_geometry(input_path)
     bbox = geometry_bounding_box(geometry)
+    symbol_scale = compute_symbol_scale(bbox)
     skipped_out_of_bbox = 0
+    blocks_used: set[str] = set()
 
     msp = doc.modelspace()
     added = 0
-    for x, y, _item in _normalize_placements(placements):
+    for x, y, item in _normalize_placements(placements):
         if bbox is not None and not point_inside_bbox(x, y, bbox, margin=bbox_margin):
             skipped_out_of_bbox += 1
             logger.warning(
@@ -201,10 +232,19 @@ def apply_electrical_layer(
                 bbox,
             )
             continue
+        symbol = resolve_symbol(item)
+        if symbol.block_name not in blocks_used:
+            _ensure_symbol_block(doc, symbol)
+            blocks_used.add(symbol.block_name)
         ref = msp.add_blockref(
-            config.block_name,
+            symbol.block_name,
             (x, y),
-            dxfattribs={"layer": layer_name, "xscale": 1, "yscale": 1, "zscale": 1},
+            dxfattribs={
+                "layer": layer_name,
+                "xscale": symbol_scale,
+                "yscale": symbol_scale,
+                "zscale": symbol_scale,
+            },
         )
         if room_id is not None:
             ref.set_xdata(CAMBRE_APPID, [(CAMBRE_ROOM_GROUP_CODE, room_id)])
@@ -224,6 +264,8 @@ def apply_electrical_layer(
         "output": str(output_path.resolve()),
         "layer": layer_name,
         "block_name": config.block_name,
+        "symbol_scale": symbol_scale,
+        "blocks_used": sorted(blocks_used),
         "outlets_added": added,
         "source_layers_preserved": preserved,
         "output_checksum_sha256": _sha256_file(output_path),

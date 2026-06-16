@@ -141,6 +141,7 @@ async def apply_layer(
     file: UploadFile = File(...),
     placements_json: str = Form(...),
     output_layer_json: str | None = Form(default=None),
+    room_id: str | None = Form(default=None),
 ) -> FileResponse:
     input_suffix = Path(file.filename or "input.dxf").suffix or ".dxf"
     with NamedTemporaryFile(delete=False, suffix=input_suffix) as input_tmp:
@@ -170,6 +171,7 @@ async def apply_layer(
             output_path,
             placements,
             output_layer=layer_config,
+            room_id=room_id or None,
         )
         _log_event(
             logging.INFO,

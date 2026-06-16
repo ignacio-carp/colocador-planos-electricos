@@ -1,0 +1,38 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "version": "2026.06.1",
+  "description": "DXF symbol definitions per outlet_type for US-009 (cad-worker).",
+  "symbols": {
+    "standard": {
+      "block_name": "CAMBRE_OUTLET",
+      "geometry": "circle_cross",
+      "color_aci": 3
+    },
+    "double": {
+      "block_name": "CAMBRE_OUTLET_DBL",
+      "geometry": "circle_cross_double",
+      "color_aci": 3
+    },
+    "switch": {
+      "block_name": "CAMBRE_SWITCH",
+      "geometry": "circle_s",
+      "color_aci": 1
+    },
+    "dedicated_appliance": {
+      "block_name": "CAMBRE_OUTLET_DED",
+      "geometry": "circle_cross",
+      "color_aci": 5
+    },
+    "emergency": {
+      "block_name": "CAMBRE_OUTLET_EMG",
+      "geometry": "circle_cross_emergency",
+      "color_aci": 6
+    }
+  },
+  "scale": {
+    "bbox_factor": 0.008,
+    "min_radius": 20,
+    "max_radius": 80,
+    "cross_arm_ratio": 0.65
+  }
+}

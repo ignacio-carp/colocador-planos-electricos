@@ -14,15 +14,11 @@ export const JOB_STATUSES: readonly JobStatus[] = [
 const ALLOWED_TRANSITIONS: Record<JobStatus, readonly JobStatus[]> = {
   pendiente: ['procesando', 'analizando', 'error'],
   procesando: ['procesado', 'error'],
-  procesado: [],
-  /** Retry after pipeline failure (POST /api/jobs/:id/process). */
+  procesado: ['pendiente'],
   error: ['pendiente'],
-  /** Preliminary analysis in progress → done or error. */
   analizando: ['listo_para_editar', 'error'],
-  /** Ready to edit: incremental room processing (US-013). */
-  listo_para_editar: ['procesando', 'parcialmente_procesado', 'procesado', 'error'],
-  /** At least one room processed; more rooms can still be processed (US-013). */
-  parcialmente_procesado: ['parcialmente_procesado', 'procesado', 'error'],
+  listo_para_editar: ['procesando', 'parcialmente_procesado', 'procesado', 'error', 'pendiente'],
+  parcialmente_procesado: ['parcialmente_procesado', 'procesado', 'error', 'pendiente'],
 }
 
 export class InvalidJobStatusTransitionError extends Error {

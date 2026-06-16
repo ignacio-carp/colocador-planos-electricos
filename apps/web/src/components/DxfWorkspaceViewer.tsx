@@ -176,7 +176,7 @@ export default function DxfWorkspaceViewer({
 
   if (loading) {
     return (
-      <div className="flex min-h-[480px] items-center justify-center rounded-xl border border-outline-variant bg-surface-container-lowest">
+      <div className="flex h-[min(72vh,720px)] min-h-[480px] items-center justify-center rounded-xl border border-outline-variant bg-surface-container-lowest">
         <div className="flex items-center gap-3 text-body-sm text-on-surface-variant">
           <div className="h-5 w-5 animate-spin rounded-full border-2 border-primary border-t-transparent" />
           Cargando plano DXF…
@@ -236,7 +236,7 @@ export default function DxfWorkspaceViewer({
           </button>
         </div>
 
-        <div ref={containerRef} className="relative h-[480px] w-full">
+        <div ref={containerRef} className="relative h-[min(72vh,720px)] min-h-[480px] w-full">
           <CadViewer
             ref={viewerRef}
             file={dxfBuffer}
