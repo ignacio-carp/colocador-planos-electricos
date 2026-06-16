@@ -44,4 +44,13 @@ describe('routeGuards', () => {
     ).toBe('/dashboard')
     expect(resolveAuthRedirect({ pathname: '/jobs/new', hasSession: true, role: 'architect' })).toBeNull()
   })
+
+  it('allows invite onboarding routes with or without session', () => {
+    expect(
+      resolveAuthRedirect({ pathname: '/invite/set-password', hasSession: false, role: null }),
+    ).toBeNull()
+    expect(
+      resolveAuthRedirect({ pathname: '/invite/profile', hasSession: true, role: 'architect' }),
+    ).toBeNull()
+  })
 })

@@ -1,4 +1,5 @@
 import type { AppRole } from './roles'
+import { isInviteOnboardingPath } from './inviteRoutes'
 import { isJobDetailPath } from './routes'
 
 const AUTH_REQUIRED = new Set(['/dashboard', '/jobs', '/invites', '/jobs/new'])
@@ -26,11 +27,13 @@ export function resolveAuthRedirect(params: {
 
   if (!hasSession) {
     if (isAuthRequiredPath(pathname)) return '/login'
-    if (pathname === '/reset-password') return null
+    if (pathname === '/reset-password' || isInviteOnboardingPath(pathname)) return null
     return null
   }
 
   if (pathname === '/login' || pathname === '/forgot-password') return '/dashboard'
+
+  if (isInviteOnboardingPath(pathname)) return null
 
   if (pathname === '/jobs') return '/dashboard'
 

@@ -1,7 +1,14 @@
 import React, { useEffect } from 'react'
 import { AuthProvider, useAuth } from './context/AuthContext'
+import { InviteOnboardingProvider } from './context/InviteOnboardingContext'
 import { usePathname } from './hooks/usePathname'
 import { getAppRole } from './lib/roles'
+import {
+  INVITE_LANDING_PATH,
+  INVITE_PROFILE_PATH,
+  INVITE_SET_PASSWORD_PATH,
+  isInviteOnboardingPath,
+} from './lib/inviteRoutes'
 import { resolveAuthRedirect } from './lib/routeGuards'
 import { isJobDetailPath, parseJobIdFromPath } from './lib/routes'
 import Health from './pages/Health'
@@ -12,7 +19,9 @@ import Dashboard from './pages/Dashboard'
 import JobDetail from './pages/JobDetail'
 import JobsNew from './pages/JobsNew'
 import Invites from './pages/Invites'
-import InviteAccept from './pages/InviteAccept'
+import InviteLanding from './pages/invite/InviteLanding'
+import InviteSetPassword from './pages/invite/InviteSetPassword'
+import InviteProfile from './pages/invite/InviteProfile'
 
 function AppRoutes() {
   const { pathname, navigate } = usePathname()
@@ -27,7 +36,9 @@ function AppRoutes() {
     else if (isJobDetailPath(pathname)) document.title = 'Archivos DXF — Cambre Planos'
     else if (pathname === '/jobs/new') document.title = 'Nuevo proyecto — Cambre Planos'
     else if (pathname === '/invites') document.title = 'Invitaciones — Cambre Planos'
-    else if (pathname === '/invite') document.title = 'Invitación — Cambre Planos'
+    else if (pathname === INVITE_SET_PASSWORD_PATH) document.title = 'Contraseña — Cambre Planos'
+    else if (pathname === INVITE_PROFILE_PATH) document.title = 'Perfil — Cambre Planos'
+    else if (isInviteOnboardingPath(pathname)) document.title = 'Invitación — Cambre Planos'
     else document.title = 'Cambre Planos'
   }, [pathname])
 
@@ -50,7 +61,7 @@ function AppRoutes() {
     pathname === '/login' ||
     pathname === '/forgot-password' ||
     pathname === '/reset-password' ||
-    pathname === '/invite'
+    isInviteOnboardingPath(pathname)
 
   return (
     <>
@@ -84,7 +95,9 @@ function AppRoutes() {
       {pathname === '/invites' && showProtected && role === 'administrator' ? (
         <Invites onNavigate={navigate} />
       ) : null}
-      {pathname === '/invite' ? <InviteAccept onNavigate={navigate} /> : null}
+      {pathname === INVITE_LANDING_PATH ? <InviteLanding onNavigate={navigate} /> : null}
+      {pathname === INVITE_SET_PASSWORD_PATH ? <InviteSetPassword onNavigate={navigate} /> : null}
+      {pathname === INVITE_PROFILE_PATH ? <InviteProfile onNavigate={navigate} /> : null}
 
       {loading && !isAuthPage && pathname !== '/' ? (
         <main className="flex min-h-screen items-center justify-center bg-background">
@@ -98,7 +111,9 @@ function AppRoutes() {
 export default function App() {
   return (
     <AuthProvider>
-      <AppRoutes />
+      <InviteOnboardingProvider>
+        <AppRoutes />
+      </InviteOnboardingProvider>
     </AuthProvider>
   )
 }

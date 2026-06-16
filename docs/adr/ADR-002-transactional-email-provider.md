@@ -12,7 +12,7 @@ US-001 requiere envío de correo con enlace de invitación. Opciones habituales:
 
 - **Proveedor integrado:** [Supabase Auth Admin API](https://supabase.com/docs/reference/javascript/auth-admin-inviteuserbyemail) — `auth.admin.inviteUserByEmail`.
 - **Motivos:** Sin cuenta ni API key externa para el MVP; un solo proveedor (Supabase) para BD, Auth y correo de invitación; plantilla `invite` configurable en el dashboard; redirect al front (`PUBLIC_WEB_URL/invite`).
-- **Implementación:** `apps/api/src/email/sendSupabaseInvitation.ts`; rol `architect` en `app_metadata` tras invitar; activación en `/invite` (contraseña + perfil) y `POST /api/invites/complete`.
+- **Implementación:** `apps/api/src/email/sendSupabaseInvitation.ts`; rol `architect` en `app_metadata` tras invitar; onboarding en `/invite` → `/invite/set-password` → `/invite/profile` y `POST /api/invites/complete`.
 - **Alternativa descartada para MVP:** Resend (ADR anterior). Reintroducir un proveedor externo solo si Supabase SMTP no cubre volumen o deliverability en producción.
 
 ## Política ante fallo de envío
@@ -44,5 +44,5 @@ US-001 requiere envío de correo con enlace de invitación. Opciones habituales:
 ## Consecuencias
 
 - No se requieren `RESEND_API_KEY` ni `EMAIL_FROM` en la API.
-- El arquitecto recibe el correo de Supabase, define contraseña en `/invite` y accede con rol `architect`.
+- El arquitecto recibe el correo de Supabase, define contraseña en `/invite/set-password`, completa el perfil en `/invite/profile` y accede con rol `architect`.
 - Invitaciones legacy con `?token=` en la URL siguen soportadas temporalmente vía `POST /api/invites/accept`.
