@@ -59,6 +59,7 @@ import {
   normalizeRenderWalls,
   resolveLayoutInterpretation,
 } from './renderDataHelpers'
+import { resolveElectricalSymbolRadius } from './symbolScale'
 import { listElectricalCatalog } from './electricalCatalog'
 import { listChatMessages } from './chatStore'
 import {
@@ -894,6 +895,11 @@ app.get(
       scale: layout?.scale ?? null,
       room_processing_state: meta.room_processing_state ?? {},
       electrical_elements: normalizeElectricalElements(meta.outlet_placements),
+      electrical_symbol_radius_drawing_units: resolveElectricalSymbolRadius(
+        meta,
+        paredes,
+        geometryExtract,
+      ),
     })
   },
 )

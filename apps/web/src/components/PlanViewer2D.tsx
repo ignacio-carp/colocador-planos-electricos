@@ -38,6 +38,8 @@ export type ElectricalElement = {
   room_id: string | null
   position: { x: number; y: number }
   outlet_type: string
+  /** Vivienda ruleset element (centro, toma, llave, …); preferred over outlet_type for symbology. */
+  element?: string | null
   catalog_sku: string | null
   source: string | null
   label: string | null
@@ -56,6 +58,8 @@ export type RenderData = {
     'pendiente' | 'procesando' | 'procesada' | 'error' | 'omitida'
   >
   electrical_elements?: ElectricalElement[]
+  /** Radius of electrical symbols in DXF drawing units (~3 cm diameter). */
+  electrical_symbol_radius_drawing_units?: number
 }
 
 type Props = {

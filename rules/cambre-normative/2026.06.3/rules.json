@@ -1,0 +1,1207 @@
+{
+  "version": "cambre-vivienda-2026.06.3",
+  "title": "Cambre — Reglas de generación de plano eléctrico (vivienda)",
+  "replaces": "cambre-normative-2026.05.1",
+  "description": "Reemplaza el ruleset MVP anterior, que ubicaba solo tomas, con simbología incorrecta y fuera de escala. Este motor genera el plano eléctrico completo (iluminación, tomas, llaves, circuitos, tablero, cómputo) derivado de la normativa, restringiendo al modelo a la ubicación espacial. Qué y cuánto lo fija la norma; tamaño y símbolo los fija la biblioteca de bloques.",
+  "normative_basis": {
+    "standard": "AEA 90364 — Reglamentación para la Ejecución de Instalaciones Eléctricas en Inmuebles",
+    "sections": [
+      "7-770 (viviendas unifamiliares hasta 63 A)",
+      "7-771 (viviendas, oficinas y locales; unidades en edificios)",
+      "7-701 (cuartos de baño, cocinas, lavaderos — zonas húmedas)",
+      "4-41 (protección contra choque eléctrico — diferencial 30 mA)"
+    ],
+    "tables_used": [
+      "Tabla 770.6.I  — Tipos de circuito y máximos de bocas/protección",
+      "Tabla 770.7.II — Número mínimo de circuitos por grado",
+      "Cláusula 770.7.5 / 771.8 — Puntos mínimos de utilización por ambiente",
+      "Tabla 770.7.I / 771.8.I — Grados de electrificación por superficie"
+    ],
+    "edition_note": "Valores tomados de AEA 90364-7-770 Ed. 2017 y Sección 771. Antes de uso comercial, verificar la edición vigente y el reglamento de la distribuidora local (EDENOR/EDESUR/EPE), que pueden imponer criterios más estrictos.",
+    "compliance_note": "El plano generado es un anteproyecto. La firma y el cálculo final son responsabilidad de un profesional matriculado. El motor produce una base normativamente consistente, no reemplaza al proyectista."
+  },
+  "design_decisions": [
+    {
+      "id": "DD-SUPPLY",
+      "decision": "Alimentación monofásica por default. El COLOR codifica CIRCUITO, no fase. Corrección sobre el plano SUM de referencia, leído erróneamente como trifásico: su esquema de tableros es 220V monofásico con 3 circuitos coloreados (barra única F-N-T, alimentación 2x6+T, protección 2x25A)."
+    },
+    {
+      "id": "DD-SCOPE",
+      "decision": "Alcance vivienda (AEA 770/771). El plano SUM es institucional y mezcla IUG y TUG en un mismo circuito; sirvió como molde de GEOMETRIA y dibujo, NO como molde de logica de circuitos (eso violaria la separacion obligatoria para viviendas)."
+    },
+    {
+      "id": "DD-SOURCE",
+      "decision": "PMU, minimos de circuito, secciones y protecciones tomados de tablas AEA (770.6.I tipos de circuito, 770.7.II minimo de circuitos por grado, PMU 771.8 por ambiente), no de heuristicas. Reemplaza las densidades inventadas del ruleset original."
+    },
+    {
+      "id": "DD-PRIMITIVE",
+      "decision": "La primitiva es el CIRCUITO, dueno de sus bocas. Habilita la separacion IUG/TUG, el tope de 15 bocas, el computo y el BOM. El ruleset original usaba el ambiente como primitiva y no producia computo ni BOM."
+    },
+    {
+      "id": "DD-DETERMINISM",
+      "decision": "Decision separada de dibujo. El emplazamiento emite DATOS (output_contract); el render es insercion determinista de bloques (render_contract). Los bugs de simbolo equivocado y fuera de escala son del RENDER: estas reglas definen el contrato exacto, pero la garantia la da el renderer-codigo, no la redaccion. Mientras un LLM dibuje geometria, el bug de escala persiste."
+    }
+  ],
+  "assumptions": {
+    "building_type": "vivienda",
+    "supply_default": "monofasico_220V",
+    "supply_note": "El color codifica CIRCUITO, no fase. Trifásico solo cuando la DPMS lo exige; en ese caso los circuitos se reparten entre fases para balancear carga, pero el coloreado sigue siendo por circuito.",
+    "bom_scope": "completo: bocas, módulos, canalización, cajas, tablero, protecciones. Si Cambre no fabrica una familia (p. ej. protecciones), recortar ese slot y truncar el cómputo en consecuencia.",
+    "input_dxf": "peor caso: polígonos de muros + rótulo de ambiente + aberturas; sin mobiliario. Las reglas que requieren mobiliario llevan needs_furniture:true y aplican un default seguro si el dato falta."
+  },
+  "input_contract": {
+    "summary": "Lo que el motor espera por ambiente. Si el DXF no trae el rótulo o la tipología, se requiere una etapa previa de clasificación (fuera de este ruleset).",
+    "room": {
+      "polygon": "lista de vértices en unidades de dibujo (cerrada)",
+      "room_type": "uno de room_type_taxonomy",
+      "area_m2": "numérico; si falta, se calcula del polígono",
+      "openings": "lista de aberturas con tipo (puerta/ventana), segmento de muro y lado de apertura",
+      "ceiling_height_m": "opcional; default 2.6"
+    },
+    "drawing": {
+      "scale": "ej. 50 (para 1:50); usado para escalar bloques de mm de papel a unidades de dibujo",
+      "units": "mm | m (declarado)"
+    }
+  },
+  "room_type_taxonomy": {
+    "estar_comedor": "sala de estar, comedor, comedor diario, escritorio, estudio, biblioteca o similares",
+    "dormitorio": "dormitorio incluyendo placard",
+    "cocina": "cocina y cocina-comedor (ambiente integrado: cumple cocina + estar por separado)",
+    "bano": "cuarto de baño con bañera o ducha",
+    "toilette": "cuarto de baño sin bañera ni ducha",
+    "lavadero": "lavadero o similar",
+    "paso_circulacion": "pasillo, circulación",
+    "vestibulo_hall": "vestíbulo, hall, recibidor",
+    "garaje": "garaje, cochera",
+    "galeria": "galería, semicubierto",
+    "escalera": "escalera o rampa",
+    "deposito": "depósito, baulera",
+    "exterior": "patio, balcón, exterior",
+    "generico": "ambiente no clasificado (aplica mínimos universales + warning)"
+  },
+  "pipeline": [
+    {
+      "stage": 1,
+      "id": "classify",
+      "summary": "Validar tipología y superficie de cada ambiente. Marcar genéricos con warning."
+    },
+    {
+      "stage": 2,
+      "id": "grade",
+      "summary": "Determinar grado de electrificación por superficie total de la vivienda (grades_by_area)."
+    },
+    {
+      "stage": 3,
+      "id": "pmu",
+      "summary": "Aplicar puntos mínimos de utilización por ambiente (pmu_by_room) según grado. Resultado: lista de bocas requeridas con tipo (IUG/TUG/TUE) y ambiente."
+    },
+    {
+      "stage": 4,
+      "id": "instantiate_circuits",
+      "summary": "Agrupar bocas en circuitos respetando separación IUG/TUG, máximo de bocas por circuito y mínimo de circuitos del grado. Asignar sección, protección y diferencial."
+    },
+    {
+      "stage": 5,
+      "id": "place",
+      "summary": "Ubicar cada boca en la geometría (placement). El modelo opera SOLO acá, y solo sobre posición."
+    },
+    {
+      "stage": 6,
+      "id": "compute",
+      "summary": "Generar el cómputo (computo_structure): por circuito, conteo de centros/brazos/tomas/llaves/especiales, total y potencia."
+    },
+    {
+      "stage": 7,
+      "id": "bom",
+      "summary": "Mapear cada elemento a su familia Cambre (bom_mapping). El cómputo es el BOM."
+    },
+    {
+      "stage": 8,
+      "id": "render",
+      "summary": "Dibujar en DXF: bocas como bloques a tamaño fijo (symbology), canalización, rótulos, tablero, color por circuito."
+    },
+    {
+      "stage": 9,
+      "id": "validate",
+      "summary": "Correr validation. Si algún check falla, regenerar el sub-paso afectado, no el plano entero."
+    }
+  ],
+  "defaults": {
+    "outlet_height_mm": 300,
+    "counter_outlet_height_mm": 1100,
+    "switch_height_mm": 1150,
+    "wall_light_height_mm": 2050,
+    "mounting": "embutida",
+    "conduit_default": "Ø20 embutido",
+    "clearance_from_opening_mm": 150,
+    "max_gap_between_outlets_m": 3.5,
+    "ceiling_height_m": 2.6,
+    "va_per_boca_note": "Las potencias por boca para el cálculo de DPMS dependen de la edición (históricamente 150 VA, en ediciones recientes valores menores). Verificar antes de usar la DPMS para dimensionar. No afecta cantidad ni ubicación de bocas."
+  },
+  "normative": {
+    "grades_by_area": [
+      {
+        "grade": "minimo",
+        "area_max_m2": 60,
+        "dpms_max_kva": 3.7,
+        "main_feeder_mm2": 6
+      },
+      {
+        "grade": "medio",
+        "area_max_m2": 130,
+        "dpms_max_kva": 7.0,
+        "main_feeder_mm2": 10
+      },
+      {
+        "grade": "elevado",
+        "area_max_m2": 200,
+        "dpms_max_kva": 11.0,
+        "main_feeder_mm2": 16
+      },
+      {
+        "grade": "superior",
+        "area_max_m2": null,
+        "dpms_max_kva": null,
+        "main_feeder_mm2": 16
+      }
+    ],
+    "grade_notes": [
+      "Grado preliminar por superficie; verificar luego contra la DPMS calculada (770.8). Si la DPMS supera el límite del grado, subir de grado.",
+      "Viviendas <130 m² se asumen sin dormitorios >36 m²; si existiera, ese dormitorio toma PMU de grado elevado.",
+      "Lofts: el grado se determina por superficie total."
+    ],
+    "circuit_types": {
+      "IUG": {
+        "name": "Iluminación de uso general",
+        "feeds": [
+          "centro",
+          "brazo"
+        ],
+        "conductor_mm2": 1.5,
+        "protection_A": 10,
+        "protection_A_max": 16,
+        "differential_mA": null,
+        "max_bocas": 15,
+        "carga_max_por_boca_A": 10,
+        "color_role": "circuito"
+      },
+      "TUG": {
+        "name": "Tomacorriente de uso general",
+        "feeds": [
+          "toma"
+        ],
+        "conductor_mm2": 2.5,
+        "protection_A": 16,
+        "protection_A_alt": 20,
+        "differential_mA": 30,
+        "max_bocas_norma": 15,
+        "max_bocas_recomendado": 8,
+        "color_role": "circuito",
+        "note": "La norma admite 15 bocas; default de buena práctica 8 para reducir probabilidad de sobrecarga. Parametrizable."
+      },
+      "TUE": {
+        "name": "Tomacorriente de uso especial",
+        "feeds": [
+          "toma_especial"
+        ],
+        "conductor_mm2": 4,
+        "protection_A_max": 32,
+        "differential_mA": 30,
+        "max_bocas": 15,
+        "color_role": "circuito",
+        "note": "Dedicado a electrodomésticos de potencia de ubicación fija (horno eléctrico, aire acondicionado, calefón, anafe eléctrico). La sección y protección se ajustan a la potencia del equipo."
+      },
+      "uso_especifico": {
+        "name": "Circuitos de uso específico (ACU, IUE, ITE, OCE, etc.)",
+        "status": "extensible",
+        "note": "No incluidos en el MVP de vivienda. Responsabilidad del proyectista, ver AEA 90364-7-771. Slot reservado para futura expansión (climatización central, pileta, taller)."
+      }
+    },
+    "min_circuits_by_grade": {
+      "minimo": {
+        "total": 2,
+        "variants": [
+          {
+            "IUG": 1,
+            "TUG": 1,
+            "libre": 0
+          }
+        ]
+      },
+      "medio": {
+        "total": 3,
+        "variants": [
+          {
+            "IUG": 2,
+            "TUG": 1,
+            "libre": 0
+          },
+          {
+            "IUG": 1,
+            "TUG": 2,
+            "libre": 0
+          }
+        ]
+      },
+      "elevado": {
+        "total": 5,
+        "variants": [
+          {
+            "IUG": 2,
+            "TUG": 3,
+            "libre": 0
+          },
+          {
+            "IUG": 3,
+            "TUG": 2,
+            "libre": 0
+          }
+        ]
+      },
+      "superior": {
+        "total": 6,
+        "variants": [
+          {
+            "IUG": 2,
+            "TUG": 3,
+            "libre": 1
+          },
+          {
+            "IUG": 3,
+            "TUG": 2,
+            "libre": 1
+          }
+        ]
+      },
+      "note": "El 'circuito de libre elección' puede ser IUG, TUG, TUE u otro tipificado, según necesidad del proyecto."
+    },
+    "pmu_by_room": [
+      {
+        "id": "PMU-ESTAR",
+        "room_types": [
+          "estar_comedor",
+          "vestibulo_hall"
+        ],
+        "grades": [
+          "minimo",
+          "medio",
+          "elevado",
+          "superior"
+        ],
+        "IUG": {
+          "rule": "area_ratio",
+          "one_boca_per_m2": 18,
+          "min": 1
+        },
+        "TUG": {
+          "rule": "area_ratio",
+          "one_boca_per_m2": 6,
+          "min": 2
+        },
+        "TUE": null
+      },
+      {
+        "id": "PMU-DORM-S",
+        "room_types": [
+          "dormitorio"
+        ],
+        "condition": "area_m2 < 10",
+        "grades": [
+          "minimo",
+          "medio",
+          "elevado",
+          "superior"
+        ],
+        "IUG": {
+          "rule": "fixed",
+          "count": 1
+        },
+        "TUG": {
+          "rule": "fixed",
+          "count": 2
+        },
+        "TUE": null
+      },
+      {
+        "id": "PMU-DORM-M",
+        "room_types": [
+          "dormitorio"
+        ],
+        "condition": "10 <= area_m2 <= 36",
+        "grades": [
+          "minimo",
+          "medio",
+          "elevado",
+          "superior"
+        ],
+        "IUG": {
+          "rule": "fixed",
+          "count": 1
+        },
+        "TUG": {
+          "rule": "fixed",
+          "count": 3
+        },
+        "TUE": null
+      },
+      {
+        "id": "PMU-DORM-L",
+        "room_types": [
+          "dormitorio"
+        ],
+        "condition": "area_m2 > 36",
+        "grades": [
+          "elevado",
+          "superior"
+        ],
+        "IUG": {
+          "rule": "fixed",
+          "count": 2
+        },
+        "TUG": {
+          "rule": "fixed",
+          "count": 3
+        },
+        "TUE": {
+          "rule": "fixed",
+          "count": 1
+        }
+      },
+      {
+        "id": "PMU-COCINA-MIN",
+        "room_types": [
+          "cocina",
+          "lavadero"
+        ],
+        "grades": [
+          "minimo",
+          "medio"
+        ],
+        "IUG": {
+          "rule": "fixed",
+          "count": 1
+        },
+        "TUG": {
+          "rule": "fixed",
+          "count": 3,
+          "plus_fixed_appliance_modules": 2
+        },
+        "TUE": null,
+        "note": "Los módulos de toma para electrodomésticos de ubicación fija (heladera, lavavajillas, lavarropas) pueden compartir boca. Ver counting_rules.fixed_appliances y wet_zones (701)."
+      },
+      {
+        "id": "PMU-COCINA-ELEV",
+        "room_types": [
+          "cocina",
+          "lavadero"
+        ],
+        "grades": [
+          "elevado"
+        ],
+        "IUG": {
+          "rule": "fixed",
+          "count": 2
+        },
+        "TUG": {
+          "rule": "fixed",
+          "count": 3,
+          "plus_fixed_appliance_modules": 3
+        },
+        "TUE": {
+          "rule": "fixed",
+          "count": 1
+        }
+      },
+      {
+        "id": "PMU-COCINA-SUP",
+        "room_types": [
+          "cocina",
+          "lavadero"
+        ],
+        "grades": [
+          "superior"
+        ],
+        "IUG": {
+          "rule": "fixed",
+          "count": 2
+        },
+        "TUG": {
+          "rule": "fixed",
+          "count": 4,
+          "plus_fixed_appliance_modules": 3
+        },
+        "TUE": {
+          "rule": "fixed",
+          "count": 1
+        }
+      },
+      {
+        "id": "PMU-BANO",
+        "room_types": [
+          "bano",
+          "toilette"
+        ],
+        "grades": [
+          "minimo",
+          "medio",
+          "elevado",
+          "superior"
+        ],
+        "IUG": {
+          "rule": "fixed",
+          "count": 1
+        },
+        "TUG": {
+          "rule": "fixed",
+          "count": 1
+        },
+        "TUE": null,
+        "note": "En toilette (sin bañera ni ducha) el toma puede cargarse al circuito IUG. El toma solo se permite en Zona 3, respetando distancias a fuentes de agua. Ver wet_zones."
+      },
+      {
+        "id": "PMU-CIRCULACION",
+        "room_types": [
+          "paso_circulacion",
+          "garaje",
+          "galeria"
+        ],
+        "grades": [
+          "minimo",
+          "medio",
+          "elevado",
+          "superior"
+        ],
+        "IUG": {
+          "rule": "fixed",
+          "count": 1
+        },
+        "TUG": {
+          "rule": "criterio",
+          "count": 0
+        },
+        "TUE": null,
+        "note": "Mínimo 1 boca IUG. Garaje y galería suelen llevar al menos 1 toma por criterio del proyectista. La fila de grado medio+ de la tabla 771.8 debe verificarse para superficies grandes; no se hardcodean valores no confirmados."
+      },
+      {
+        "id": "PMU-ESCALERA",
+        "room_types": [
+          "escalera"
+        ],
+        "grades": [
+          "minimo",
+          "medio",
+          "elevado",
+          "superior"
+        ],
+        "IUG": {
+          "rule": "length_ratio",
+          "one_boca_per_m": 5,
+          "min": 1,
+          "also": "una boca en cada descanso"
+        },
+        "TUG": null,
+        "TUE": null
+      },
+      {
+        "id": "PMU-GENERICO",
+        "room_types": [
+          "deposito",
+          "exterior",
+          "generico"
+        ],
+        "grades": [
+          "minimo",
+          "medio",
+          "elevado",
+          "superior"
+        ],
+        "IUG": {
+          "rule": "fixed",
+          "count": 1
+        },
+        "TUG": {
+          "rule": "criterio",
+          "count": 0
+        },
+        "TUE": null,
+        "warning": "Ambiente no tipificado: aplica mínimo universal y marca para revisión humana."
+      }
+    ],
+    "counting_rules": [
+      {
+        "id": "CR-CARGA-BOCA",
+        "rule": "La carga máxima por boca es 10 A."
+      },
+      {
+        "id": "CR-CAJA-TOMAS",
+        "rule": "Caja rectangular (50x100 mm): máx 2 tomacorrientes. Caja cuadrada (100x100 mm): máx 4 tomacorrientes."
+      },
+      {
+        "id": "CR-CAJA-LOSA",
+        "rule": "Caja en losa para paso/derivación cuenta como boca si mide 100x100 mm o más. Mayor a 100x100 no cuenta."
+      },
+      {
+        "id": "CR-VENTILADOR",
+        "rule": "Ventilador de techo o extractor se computa como una boca de iluminación (IUG/IUE)."
+      },
+      {
+        "id": "CR-INTEGRADO",
+        "rule": "Ambiente integrado (cocina-comedor): cumplir el PMU de cada ambiente por separado y sumar."
+      },
+      {
+        "id": "CR-BOCA-MIXTA",
+        "rule": "Boca mixta (interruptor de efecto + tomacorriente en la misma caja): el tomacorriente se conecta al circuito IUG presente en la caja, identificado con el ideograma IEC 60417-5012. Explica los runs 2x2.5+1x1.5+T."
+      },
+      {
+        "id": "CR-TOILETTE",
+        "rule": "En toilette, el toma requerido puede cargarse al circuito de iluminación."
+      },
+      {
+        "id": "CR-COMUNICACION",
+        "rule": "Timbre/portería/comunicación puede alimentarse del IUG y se computa como una boca de iluminación."
+      },
+      {
+        "id": "CR-FIXED-APPLIANCE",
+        "rule": "Electrodomésticos de ubicación fija (heladera, freezer, lavavajillas, lavarropas, secarropas, cocina/anafe/horno eléctricos): toma dedicada; los módulos pueden compartir una misma boca."
+      }
+    ],
+    "wet_zones": {
+      "standard": "AEA 90364-7-701",
+      "zones": [
+        "0",
+        "1",
+        "2",
+        "3"
+      ],
+      "rule": "Tomacorrientes y dispositivos de maniobra prohibidos en Zonas 0, 1 y 2. Tomas permitidas solo en Zona 3, respetando distancias a fuentes de agua. Todo circuito que alimente el baño con diferencial 30 mA obligatorio.",
+      "fallback_when_no_furniture": "Si el input no trae posición de bañera/ducha/pileta, no se puede zonificar con precisión: ubicar el toma en el muro más alejado de la abertura húmeda probable, a 1100 mm, y emitir warning WET-ZONE-UNVERIFIED para revisión humana."
+    },
+    "conductor_colors": {
+      "fase": "marrón / negro / rojo",
+      "neutro": "celeste",
+      "tierra": "verde-amarillo",
+      "retorno": "cualquier color excepto fase, neutro, verde o amarillo"
+    }
+  },
+  "placement": {
+    "centro": {
+      "element": "centro",
+      "circuit": "IUG",
+      "mounting": "techo",
+      "rule": "Distribución en grilla uniforme sobre el polígono del ambiente. 1 boca → centroide. N bocas → grilla de filas x columnas (aprox sqrt proporcional al bounding box), celdas centradas, separación pareja, sin pegarse a muros.",
+      "min_clearance_wall_m": 0.4
+    },
+    "brazo": {
+      "element": "brazo",
+      "circuit": "IUG",
+      "mounting": "pared",
+      "height_mm": 2050,
+      "needs_furniture": true,
+      "rule": "Aplique de pared. Sin mobiliario en el input, es opcional (criterio); con datos, flanqueando espejo o cabecera. Default: no se instala salvo que el PMU del ambiente lo requiera explícitamente.",
+      "min_default": 0
+    },
+    "toma": {
+      "element": "toma",
+      "circuit": "TUG",
+      "mounting": "pared",
+      "height_mm": 300,
+      "rule": "Sobre muros del perímetro, distribuidas equiespaciadas a lo largo de la longitud de muro disponible, evitando aberturas. Cantidad = la que fija el PMU del ambiente.",
+      "max_gap_m": 3.5,
+      "clearance_from_opening_mm": 150,
+      "overrides": [
+        {
+          "when": "room_type == cocina && sobre_mesada",
+          "height_mm": 1100,
+          "needs_furniture": true,
+          "fallback_height_mm": 300
+        },
+        {
+          "when": "room_type in [bano, toilette]",
+          "height_mm": 1100,
+          "zone": "3",
+          "wet_zone_check": true
+        }
+      ]
+    },
+    "toma_especial": {
+      "element": "toma_especial",
+      "circuit": "TUE",
+      "mounting": "pared",
+      "height_mm": 400,
+      "needs_furniture": true,
+      "rule": "Junto al electrodoméstico de potencia fijo (horno, AA, calefón). Sin mobiliario, ubicar en el muro indicado por el PMU y marcar para ajuste.",
+      "clearance_from_opening_mm": 150
+    },
+    "llave": {
+      "element": "llave",
+      "circuit": "IUG",
+      "mounting": "pared",
+      "height_mm": 1150,
+      "rule": "Interruptor de efecto en la jamba de la puerta de acceso, del lado de apertura (lado de la manija), dentro del ambiente que comanda. Una llave por grupo IUG del ambiente.",
+      "clearance_from_opening_mm": 150,
+      "combination_rule": "Pasillo >3 m o ambiente con 2 accesos: interruptores combinados (escalera) en cada extremo/acceso, con distancia entre interruptores sucesivos no mayor a 6 m."
+    },
+    "tablero_seccional": {
+      "element": "tablero_seccional",
+      "mounting": "pared_interior",
+      "height_top_mm": 1800,
+      "rule": "Cerca del acceso principal, interior, accesible. Punto de origen de los circuitos terminales."
+    },
+    "tablero_principal_medidor": {
+      "element": "tablero_principal_medidor",
+      "mounting": "limite_propiedad_o_fachada",
+      "rule": "En el límite de propiedad o fachada, según reglamento de la distribuidora. Alimenta el tablero seccional por la línea principal."
+    },
+    "boca_debil": {
+      "element": "tv_telefono_datos",
+      "circuit": "muy_baja_tension",
+      "mounting": "pared",
+      "height_mm": 300,
+      "needs_furniture": true,
+      "rule": "Corrientes débiles, canalización separada de la de potencia. Ubicación por criterio cerca de zona AV/escritorio. Opcional en MVP."
+    }
+  },
+  "symbology": {
+    "principle": "Cada símbolo es un bloque DXF de dimensión FIJA en mm de papel, insertado y escalado por la escala del plano (drawing.scale). El modelo nunca dibuja la geometría del símbolo ni decide su tamaño. Esto elimina el bug de la luminaria gigante y el de símbolo equivocado.",
+    "block_library": {
+      "_meta": {
+        "units": "mm de papel (insertar en coords de dibujo multiplicando por drawing.scale)",
+        "origin": "punto de insercion = boca; (0,0) es el centro del simbolo salvo aclaracion",
+        "primitives": "circle, filled_circle, line, arc (angulos en grados, sentido antihorario)",
+        "source": "Simbologia tomada del plano SUM de referencia (REFERENCIAS)."
+      },
+      "SYM_CENTRO": {
+        "desc": "Centro de luz en techo (circulo relleno)",
+        "size_mm": 5.0,
+        "geometry": [
+          {
+            "type": "filled_circle",
+            "cx": 0,
+            "cy": 0,
+            "r": 2.5
+          }
+        ]
+      },
+      "SYM_BRAZO": {
+        "desc": "Aplique de pared (semicirculo sobre linea de muro)",
+        "size_mm": 4.0,
+        "geometry": [
+          {
+            "type": "arc",
+            "cx": 0,
+            "cy": 0,
+            "r": 2.0,
+            "a0": 0,
+            "a1": 180
+          },
+          {
+            "type": "line",
+            "x1": -2.0,
+            "y1": 0,
+            "x2": 2.0,
+            "y2": 0
+          }
+        ]
+      },
+      "SYM_TOMA": {
+        "desc": "Tomacorriente (circulo con dos patas verticales). NO es circulo con cruz.",
+        "size_mm": 4.0,
+        "geometry": [
+          {
+            "type": "circle",
+            "cx": 0,
+            "cy": 0,
+            "r": 2.0
+          },
+          {
+            "type": "line",
+            "x1": -0.8,
+            "y1": 0.5,
+            "x2": -0.8,
+            "y2": 2.6
+          },
+          {
+            "type": "line",
+            "x1": 0.8,
+            "y1": 0.5,
+            "x2": 0.8,
+            "y2": 2.6
+          }
+        ]
+      },
+      "SYM_TOMA_ESP": {
+        "desc": "Tomacorriente de uso especial (toma con marca de barra)",
+        "size_mm": 4.5,
+        "geometry": [
+          {
+            "type": "circle",
+            "cx": 0,
+            "cy": 0,
+            "r": 2.0
+          },
+          {
+            "type": "line",
+            "x1": -0.8,
+            "y1": 0.5,
+            "x2": -0.8,
+            "y2": 2.6
+          },
+          {
+            "type": "line",
+            "x1": 0.8,
+            "y1": 0.5,
+            "x2": 0.8,
+            "y2": 2.6
+          },
+          {
+            "type": "line",
+            "x1": -2.4,
+            "y1": -2.4,
+            "x2": 2.4,
+            "y2": -2.4
+          }
+        ]
+      },
+      "SYM_LLAVE": {
+        "desc": "Interruptor de efecto (linea de comando con trazo). Subindice = cantidad de teclas.",
+        "size_mm": 3.5,
+        "geometry": [
+          {
+            "type": "filled_circle",
+            "cx": -1.75,
+            "cy": -1.75,
+            "r": 0.6
+          },
+          {
+            "type": "line",
+            "x1": -1.75,
+            "y1": -1.75,
+            "x2": 1.4,
+            "y2": 1.4
+          },
+          {
+            "type": "line",
+            "x1": 1.4,
+            "y1": 1.4,
+            "x2": 0.4,
+            "y2": 1.9
+          }
+        ]
+      },
+      "SYM_TABLERO": {
+        "desc": "Tablero (rectangulo). Punto de insercion en esquina inferior izquierda.",
+        "size_mm": 8.0,
+        "geometry": [
+          {
+            "type": "line",
+            "x1": 0,
+            "y1": 0,
+            "x2": 8,
+            "y2": 0
+          },
+          {
+            "type": "line",
+            "x1": 8,
+            "y1": 0,
+            "x2": 8,
+            "y2": 5
+          },
+          {
+            "type": "line",
+            "x1": 8,
+            "y1": 5,
+            "x2": 0,
+            "y2": 5
+          },
+          {
+            "type": "line",
+            "x1": 0,
+            "y1": 5,
+            "x2": 0,
+            "y2": 0
+          }
+        ]
+      },
+      "SYM_PAT": {
+        "desc": "Puesta a tierra (tres trazos decrecientes bajo una vertical)",
+        "size_mm": 5.0,
+        "geometry": [
+          {
+            "type": "line",
+            "x1": 0,
+            "y1": 2.5,
+            "x2": 0,
+            "y2": 0
+          },
+          {
+            "type": "line",
+            "x1": -2.0,
+            "y1": 0,
+            "x2": 2.0,
+            "y2": 0
+          },
+          {
+            "type": "line",
+            "x1": -1.2,
+            "y1": -1.0,
+            "x2": 1.2,
+            "y2": -1.0
+          },
+          {
+            "type": "line",
+            "x1": -0.5,
+            "y1": -2.0,
+            "x2": 0.5,
+            "y2": -2.0
+          }
+        ]
+      },
+      "SYM_PLACEHOLDER": {
+        "block_id": "SYM_PLACEHOLDER",
+        "desc": "Marca de bloque faltante. Visible y feo a proposito para que se note en revision.",
+        "size_mm": 4.0,
+        "layer": "ELEC-REVISION",
+        "geometry": [
+          {
+            "type": "line",
+            "x1": -2,
+            "y1": -2,
+            "x2": 2,
+            "y2": -2
+          },
+          {
+            "type": "line",
+            "x1": 2,
+            "y1": -2,
+            "x2": 2,
+            "y2": 2
+          },
+          {
+            "type": "line",
+            "x1": 2,
+            "y1": 2,
+            "x2": -2,
+            "y2": 2
+          },
+          {
+            "type": "line",
+            "x1": -2,
+            "y1": 2,
+            "x2": -2,
+            "y2": -2
+          },
+          {
+            "type": "line",
+            "x1": -2,
+            "y1": -2,
+            "x2": 2,
+            "y2": 2
+          },
+          {
+            "type": "line",
+            "x1": -2,
+            "y1": 2,
+            "x2": 2,
+            "y2": -2
+          }
+        ]
+      }
+    },
+    "scale_formula": "tamaño_en_unidades_dibujo = tamaño_mm_papel * drawing.scale  (con unidades en mm)",
+    "blocks": {
+      "centro": {
+        "symbol_id": "SYM_CENTRO",
+        "desc": "círculo relleno (centro de luz en techo)",
+        "plotted_size_mm": 5.0,
+        "dxf_layer": "ELEC-IUG",
+        "color_by": "circuito"
+      },
+      "brazo": {
+        "symbol_id": "SYM_BRAZO",
+        "desc": "aplique de pared (medio círculo sobre línea de muro)",
+        "plotted_size_mm": 4.0,
+        "dxf_layer": "ELEC-IUG",
+        "color_by": "circuito"
+      },
+      "toma": {
+        "symbol_id": "SYM_TOMA",
+        "desc": "tomacorriente (símbolo IRAM de toma, NO círculo con cruz)",
+        "plotted_size_mm": 4.0,
+        "dxf_layer": "ELEC-TUG",
+        "color_by": "circuito"
+      },
+      "toma_especial": {
+        "symbol_id": "SYM_TOMA_ESP",
+        "desc": "tomacorriente de uso especial (toma con marca)",
+        "plotted_size_mm": 4.5,
+        "dxf_layer": "ELEC-TUE",
+        "color_by": "circuito"
+      },
+      "llave": {
+        "symbol_id": "SYM_LLAVE",
+        "desc": "interruptor de efecto (con subíndice de cantidad de teclas)",
+        "plotted_size_mm": 3.5,
+        "dxf_layer": "ELEC-IUG",
+        "color_by": "circuito"
+      },
+      "tablero": {
+        "symbol_id": "SYM_TABLERO",
+        "desc": "rectángulo de tablero",
+        "plotted_size_mm": 8.0,
+        "dxf_layer": "ELEC-TABLERO",
+        "color_by": "fijo"
+      },
+      "puesta_tierra": {
+        "symbol_id": "SYM_PAT",
+        "desc": "símbolo de puesta a tierra / jabalina",
+        "plotted_size_mm": 5.0,
+        "dxf_layer": "ELEC-PAT",
+        "color_by": "fijo"
+      }
+    },
+    "wiring": {
+      "dxf_layer": "ELEC-CANALIZACION",
+      "color_by": "circuito",
+      "label_format": "{conductores}  {cano}  C-{circuito}",
+      "label_examples": [
+        "2x1.5  Ø20  C-I",
+        "2x2.5+T  Ø20  C-II",
+        "2x2.5+1x1.5+T  Ø20  C-III"
+      ],
+      "conduit_default": "Ø20 embutido"
+    },
+    "labels": {
+      "boca_id": {
+        "format": "número arábigo secuencial",
+        "plotted_text_mm": 2.5,
+        "dxf_layer": "ELEC-TEXTO"
+      },
+      "circuito": {
+        "format": "número romano (I, II, III...) bajo el símbolo",
+        "plotted_text_mm": 2.0,
+        "dxf_layer": "ELEC-TEXTO"
+      }
+    },
+    "circuit_color_palette": {
+      "C-I": "rojo",
+      "C-II": "azul",
+      "C-III": "verde",
+      "C-IV": "magenta",
+      "C-V": "cian",
+      "C-VI": "naranja",
+      "note": "El color identifica el circuito. No representa la fase."
+    }
+  },
+  "output_contract": {
+    "purpose": "Frontera entre decision y dibujo. La etapa de emplazamiento (sea codigo o LLM) NO dibuja: emite este plan como datos estructurados. El renderer deterministico lo consume y produce el DXF. Esto vuelve irrelevante quien consume el JSON de reglas: el resultado es el mismo.",
+    "placement_plan_schema": {
+      "drawing": {
+        "scale": "numero (ej. 50 para 1:50)",
+        "units": "mm | m"
+      },
+      "circuits": [
+        {
+          "id": "C-I",
+          "type": "IUG | TUG | TUE",
+          "conductor_mm2": "numero",
+          "protection_A": "numero",
+          "differential_mA": "numero | null",
+          "color": "string"
+        }
+      ],
+      "bocas": [
+        {
+          "boca_id": "entero secuencial",
+          "circuit_id": "C-I",
+          "element": "centro | brazo | toma | toma_especial | llave",
+          "block_id": "SYM_* (referencia a la biblioteca de bloques)",
+          "x": "numero (unidades de dibujo)",
+          "y": "numero",
+          "z_height_mm": "numero (cota desde piso terminado)",
+          "rotation_deg": "numero",
+          "layer": "ELEC-*",
+          "labels": {
+            "boca": "string (id arabigo)",
+            "circuito": "string (romano)"
+          }
+        }
+      ],
+      "wiring": [
+        {
+          "from_boca": "id",
+          "to_boca": "id",
+          "circuit_id": "C-I",
+          "conductors": "ej. 2x1.5+T",
+          "conduit": "Ø20",
+          "layer": "ELEC-CANALIZACION",
+          "label": "2x1.5  Ø20  C-I"
+        }
+      ],
+      "computo": "segun bom_mapping.computo_structure",
+      "warnings": [
+        "lista de strings (ej. WET-ZONE-UNVERIFIED, GENERICO-ROOM, GRADE-PMU-MISMATCH)"
+      ]
+    }
+  },
+  "render_contract": {
+    "purpose": "Reglas duras del renderer. Matan los dos bugs (simbolo equivocado y fuera de escala) de forma ESTRUCTURAL, no por redaccion.",
+    "rules": [
+      {
+        "id": "R1",
+        "rule": "El renderer es codigo deterministico, no un modelo. Consume el placement_plan y emite DXF. No infiere, no completa, no decide."
+      },
+      {
+        "id": "R2",
+        "rule": "Cada elemento se inserta como BLOQUE predefinido (block_id) a tamano fijo: plotted_size_mm * drawing.scale. El renderer NUNCA deriva la geometria del simbolo ni elige su tamano."
+      },
+      {
+        "id": "R3",
+        "rule": "Si el block_id existe en block_library, insertar su geometria a tamano fijo (size_mm * drawing.scale). Si NO existe, dibujar un placeholder visible (cuadrado punteado de 4mm con una 'X') en la capa ELEC-REVISION y emitir warning BLOCK-MISSING. El render SIEMPRE produce dibujo; nunca se cuelga."
+      },
+      {
+        "id": "R4",
+        "rule": "La escala se aplica una sola vez, por formula, en la insercion. Unidades segun drawing.units."
+      },
+      {
+        "id": "R5",
+        "rule": "Capa DXF y color por circuito los asigna el renderer desde el plan, no el modelo."
+      }
+    ],
+    "block_library_status": "RESUELTO (minimo): block_library trae geometria real de los simbolos del SUM. Reemplazar/afinar con la simbologia oficial de Cambre cuando este. Los SKU del cómputo siguen pendientes."
+  },
+  "bom_mapping": {
+    "principle": "Una vez fijados tipo y cantidad por la norma, el mapeo a producto Cambre es un lookup determinístico. El cómputo ES el BOM. Los SKU se completan con el catálogo Cambre.",
+    "element_to_family": {
+      "centro": {
+        "cambre_family": "plafón / portalámparas / luminaria techo",
+        "cambre_sku": null
+      },
+      "brazo": {
+        "cambre_family": "aplique de pared",
+        "cambre_sku": null
+      },
+      "toma": {
+        "cambre_family": "módulo tomacorriente + tapa + caja",
+        "cambre_sku": null
+      },
+      "toma_especial": {
+        "cambre_family": "módulo tomacorriente especial + tapa + caja",
+        "cambre_sku": null
+      },
+      "llave": {
+        "cambre_family": "módulo tecla (1/2/3) + tapa + caja",
+        "cambre_sku": null
+      },
+      "canalizacion": {
+        "cambre_family": "caño/canalización + accesorios",
+        "cambre_sku": null
+      },
+      "tablero": {
+        "cambre_family": "gabinete + riel DIN",
+        "cambre_sku": null
+      },
+      "proteccion": {
+        "cambre_family": "termomagnética / diferencial",
+        "cambre_sku": null
+      }
+    },
+    "computo_structure": {
+      "per_circuit": [
+        "circuito",
+        "tipo",
+        "centros",
+        "brazos",
+        "tomas",
+        "tomas_especiales",
+        "llaves",
+        "total_bocas",
+        "potencia_va"
+      ],
+      "totals": [
+        "bocas_totales",
+        "circuitos",
+        "dpms_va",
+        "coef_simultaneidad"
+      ],
+      "note": "Coeficiente de simultaneidad y DPMS según 770.8; verificar VA por boca de la edición vigente (ver defaults.va_per_boca_note)."
+    }
+  },
+  "validation": [
+    {
+      "id": "V01",
+      "check": "Cada ambiente habitable tiene al menos 1 boca IUG.",
+      "severity": "error"
+    },
+    {
+      "id": "V02",
+      "check": "Ningún circuito supera su máximo de bocas (IUG/TUG/TUE = 15; TUG default recomendado 8).",
+      "severity": "error"
+    },
+    {
+      "id": "V03",
+      "check": "IUG y TUG en circuitos separados. Excepción permitida: boca mixta (CR-BOCA-MIXTA) y toilette (CR-TOILETTE).",
+      "severity": "error"
+    },
+    {
+      "id": "V04",
+      "check": "Todo circuito TUG y TUE tiene diferencial 30 mA.",
+      "severity": "error"
+    },
+    {
+      "id": "V05",
+      "check": "Ningún tomacorriente dentro de Zonas 0/1/2 de baño; solo Zona 3. Si no se pudo zonificar, existe warning WET-ZONE-UNVERIFIED.",
+      "severity": "error"
+    },
+    {
+      "id": "V06",
+      "check": "Ninguna boca dentro del vano de una abertura ni a menos de 150 mm del marco.",
+      "severity": "error"
+    },
+    {
+      "id": "V07",
+      "check": "La cantidad de circuitos es mayor o igual al mínimo del grado (min_circuits_by_grade).",
+      "severity": "error"
+    },
+    {
+      "id": "V08",
+      "check": "Cada grupo IUG tiene al menos una llave de comando dentro del ambiente.",
+      "severity": "error"
+    },
+    {
+      "id": "V09",
+      "check": "Sección y protección coherentes con el tipo (IUG 1.5mm²/10A, TUG 2.5mm²/16-20A, TUE 4mm²/≤32A).",
+      "severity": "error"
+    },
+    {
+      "id": "V10",
+      "check": "Todos los símbolos se insertaron como bloques a tamaño fijo (no geometría libre).",
+      "severity": "error"
+    },
+    {
+      "id": "V11",
+      "check": "Pasillo >3 m con interruptores combinados y distancia entre interruptores sucesivos ≤ 6 m.",
+      "severity": "warning"
+    },
+    {
+      "id": "V12",
+      "check": "Ambiente integrado cumple el PMU de cada sub-ambiente por separado.",
+      "severity": "warning"
+    },
+    {
+      "id": "V13",
+      "check": "Grado preliminar por superficie verificado contra DPMS calculada; si DPMS excede, grado escalado.",
+      "severity": "warning"
+    },
+    {
+      "id": "V-OUT",
+      "check": "La etapa de emplazamiento emite un placement_plan conforme a output_contract (datos), no un dibujo.",
+      "severity": "error"
+    },
+    {
+      "id": "V-REN",
+      "check": "Cada elemento se dibujo desde block_library a tamano fijo (size_mm * scale), o con placeholder marcado si faltaba el bloque. Ningun simbolo con geometria libre del modelo.",
+      "severity": "error"
+    }
+  ],
+  "changelog": "v.06.3: se agrega block_library con geometria primitiva real (simbolos del SUM) embebida en el JSON, a tamano fijo en mm. R3 cambia de 'fallar' a 'dibujar siempre' (placeholder marcado si falta un bloque). Ahora el render produce DXF sin depender de plantilla externa ni de SKU. Lo normativo no cambia."
+}

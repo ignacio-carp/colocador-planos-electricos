@@ -1,38 +1,107 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "version": "2026.06.1",
-  "description": "DXF symbol definitions per outlet_type for US-009 (cad-worker).",
+  "version": "2026.06.3",
+  "description": "DXF symbol definitions per outlet_type / element for US-009 (cad-worker). Aligned with cambre-vivienda-2026.06.3 symbology.blocks.",
   "symbols": {
     "standard": {
-      "block_name": "CAMBRE_OUTLET",
-      "geometry": "circle_cross",
-      "color_aci": 3
+      "block_name": "SYM_TOMA",
+      "geometry": "toma",
+      "color_aci": 3,
+      "element": "toma",
+      "legacy": true
     },
     "double": {
-      "block_name": "CAMBRE_OUTLET_DBL",
-      "geometry": "circle_cross_double",
-      "color_aci": 3
+      "block_name": "SYM_TOMA",
+      "geometry": "toma",
+      "color_aci": 3,
+      "element": "toma",
+      "legacy": true
     },
     "switch": {
-      "block_name": "CAMBRE_SWITCH",
-      "geometry": "circle_s",
-      "color_aci": 1
+      "block_name": "SYM_LLAVE",
+      "geometry": "llave",
+      "color_aci": 1,
+      "element": "llave",
+      "legacy": true
     },
     "dedicated_appliance": {
-      "block_name": "CAMBRE_OUTLET_DED",
-      "geometry": "circle_cross",
-      "color_aci": 5
+      "block_name": "SYM_TOMA_ESP",
+      "geometry": "toma_especial",
+      "color_aci": 5,
+      "element": "toma_especial",
+      "legacy": true
     },
     "emergency": {
-      "block_name": "CAMBRE_OUTLET_EMG",
-      "geometry": "circle_cross_emergency",
-      "color_aci": 6
+      "block_name": "SYM_TOMA_ESP",
+      "geometry": "toma_especial",
+      "color_aci": 6,
+      "element": "toma_especial",
+      "legacy": true
+    },
+    "centro": {
+      "block_name": "SYM_CENTRO",
+      "geometry": "filled_circle",
+      "color_aci": 3,
+      "dxf_layer": "ELEC-IUG",
+      "plotted_size_mm": 5.0
+    },
+    "brazo": {
+      "block_name": "SYM_BRAZO",
+      "geometry": "brazo",
+      "color_aci": 3,
+      "dxf_layer": "ELEC-IUG",
+      "plotted_size_mm": 4.0
+    },
+    "toma": {
+      "block_name": "SYM_TOMA",
+      "geometry": "toma",
+      "color_aci": 3,
+      "dxf_layer": "ELEC-TUG",
+      "plotted_size_mm": 4.0,
+      "note": "IRAM tomacorriente — círculo con dos patas verticales, NO cruz"
+    },
+    "toma_especial": {
+      "block_name": "SYM_TOMA_ESP",
+      "geometry": "toma_especial",
+      "color_aci": 5,
+      "dxf_layer": "ELEC-TUE",
+      "plotted_size_mm": 4.5
+    },
+    "llave": {
+      "block_name": "SYM_LLAVE",
+      "geometry": "llave",
+      "color_aci": 1,
+      "dxf_layer": "ELEC-IUG",
+      "plotted_size_mm": 3.5
+    },
+    "tablero": {
+      "block_name": "SYM_TABLERO",
+      "geometry": "tablero",
+      "color_aci": 7,
+      "dxf_layer": "ELEC-TABLERO",
+      "plotted_size_mm": 8.0
+    },
+    "puesta_tierra": {
+      "block_name": "SYM_PAT",
+      "geometry": "puesta_tierra",
+      "color_aci": 3,
+      "dxf_layer": "ELEC-PAT",
+      "plotted_size_mm": 5.0
     }
   },
+  "legacy_aliases": {
+    "standard": "toma",
+    "double": "toma",
+    "switch": "llave",
+    "dedicated_appliance": "toma_especial",
+    "emergency": "toma_especial"
+  },
   "scale": {
-    "bbox_factor": 0.008,
-    "min_radius": 20,
-    "max_radius": 80,
-    "cross_arm_ratio": 0.65
+    "target_diameter_m": 0.03,
+    "max_radius_span_ratio": 0.0012,
+    "min_radius_span_ratio": 0.00025,
+    "cross_arm_ratio": 0.65,
+    "block_base_radius": 1.0,
+    "scale_formula": "plotted_size_mm * drawing.scale (ruleset render_contract R2)"
   }
 }

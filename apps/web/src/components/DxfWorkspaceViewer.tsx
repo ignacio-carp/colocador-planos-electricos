@@ -265,6 +265,7 @@ export default function DxfWorkspaceViewer({
               viewTransform={viewTransform}
               width={canvasSize.width}
               height={canvasSize.height}
+              symbolRadiusDrawingUnits={renderData?.electrical_symbol_radius_drawing_units}
             />
           ) : null}
         </div>

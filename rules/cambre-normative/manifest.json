@@ -1,10 +1,16 @@
 {
-  "active_version": "cambre-normative-2026.05.1",
+  "active_version": "cambre-vivienda-2026.06.3",
   "versions": [
     {
       "version": "cambre-normative-2026.05.1",
       "path": "2026.05.1/rules.json",
       "description": "MVP normative rules stub for Cambre electrical outlets"
+    },
+    {
+      "version": "cambre-vivienda-2026.06.3",
+      "path": "2026.06.3/rules.json",
+      "description": "Reglas completas de generación de plano eléctrico vivienda (AEA 770/771): PMU, circuitos, simbología y cómputo",
+      "replaces": "cambre-normative-2026.05.1"
     }
   ]
 }

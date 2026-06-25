@@ -80,7 +80,31 @@
         },
         "outlet_type": {
           "type": "string",
-          "enum": ["standard", "double", "switch", "dedicated_appliance", "emergency"]
+          "enum": [
+            "standard",
+            "double",
+            "switch",
+            "dedicated_appliance",
+            "emergency",
+            "centro",
+            "brazo",
+            "toma",
+            "toma_especial",
+            "llave"
+          ]
+        },
+        "element": {
+          "type": "string",
+          "enum": [
+            "centro",
+            "brazo",
+            "toma",
+            "toma_especial",
+            "llave",
+            "tablero",
+            "puesta_tierra"
+          ],
+          "description": "Tipo de boca según ruleset vivienda (cambre-vivienda-2026.06.3)"
         },
         "mounting": {
           "type": "string",

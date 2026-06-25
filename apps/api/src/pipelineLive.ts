@@ -128,7 +128,7 @@ export async function buildLiveNormativeInferenceOutput(
 Apply the normative rules bundle to the supplied layout_interpretation.
 Place outlets at wall-accessible coordinates inside each affected room.
 
-${normativeOutletPlacementsPromptSpec()}`
+${normativeOutletPlacementsPromptSpec(rules)}`
 
   const user = JSON.stringify({
     layout_interpretation: visionOutput.layout_interpretation,

@@ -27,7 +27,9 @@ from cad_worker.extract_geometry import extract_geometry, geometry_bounding_box,
 from cad_worker.symbol_catalog import (
     CROSS_ARM_RATIO,
     SymbolDef,
+    compute_symbol_radius_drawing_units,
     compute_symbol_scale,
+    read_dxf_insunits,
     resolve_symbol,
 )
 
@@ -106,31 +108,74 @@ def _add_cross_arms(block: Any, radius: float, color_aci: int) -> None:
     block.add_line((0, -arm), (0, arm), dxfattribs={"color": color_aci})
 
 
+def _add_toma_legs(block: Any, radius: float, color_aci: int) -> None:
+    """IRAM tomacorriente: circle + two vertical legs (NOT a cross)."""
+    leg_x = radius * 0.4
+    leg_top = radius * 0.25
+    leg_bottom = radius * 1.3
+    block.add_line((-leg_x, leg_top), (-leg_x, leg_bottom), dxfattribs={"color": color_aci})
+    block.add_line((leg_x, leg_top), (leg_x, leg_bottom), dxfattribs={"color": color_aci})
+
+
 def _ensure_symbol_block(doc: Drawing, symbol: SymbolDef) -> None:
     if symbol.block_name in doc.blocks:
         return
     block = doc.blocks.new(name=symbol.block_name)
     color = symbol.color_aci
     r = OUTLET_BLOCK_RADIUS
-    block.add_circle((0, 0), r, dxfattribs={"color": color})
+    geom = symbol.geometry
 
-    if symbol.geometry == "circle_cross":
+    if geom == "filled_circle":
+        block.add_circle((0, 0), r, dxfattribs={"color": color})
+    elif geom == "toma":
+        block.add_circle((0, 0), r, dxfattribs={"color": color})
+        _add_toma_legs(block, r, color)
+    elif geom == "toma_especial":
+        block.add_circle((0, 0), r, dxfattribs={"color": color})
+        _add_toma_legs(block, r, color)
+        bar = r * 1.2
+        block.add_line((-bar, -bar), (bar, -bar), dxfattribs={"color": color})
+    elif geom == "brazo":
+        block.add_arc((0, 0), r, 0, 180, dxfattribs={"color": color})
+        block.add_line((-r, 0), (r, 0), dxfattribs={"color": color})
+    elif geom == "llave":
+        dot = r * 0.3
+        block.add_circle((-r * 0.85, -r * 0.85), dot, dxfattribs={"color": color})
+        tip = r * 0.7
+        block.add_line((-r * 0.85, -r * 0.85), (tip, tip), dxfattribs={"color": color})
+        block.add_line((tip, tip), (tip * 0.3, tip * 1.35), dxfattribs={"color": color})
+    elif geom == "tablero":
+        w, h = r * 2.0, r * 1.25
+        block.add_line((-w / 2, -h / 2), (w / 2, -h / 2), dxfattribs={"color": color})
+        block.add_line((w / 2, -h / 2), (w / 2, h / 2), dxfattribs={"color": color})
+        block.add_line((w / 2, h / 2), (-w / 2, h / 2), dxfattribs={"color": color})
+        block.add_line((-w / 2, h / 2), (-w / 2, -h / 2), dxfattribs={"color": color})
+    elif geom == "puesta_tierra":
+        block.add_line((0, r), (0, 0), dxfattribs={"color": color})
+        block.add_line((-r * 0.8, 0), (r * 0.8, 0), dxfattribs={"color": color})
+        block.add_line((-r * 0.5, -r * 0.4), (r * 0.5, -r * 0.4), dxfattribs={"color": color})
+        block.add_line((-r * 0.2, -r * 0.8), (r * 0.2, -r * 0.8), dxfattribs={"color": color})
+    elif geom == "circle_cross":
+        block.add_circle((0, 0), r, dxfattribs={"color": color})
         _add_cross_arms(block, r, color)
-    elif symbol.geometry == "circle_cross_double":
+    elif geom == "circle_cross_double":
+        block.add_circle((0, 0), r, dxfattribs={"color": color})
         _add_cross_arms(block, r, color)
         inner = r * 0.45
         block.add_line((-inner, -inner), (inner, inner), dxfattribs={"color": color})
         block.add_line((-inner, inner), (inner, -inner), dxfattribs={"color": color})
-    elif symbol.geometry == "circle_s":
-        # Simplified switch: diagonal stroke inside circle
+    elif geom == "circle_s":
         s = r * 0.55
+        block.add_circle((0, 0), r, dxfattribs={"color": color})
         block.add_line((-s * 0.6, s * 0.5), (s * 0.6, -s * 0.5), dxfattribs={"color": color})
         block.add_line((-s * 0.3, s * 0.8), (s * 0.8, -s * 0.2), dxfattribs={"color": color})
-    elif symbol.geometry == "circle_cross_emergency":
+    elif geom == "circle_cross_emergency":
+        block.add_circle((0, 0), r, dxfattribs={"color": color})
         _add_cross_arms(block, r, color)
         block.add_circle((0, 0), r * 0.35, dxfattribs={"color": color})
     else:
-        _add_cross_arms(block, r, color)
+        block.add_circle((0, 0), r, dxfattribs={"color": color})
+        _add_toma_legs(block, r, color)
 
 
 def _ensure_outlet_block(doc: Drawing, block_name: str, color_aci: int) -> None:
@@ -206,8 +251,6 @@ def apply_electrical_layer(
     exclude = {layer_name}
     source_entity_counts = _modelspace_entity_counts_by_layer(doc, exclude)
 
-    _ensure_outlet_block(doc, config.block_name, config.color_aci)
-
     removed = 0
     if room_id is not None:
         _ensure_appid(doc)
@@ -216,7 +259,9 @@ def apply_electrical_layer(
 
     geometry = extract_geometry(input_path)
     bbox = geometry_bounding_box(geometry)
-    symbol_scale = compute_symbol_scale(bbox)
+    insunits = read_dxf_insunits(doc)
+    symbol_radius = compute_symbol_radius_drawing_units(bbox, geometry, insunits)
+    symbol_scale = compute_symbol_scale(bbox, geometry, insunits)
     skipped_out_of_bbox = 0
     blocks_used: set[str] = set()
 
@@ -265,6 +310,8 @@ def apply_electrical_layer(
         "layer": layer_name,
         "block_name": config.block_name,
         "symbol_scale": symbol_scale,
+        "symbol_radius_drawing_units": symbol_radius,
+        "drawing_insunits": insunits,
         "blocks_used": sorted(blocks_used),
         "outlets_added": added,
         "source_layers_preserved": preserved,

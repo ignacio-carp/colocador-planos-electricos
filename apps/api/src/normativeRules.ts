@@ -4,9 +4,10 @@ import { repoRootDirectory } from './pipelinePackageRoot'
 
 export type NormativeRulesManifest = {
   active_version: string
-  versions: { version: string; path: string; description?: string }[]
+  versions: { version: string; path: string; description?: string; replaces?: string }[]
 }
 
+/** Legacy MVP ruleset (cambre-normative-2026.05.1). */
 export type NormativeRule = {
   id: string
   summary: string
@@ -20,13 +21,32 @@ export type NormativeRule = {
   notes?: string
 }
 
-export type NormativeRulesBundle = {
+export type LegacyNormativeRulesBundle = {
   version: string
   title?: string
   jurisdiction_note?: string
   defaults?: Record<string, unknown>
   rules: NormativeRule[]
 }
+
+/** Vivienda ruleset (cambre-vivienda-2026.06.3) — full electrical plan generation. */
+export type ViviendaNormativeRulesBundle = {
+  version: string
+  title?: string
+  replaces?: string
+  description?: string
+  normative_basis?: Record<string, unknown>
+  pipeline?: unknown[]
+  normative?: Record<string, unknown>
+  placement?: Record<string, unknown>
+  symbology?: Record<string, unknown>
+  output_contract?: Record<string, unknown>
+  defaults?: Record<string, unknown>
+  room_type_taxonomy?: Record<string, string>
+  validation?: unknown[]
+}
+
+export type NormativeRulesBundle = LegacyNormativeRulesBundle | ViviendaNormativeRulesBundle
 
 let cachedManifest: NormativeRulesManifest | null = null
 let cachedBundles = new Map<string, NormativeRulesBundle>()
@@ -55,6 +75,14 @@ export function loadNormativeRulesBundle(version: string): NormativeRulesBundle 
   const bundle = JSON.parse(raw) as NormativeRulesBundle
   cachedBundles.set(version, bundle)
   return bundle
+}
+
+export function isViviendaRulesBundle(bundle: NormativeRulesBundle): bundle is ViviendaNormativeRulesBundle {
+  return 'pipeline' in bundle && Array.isArray(bundle.pipeline)
+}
+
+export function isLegacyRulesBundle(bundle: NormativeRulesBundle): bundle is LegacyNormativeRulesBundle {
+  return 'rules' in bundle && Array.isArray(bundle.rules)
 }
 
 /**

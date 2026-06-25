@@ -58,6 +58,7 @@ export function normalizeElectricalElements(raw: unknown): ElectricalElement[] {
       room_id: typeof e.room_id === 'string' ? e.room_id : null,
       position,
       outlet_type: typeof e.outlet_type === 'string' ? e.outlet_type : 'standard',
+      element: typeof e.element === 'string' ? e.element : null,
       catalog_sku: typeof e.catalog_sku === 'string' ? e.catalog_sku : null,
       source: typeof e.source === 'string' ? e.source : null,
       label: typeof e.label === 'string' ? e.label : null,
