@@ -8,10 +8,10 @@ import {
   cadWorkerTransport,
   extractGeometryFromDxf,
   inspectDxfFile,
+  renderPlanFromDxf,
 } from './cadWorkerBridge'
 import { OpenAiClientError } from './openaiClient'
 import {
-  buildLiveNormativeInferenceOutput,
   buildLiveVisionFallback,
   buildLiveVisionLayoutOutput,
 } from './pipelineLive'
@@ -23,21 +23,13 @@ import {
   findJob,
   patchJob,
   type JobRow,
-  type PreliminaryRecommendation,
   type RoomProcessingStatus,
 } from './jobsStore'
-import { resolveActiveNormativeRulesVersion } from './normativeRules'
-import {
-  incrementPipelineError,
-  recordIaCostUsd,
-  recordIaRetry,
-  recordStepLatency,
-} from './metrics'
+import { incrementPipelineError, recordStepLatency } from './metrics'
 import { PIPELINE_CONTRACT_VERSION } from './pipelineContracts'
-import { buildStubNormativeInferenceOutput, buildStubVisionLayoutOutput } from './pipelineStubs'
+import { buildStubVisionLayoutOutput } from './pipelineStubs'
 import { getSupabaseServiceRole, isStorageConfigured } from './supabaseService'
-
-const IA_MAX_ATTEMPTS = 3
+import { buildPlanRenderMetadata, type PlanRenderMetadata } from './llmRenderContext'
 
 function cadWorkerFixturePath(): string | undefined {
   return (
@@ -47,9 +39,12 @@ function cadWorkerFixturePath(): string | undefined {
   )
 }
 
-async function downloadInputDxfToTemp(
+async function resolveInputDxfLocalPath(
   jobId: string,
 ): Promise<{ localPath: string; dir: string } | null> {
+  const fixture = cadWorkerFixturePath()
+  if (fixture) return { localPath: fixture, dir: '' }
+
   if (!isStorageConfigured()) return null
   const supabase = getSupabaseServiceRole()
   const input = await findLatestInputForJob(supabase, jobId)
@@ -67,67 +62,64 @@ async function downloadInputDxfToTemp(
 async function runCadWorkerInspect(
   jobId: string,
   correlationId: string,
+  localPath: string,
 ): Promise<Record<string, unknown>> {
-  const fixture = cadWorkerFixturePath()
-  if (fixture) {
-    const result = await inspectDxfFile(fixture)
-    logStructured('info', {
-      event: 'cad_worker_inspect',
-      job_id: jobId,
-      correlation_id: correlationId,
-      source: 'fixture',
-      cad_worker_transport: cadWorkerTransport(),
-      entity_count: result.entity_count,
-    })
-    return result as Record<string, unknown>
-  }
-
-  const downloaded = await downloadInputDxfToTemp(jobId)
-  if (downloaded) {
-    const result = await inspectDxfFile(downloaded.localPath)
-    logStructured('info', {
-      event: 'cad_worker_inspect',
-      job_id: jobId,
-      correlation_id: correlationId,
-      source: 'storage',
-      cad_worker_transport: cadWorkerTransport(),
-      entity_count: result.entity_count,
-    })
-    return result as Record<string, unknown>
-  }
-
-  throw new Error('No CAD_WORKER_FIXTURE_DXF and no input file in storage')
+  const result = await inspectDxfFile(localPath)
+  logStructured('info', {
+    event: 'cad_worker_inspect',
+    job_id: jobId,
+    correlation_id: correlationId,
+    source: cadWorkerFixturePath() ? 'fixture' : 'storage',
+    cad_worker_transport: cadWorkerTransport(),
+    entity_count: result.entity_count,
+  })
+  return result as Record<string, unknown>
 }
 
 async function runCadWorkerGeometryExtract(
   jobId: string,
   correlationId: string,
-): Promise<Record<string, unknown> | undefined> {
-  const fixture = cadWorkerFixturePath()
-  if (fixture) {
-    const geometry = await extractGeometryFromDxf(fixture)
-    logStructured('info', {
-      event: 'cad_worker_geometry_extract',
-      job_id: jobId,
-      correlation_id: correlationId,
-      source: 'fixture',
-      wall_count: geometry.paredes?.length ?? 0,
-    })
-    return geometry as Record<string, unknown>
-  }
-
-  const downloaded = await downloadInputDxfToTemp(jobId)
-  if (!downloaded) return undefined
-
-  const geometry = await extractGeometryFromDxf(downloaded.localPath)
+  localPath: string,
+): Promise<Record<string, unknown>> {
+  const geometry = await extractGeometryFromDxf(localPath)
   logStructured('info', {
     event: 'cad_worker_geometry_extract',
     job_id: jobId,
     correlation_id: correlationId,
-    source: 'storage',
+    source: cadWorkerFixturePath() ? 'fixture' : 'storage',
     wall_count: geometry.paredes?.length ?? 0,
   })
   return geometry as Record<string, unknown>
+}
+
+async function runCadWorkerPlanRender(
+  jobId: string,
+  correlationId: string,
+  localPath: string,
+): Promise<{ localPngPath: string; metadata: PlanRenderMetadata } | undefined> {
+  const dir = mkdtempSync(join(tmpdir(), 'cambre-render-'))
+  const localPngPath = join(dir, 'plan.png')
+  const result = await renderPlanFromDxf(localPath, localPngPath)
+  if (!result.ok) {
+    logStructured('warn', {
+      event: 'cad_worker_render_plan_skipped',
+      job_id: jobId,
+      correlation_id: correlationId,
+      error: result.error,
+      code: result.code,
+    })
+    return undefined
+  }
+  const metadata = buildPlanRenderMetadata(result)
+  if (!metadata) return undefined
+  logStructured('info', {
+    event: 'cad_worker_render_plan',
+    job_id: jobId,
+    correlation_id: correlationId,
+    width_px: metadata.width_px,
+    height_px: metadata.height_px,
+  })
+  return { localPngPath, metadata }
 }
 
 function sleep(ms: number): Promise<void> {
@@ -164,68 +156,6 @@ async function runTimedStep(
   })
 }
 
-async function runInferWithRetries(
-  jobId: string,
-  correlationId: string,
-  step: string,
-  work: () => Promise<void>,
-): Promise<void> {
-  const simulateFailure =
-    process.env.CAD_IA_SIMULATE_FAILURE === 'true' && getPipelineMode() === 'stub'
-  let lastMessage = 'IA provider error'
-
-  for (let attempt = 1; attempt <= IA_MAX_ATTEMPTS; attempt++) {
-    logStructured('info', {
-      event: 'ia_attempt',
-      job_id: jobId,
-      correlation_id: correlationId,
-      contract_version: PIPELINE_CONTRACT_VERSION,
-      step,
-      attempt,
-      max_attempts: IA_MAX_ATTEMPTS,
-      pipeline_kind: 'preliminary',
-    })
-
-    if (!simulateFailure) {
-      try {
-        await work()
-        recordIaCostUsd(jobId, 0.002 * attempt)
-        logStructured('info', {
-          event: 'ia_attempt_success',
-          job_id: jobId,
-          correlation_id: correlationId,
-          attempt,
-          step,
-        })
-        return
-      } catch (e) {
-        lastMessage = e instanceof Error ? e.message : 'IA provider error'
-        if (e instanceof OpenAiClientError && e.code === 'OPENAI_RATE_LIMIT') {
-          lastMessage = e.message
-        }
-      }
-    } else {
-      await sleep(5)
-      lastMessage = 'IA provider transient failure (simulated)'
-    }
-    logStructured('warn', {
-      event: 'ia_attempt_failed',
-      job_id: jobId,
-      correlation_id: correlationId,
-      step,
-      attempt,
-      max_attempts: IA_MAX_ATTEMPTS,
-      error: lastMessage,
-    })
-    if (attempt < IA_MAX_ATTEMPTS) {
-      recordIaRetry(jobId)
-    }
-  }
-
-  recordIaCostUsd(jobId, 0.0005 * IA_MAX_ATTEMPTS)
-  throw new Error('IA provider exhausted retries')
-}
-
 type Room = {
   id?: string
   label?: string
@@ -233,70 +163,10 @@ type Room = {
   area_m2?: number
 }
 
-type OutletPlacement = {
-  room_id?: string
-  outlet_type?: string
-  rule_ids?: string[]
-}
-
-/**
- * Genera recomendaciones en español por habitación a partir de la salida de US-008.
- * Solo se llama cuando normative_rules_enabled = true.
- */
-function buildPreliminaryRecommendations(
-  visionOutput: Record<string, unknown>,
-  normativeOutput: Record<string, unknown>,
-): PreliminaryRecommendation[] {
-  const layout = visionOutput.layout_interpretation as { rooms?: Room[] } | undefined
-  const rooms: Room[] = layout?.rooms ?? []
-  const placements = (normativeOutput.outlet_placements as OutletPlacement[] | undefined) ?? []
-
-  return rooms.map((room) => {
-    const roomId = room.id ?? 'unknown'
-    const roomLabel = room.label ?? roomId
-    const roomPlacements = placements.filter((p) => p.room_id === roomId)
-    const outletCount = roomPlacements.length
-
-    const allRuleIds = [...new Set(roomPlacements.flatMap((p) => p.rule_ids ?? []))]
-
-    const recommendations: string[] = []
-    if (outletCount === 0) {
-      recommendations.push(
-        `No se proponen tomas para "${roomLabel}" según las reglas normativas activas.`,
-      )
-    } else {
-      recommendations.push(
-        `Se proponen ${outletCount} toma${outletCount !== 1 ? 's' : ''} de corriente en "${roomLabel}".`,
-      )
-      const typeGroups: Record<string, number> = {}
-      for (const p of roomPlacements) {
-        const t = p.outlet_type ?? 'estándar'
-        typeGroups[t] = (typeGroups[t] ?? 0) + 1
-      }
-      for (const [type, count] of Object.entries(typeGroups)) {
-        recommendations.push(
-          `  • ${count} toma${count !== 1 ? 's' : ''} tipo "${type}".`,
-        )
-      }
-      if (allRuleIds.length > 0) {
-        recommendations.push(`Reglas aplicadas: ${allRuleIds.join(', ')}.`)
-      }
-    }
-
-    return {
-      room_id: roomId,
-      room_label: roomLabel,
-      recommendations,
-      outlet_count: outletCount,
-      rule_ids: allRuleIds,
-    }
-  })
-}
-
 /**
  * Pipeline de análisis preliminar (US-012):
- * inspect + geometry + US-007 + US-008 (si normative_rules_enabled).
- * Termina en listo_para_editar sin escribir output_dxf.
+ * inspect + geometry + render-plan + US-007 (multimodal).
+ * Termina en listo_para_editar sin US-008 ni output_dxf.
  */
 export async function runPreliminaryAnalysisPipeline(
   jobId: string,
@@ -312,11 +182,7 @@ export async function runPreliminaryAnalysisPipeline(
     return undefined
   }
 
-  function isNormativeRulesEnabled(meta: JobRow['pipeline_metadata'] | undefined): boolean {
-    return meta?.normative_rules_enabled !== false
-  }
-
-  let normativeRulesEnabled = isNormativeRulesEnabled(job.pipeline_metadata)
+  const normativeRulesEnabled = job.pipeline_metadata?.normative_rules_enabled !== false
 
   await patchJob(jobId, { status: 'analizando' })
 
@@ -331,23 +197,28 @@ export async function runPreliminaryAnalysisPipeline(
   })
 
   const pipelineMode = getPipelineMode()
-  if (pipelineMode === 'live' && !aiConfigured()) {
-    throw new OpenAiClientError(
-      'LLM_NOT_CONFIGURED',
-      'CAD_PIPELINE_MODE=live requires OPENROUTER_API_KEY or OPENAI_API_KEY',
-    )
-  }
-
   let lastExecutedStep = 'ingest'
   try {
+    if (pipelineMode === 'live' && !aiConfigured()) {
+      throw new OpenAiClientError(
+        'LLM_NOT_CONFIGURED',
+        'CAD_PIPELINE_MODE=live requires OPENROUTER_API_KEY or OPENAI_API_KEY',
+      )
+    }
+
     await runTimedStep(jobId, correlationId, 'ingest', () => sleep(5))
 
     let cadInspect: Record<string, unknown> | undefined
     let geometryExtract: Record<string, unknown> | undefined
+    let planRender: { localPngPath: string; metadata: PlanRenderMetadata } | undefined
 
     if (!cadWorkerDisabled()) {
+      const local = await resolveInputDxfLocalPath(jobId)
+      if (!local) {
+        throw new Error('No CAD_WORKER_FIXTURE_DXF and no input file in storage')
+      }
       try {
-        cadInspect = await runCadWorkerInspect(jobId, correlationId)
+        cadInspect = await runCadWorkerInspect(jobId, correlationId, local.localPath)
       } catch (e) {
         const message = e instanceof Error ? e.message : String(e)
         logStructured('warn', {
@@ -360,7 +231,7 @@ export async function runPreliminaryAnalysisPipeline(
         })
       }
       try {
-        geometryExtract = await runCadWorkerGeometryExtract(jobId, correlationId)
+        geometryExtract = await runCadWorkerGeometryExtract(jobId, correlationId, local.localPath)
       } catch (e) {
         const message = e instanceof Error ? e.message : String(e)
         logStructured('warn', {
@@ -370,12 +241,24 @@ export async function runPreliminaryAnalysisPipeline(
           error: message,
         })
       }
-      if (cadInspect || geometryExtract) {
+      try {
+        planRender = await runCadWorkerPlanRender(jobId, correlationId, local.localPath)
+      } catch (e) {
+        const message = e instanceof Error ? e.message : String(e)
+        logStructured('warn', {
+          event: 'cad_worker_render_plan_skipped',
+          job_id: jobId,
+          correlation_id: correlationId,
+          error: message,
+        })
+      }
+      if (cadInspect || geometryExtract || planRender) {
         await patchJob(jobId, {
           pipeline_metadata: {
             ...(await findJob(jobId))?.pipeline_metadata,
             ...(cadInspect ? { cad_worker_inspect: cadInspect } : {}),
             ...(geometryExtract ? { geometry_extract: geometryExtract } : {}),
+            ...(planRender ? { plan_render: planRender.metadata } : {}),
             pipeline_mode: pipelineMode,
           },
         })
@@ -385,16 +268,19 @@ export async function runPreliminaryAnalysisPipeline(
     lastExecutedStep = 'vision_layout'
     let visionResult: Record<string, unknown> | undefined
     await runTimedStep(jobId, correlationId, 'vision_layout', async () => {
-      if (pipelineMode === 'live' && (cadInspect || geometryExtract)) {
+      const hasCadContext = Boolean(cadInspect || geometryExtract || planRender)
+      if (pipelineMode === 'live' && hasCadContext) {
         visionResult = await buildLiveVisionLayoutOutput(jobId, correlationId, {
           cadInspect,
           geometryExtract,
+          planRender,
         })
         logStructured('info', {
           event: 'preliminary_us007_live',
           job_id: jobId,
           correlation_id: correlationId,
           contract_version: PIPELINE_CONTRACT_VERSION,
+          has_plan_image: Boolean(planRender),
         })
       } else if (pipelineMode === 'live') {
         visionResult = buildLiveVisionFallback(jobId, correlationId) as Record<string, unknown>
@@ -405,7 +291,8 @@ export async function runPreliminaryAnalysisPipeline(
         })
       } else {
         visionResult = buildStubVisionLayoutOutput(jobId, correlationId) as Record<string, unknown>
-        const rooms = (visionResult.layout_interpretation as { rooms?: unknown[] } | undefined)?.rooms ?? []
+        const rooms =
+          (visionResult.layout_interpretation as { rooms?: unknown[] } | undefined)?.rooms ?? []
         logStructured('info', {
           event: 'preliminary_us007_stub',
           job_id: jobId,
@@ -427,106 +314,26 @@ export async function runPreliminaryAnalysisPipeline(
       throw new Error('US-007 returned no rooms — cannot proceed with preliminary analysis')
     }
 
-    await patchJob(jobId, {
-      pipeline_metadata: {
-        ...(await findJob(jobId))?.pipeline_metadata,
-        vision_layout: visionResult,
-      },
-    })
-
     const roomProcessingState: Record<string, RoomProcessingStatus> = {}
     for (const room of rooms) {
       if (room.id) roomProcessingState[room.id] = 'pendiente'
     }
 
-    let normativeResult: Record<string, unknown> | undefined
-    let preliminaryRecommendations: PreliminaryRecommendation[] = []
-
-    normativeRulesEnabled = isNormativeRulesEnabled((await findJob(jobId))?.pipeline_metadata)
-
-    if (normativeRulesEnabled) {
-      lastExecutedStep = 'normative_inference'
-      await runTimedStep(jobId, correlationId, 'normative_inference', async () => {
-        const rulesVersion = resolveActiveNormativeRulesVersion()
-        await patchJob(jobId, {
-          pipeline_metadata: {
-            ...(await findJob(jobId))?.pipeline_metadata,
-            normative_rules_version: rulesVersion,
-          },
-        })
-        await runInferWithRetries(jobId, correlationId, 'normative_inference', async () => {
-          if (pipelineMode === 'live') {
-            normativeResult = (await buildLiveNormativeInferenceOutput(
-              jobId,
-              correlationId,
-              visionResult as Parameters<typeof buildLiveNormativeInferenceOutput>[2],
-            )) as Record<string, unknown>
-          } else {
-            normativeResult = buildStubNormativeInferenceOutput(
-              jobId,
-              correlationId,
-              visionResult as Parameters<typeof buildStubNormativeInferenceOutput>[2],
-            ) as Record<string, unknown>
-          }
-        })
-        if (!normativeResult) {
-          normativeResult = buildStubNormativeInferenceOutput(
-            jobId,
-            correlationId,
-            visionResult as Parameters<typeof buildStubNormativeInferenceOutput>[2],
-          ) as Record<string, unknown>
-        }
-        logStructured('info', {
-          event:
-            pipelineMode === 'live'
-              ? 'preliminary_us008_live'
-              : 'preliminary_us008_stub',
-          job_id: jobId,
-          correlation_id: correlationId,
-          contract_version: PIPELINE_CONTRACT_VERSION,
-          outlets: Number(
-            (normativeResult as { outlet_placements?: unknown[] }).outlet_placements?.length ?? 0,
-          ),
-        })
-      })
-
-      if (normativeResult) {
-        preliminaryRecommendations = buildPreliminaryRecommendations(visionResult, normativeResult)
-      }
-    } else {
-      logStructured('info', {
-        event: 'preliminary_us008_skipped',
-        job_id: jobId,
-        correlation_id: correlationId,
-        reason: 'normative_rules_enabled=false',
-      })
-    }
-
     const completedAt = new Date().toISOString()
     const existingMeta = { ...((await findJob(jobId))?.pipeline_metadata ?? {}) }
-    if (!normativeRulesEnabled) {
-      delete existingMeta.outlet_placements
-      delete existingMeta.normative_rules_version
-    }
+    delete existingMeta.outlet_placements
+    delete existingMeta.normative_rules_version
 
     const done = await patchJob(jobId, {
       status: 'listo_para_editar',
       error: undefined,
       pipeline_metadata: {
         ...existingMeta,
-        preliminary_recommendations: preliminaryRecommendations,
+        vision_layout: visionResult,
+        preliminary_recommendations: [],
         room_processing_state: roomProcessingState,
         preliminary_analysis_completed_at: completedAt,
         normative_rules_enabled: normativeRulesEnabled,
-        ...(normativeRulesEnabled && normativeResult
-          ? {
-              outlet_placements: (normativeResult as { outlet_placements?: unknown[] })
-                .outlet_placements,
-              normative_rules_version:
-                (normativeResult as { normative_rules_version?: string }).normative_rules_version ??
-                resolveActiveNormativeRulesVersion(),
-            }
-          : {}),
       },
     })
 
@@ -537,7 +344,6 @@ export async function runPreliminaryAnalysisPipeline(
       contract_version: PIPELINE_CONTRACT_VERSION,
       rooms: rooms.length,
       normative_rules_enabled: normativeRulesEnabled,
-      recommendations: preliminaryRecommendations.length,
     })
 
     return done

@@ -78,6 +78,7 @@ export function RoomProcessingPanel({
 }: RoomProcessingPanelProps) {
   const [selected, setSelected] = useState<Set<string>>(new Set())
   const [processing, setProcessing] = useState(false)
+  const [processingProgress, setProcessingProgress] = useState<string | null>(null)
   const [omitting, setOmitting] = useState(false)
   const [completing, setCompleting] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -135,6 +136,29 @@ export function RoomProcessingPanel({
     [accessToken],
   )
 
+  async function pollUntilRoomsSettled(roomIds: string[], timeoutMs = 300_000): Promise<void> {
+    const started = Date.now()
+    while (Date.now() - started < timeoutMs) {
+      const res = await fetch(`${apiBase}/api/jobs/${encodeURIComponent(jobId)}/workspace`, {
+        headers: { Authorization: `Bearer ${accessToken}` },
+      })
+      if (res.ok) {
+        const body = (await res.json()) as {
+          room_processing_state?: RoomProcessingState
+        }
+        const state = body.room_processing_state ?? {}
+        const stillProcessing = roomIds.some((id) => state[id] === 'procesando')
+        const doneCount = roomIds.filter(
+          (id) => state[id] === 'procesada' || state[id] === 'error',
+        ).length
+        setProcessingProgress(`Procesando habitaciones (${doneCount}/${roomIds.length})…`)
+        if (!stillProcessing) return
+      }
+      await new Promise((r) => setTimeout(r, 2000))
+    }
+    throw new Error('Tiempo de espera agotado al procesar habitaciones.')
+  }
+
   async function handleProcess() {
     if (selected.size === 0 || processing) return
     setError(null)
@@ -147,6 +171,7 @@ export function RoomProcessingPanel({
     setOptimisticState(optimistic)
     setSelected(new Set())
     setProcessing(true)
+    setProcessingProgress(`Procesando habitaciones (0/${roomIds.length})…`)
 
     try {
       const res = await fetch(`${apiBase}/api/jobs/${encodeURIComponent(jobId)}/workspace/process-rooms`, {
@@ -158,6 +183,7 @@ export function RoomProcessingPanel({
         rooms?: RoomProcessingResult[]
         error?: string
         code?: string
+        queued?: boolean
       }
       if (!res.ok) {
         if (body.code === 'NORMATIVE_RULES_DISABLED') {
@@ -167,12 +193,18 @@ export function RoomProcessingPanel({
         }
         return
       }
+      if (res.status === 202 || body.queued) {
+        await pollUntilRoomsSettled(roomIds)
+        onStateChange()
+        return
+      }
       setResults(body.rooms ?? [])
       onStateChange()
-    } catch {
-      setError('Error de red al procesar habitaciones.')
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Error de red al procesar habitaciones.')
     } finally {
       setProcessing(false)
+      setProcessingProgress(null)
       setOptimisticState({})
     }
   }
@@ -347,6 +379,10 @@ export function RoomProcessingPanel({
             </div>
           </>
         )}
+
+        {processingProgress ? (
+          <p className="text-body-sm text-on-surface-variant">{processingProgress}</p>
+        ) : null}
 
         {/* Action buttons */}
         {normativeRulesEnabled && isRoomProcessingAllowed ? (

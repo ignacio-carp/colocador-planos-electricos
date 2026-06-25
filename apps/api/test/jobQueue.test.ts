@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import { describe, it, beforeEach } from 'node:test'
-import { clearJobQueueForTests, enqueueJobPipeline } from '../src/jobQueue'
+import { clearJobQueueForTests, enqueueJobPipeline, enqueueRoomProcessing } from '../src/jobQueue'
 import { clearJobsForTests, createJob, patchJob } from '../src/jobsStore'
 import { drainPipelineQueueOnce } from '../src/pipelineWorker'
 import { findJob } from '../src/jobsStore'
@@ -44,5 +44,18 @@ describe('jobQueue S-01', { concurrency: false }, () => {
     await drainPipelineQueueOnce()
     const updated = await findJob(job.id)
     assert.equal(updated?.status, 'procesado')
+  })
+
+  it('enqueueRoomProcessing for listo_para_editar job', async () => {
+    process.env.JOBS_USE_MEMORY = '1'
+    process.env.CAD_PIPELINE_MODE = 'stub'
+    process.env.CAD_WORKER_DISABLED = 'true'
+    const job = await createJob('eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee', 'rooms')
+    await patchJob(job.id, { status: 'analizando' })
+    await patchJob(job.id, { status: 'listo_para_editar' })
+    const msg = await enqueueRoomProcessing(job.id, 'corr-room', ['room-a'])
+    assert.ok(msg)
+    assert.equal(msg?.run_type, 'room_processing')
+    assert.deepEqual(msg?.room_ids, ['room-a'])
   })
 })

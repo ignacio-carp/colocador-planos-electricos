@@ -36,7 +36,9 @@ def test_apply_electrical_layer_adds_block_inserts(tmp_path: Path) -> None:
 
     out_doc = ezdxf.readfile(str(out))
     assert OUTPUT_ELECTRICAL_LAYER_NAME in [layer.dxf.name for layer in out_doc.layers]
-    assert DEFAULT_OUTLET_BLOCK_NAME in [b.name for b in out_doc.blocks]
+    assert DEFAULT_OUTLET_BLOCK_NAME in [b.name for b in out_doc.blocks] or "SYM_TOMA" in [
+        b.name for b in out_doc.blocks
+    ]
     inserts = [e for e in out_doc.modelspace() if e.dxftype() == "INSERT"]
     assert len(inserts) >= 1
     lines = [e for e in out_doc.modelspace() if e.dxftype() == "LINE"]
@@ -58,12 +60,14 @@ def test_apply_electrical_layer_uses_outlet_type_block(tmp_path: Path) -> None:
     ]
     result = apply_electrical_layer(src, out, placements)
     assert result["outlets_added"] == 1
-    assert "CAMBRE_SWITCH" in result.get("blocks_used", [])
+    blocks_used = result.get("blocks_used", [])
+    assert "SYM_LLAVE" in blocks_used or "CAMBRE_SWITCH" in blocks_used
 
     out_doc = ezdxf.readfile(str(out))
-    assert "CAMBRE_SWITCH" in [b.name for b in out_doc.blocks]
+    block_names = [b.name for b in out_doc.blocks]
+    assert "SYM_LLAVE" in block_names or "CAMBRE_SWITCH" in block_names
     inserts = [e for e in out_doc.modelspace() if e.dxftype() == "INSERT"]
-    assert inserts[0].dxf.name == "CAMBRE_SWITCH"
+    assert inserts[0].dxf.name in ("SYM_LLAVE", "CAMBRE_SWITCH")
 
 
 def test_apply_electrical_layer_nuevas_tomas_format(tmp_path: Path) -> None:

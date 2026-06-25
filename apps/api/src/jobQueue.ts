@@ -4,7 +4,7 @@ import { normalizeJobStatus } from './jobStatus'
 
 export type QueueMessageStatus = 'queued' | 'processing' | 'done' | 'failed'
 
-export type QueueRunType = 'full_pipeline' | 'preliminary_analysis'
+export type QueueRunType = 'full_pipeline' | 'preliminary_analysis' | 'room_processing'
 
 export type QueueMessage = {
   id: string
@@ -15,6 +15,9 @@ export type QueueMessage = {
   attempts: number
   locked_at: string | null
   created_at: string
+  room_ids?: string[]
+  idempotency_key?: string
+  via_chat?: boolean
 }
 
 const queue: QueueMessage[] = []
@@ -87,6 +90,53 @@ export async function enqueuePreliminaryAnalysis(
     attempts: 0,
     locked_at: null,
     created_at: nowIso(),
+  }
+  queue.push(msg)
+  return msg
+}
+
+export type EnqueueRoomProcessingOptions = {
+  idempotencyKey?: string
+  viaChat?: boolean
+}
+
+/**
+ * Enqueue incremental room processing (US-013). Idempotent per job_id while queued/processing.
+ */
+export async function enqueueRoomProcessing(
+  jobId: string,
+  correlationId: string,
+  roomIds: string[],
+  options?: EnqueueRoomProcessingOptions,
+): Promise<QueueMessage | null> {
+  const job = await findJob(jobId)
+  if (!job) return null
+
+  const status = normalizeJobStatus(job.status)
+  if (status === 'procesado' || status === 'error' || status === 'analizando' || status === 'procesando') {
+    return null
+  }
+  if (status !== 'listo_para_editar' && status !== 'parcialmente_procesado') {
+    return null
+  }
+
+  const existing = queue.find(
+    (m) => m.job_id === jobId && (m.status === 'queued' || m.status === 'processing'),
+  )
+  if (existing) return existing
+
+  const msg: QueueMessage = {
+    id: randomUUID(),
+    job_id: jobId,
+    correlation_id: correlationId,
+    status: 'queued',
+    run_type: 'room_processing',
+    attempts: 0,
+    locked_at: null,
+    created_at: nowIso(),
+    room_ids: roomIds,
+    idempotency_key: options?.idempotencyKey,
+    via_chat: options?.viaChat,
   }
   queue.push(msg)
   return msg

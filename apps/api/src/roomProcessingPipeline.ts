@@ -2,11 +2,12 @@
  * US-013 — Room processing pipeline (incremental).
  *
  * Processes a list of room_ids sequentially:
- *   1. Save dxf_checkpoint reference before each room's US-009.
- *   2. Filter outlet_placements to the target room (re-uses preliminary US-008 output).
- *   3. Run US-009 incremental merge (idempotent replace by room_id).
- *   4. Upload updated output_dxf; rollback is implicit (upload only on success).
- *   5. Update room_processing_state and job status.
+ *   1. US-008 multimodal (rules + room PNG + scoped geometry) per room.
+ *   2. Merge outlet_placements for the room.
+ *   3. Save dxf_checkpoint reference before each room's US-009.
+ *   4. Run US-009 incremental merge (idempotent replace by room_id).
+ *   5. Upload updated output_dxf; rollback is implicit (upload only on success).
+ *   6. Update room_processing_state and job status.
  *
  * With normative_rules_enabled=false the botonera is blocked (only chat via US-014).
  */
@@ -19,8 +20,9 @@ import {
   applyElectricalLayer,
   CadWorkerError,
   cadWorkerDisabled,
+  renderRoomFromDxf,
 } from './cadWorkerBridge'
-import { US009_OUTPUT_LAYER, sha256Hex } from './cadGeneration'
+import { US009_OUTPUT_LAYER } from './cadGeneration'
 import { DXF_INPUT_BUCKET, DXF_OUTPUT_BUCKET, buildDxfObjectPath } from './dxfStorage'
 import { findLatestInputForJob, findLatestOutputForJob } from './filesStore'
 import { logStructured } from './logger'
@@ -30,11 +32,31 @@ import {
   type JobRow,
   type DxfCheckpoint,
   type RoomProcessingRun,
+  type PreliminaryRecommendation,
 } from './jobsStore'
 import { isRoomProcessingAllowed } from './jobStatus'
+import {
+  buildPlanRenderMetadata,
+  roomPolygonFromLayout,
+  scopeGeometryForRoom,
+  type PlanRenderMetadata,
+} from './llmRenderContext'
+import {
+  buildRecommendationForRoom,
+  mergeOutletPlacementsForRoom,
+  mergePreliminaryRecommendation,
+} from './normativeRoomMerge'
+import { resolveActiveNormativeRulesVersion } from './normativeRules'
 import { recordStepLatency } from './metrics'
 import { PIPELINE_CONTRACT_VERSION } from './pipelineContracts'
+import { buildLiveNormativeInferenceOutput } from './pipelineLive'
+import { getPipelineMode } from './pipelineMode'
+import { runInferWithRetries } from './pipelineInfer'
 import { registerOutputDxfFromLocalFile } from './pipelineCadOutput'
+import {
+  buildStubNormativeInferenceOutput,
+  type VisionLayoutOutputDoc,
+} from './pipelineStubs'
 import { getSupabaseServiceRole, isStorageConfigured } from './supabaseService'
 
 const PIPELINE_KIND = 'room_processing'
@@ -64,6 +86,11 @@ export type RoomProcessingOptions = {
    * normative_rules_enabled=false (chat is the only channel in that mode).
    */
   viaChat?: boolean
+  /**
+   * US-014: after chat edits, re-apply US-009 only — preserve outlet_placements
+   * already written by mutations (do not re-run US-008 for that room).
+   */
+  skipUs008?: boolean
 }
 
 function sleep(ms: number): Promise<void> {
@@ -88,6 +115,115 @@ function filterPlacementsForRoom(
   return (placements as OutletPlacement[]).filter(
     (p) => p.room_id === roomId,
   )
+}
+
+async function runUs008ForRoom(params: {
+  jobId: string
+  roomCorrelationId: string
+  roomId: string
+  visionLayout: Record<string, unknown>
+  geometryExtract?: Record<string, unknown>
+  inputDxfPath?: string
+}): Promise<{ outletPlacements: unknown[]; rulesVersion: string }> {
+  const pipelineMode = getPipelineMode()
+  const rulesVersion = resolveActiveNormativeRulesVersion()
+  const visionDoc = params.visionLayout as VisionLayoutOutputDoc
+  const roomPolygon = roomPolygonFromLayout(params.visionLayout, params.roomId)
+  const polygonVertices =
+    roomPolygon && typeof roomPolygon === 'object' && Array.isArray((roomPolygon as { vertices?: unknown[] }).vertices)
+      ? ((roomPolygon as { vertices: unknown[] }).vertices)
+      : []
+
+  let roomRender:
+    | { localPngPath: string; metadata: PlanRenderMetadata; roomId: string }
+    | undefined
+
+  if (params.inputDxfPath && polygonVertices.length >= 3 && !cadWorkerDisabled()) {
+    const renderDir = mkdtempSync(join(tmpdir(), 'cambre-room-render-'))
+    const localPngPath = join(renderDir, `${params.roomId}.png`)
+    try {
+      const renderResult = await renderRoomFromDxf(params.inputDxfPath, localPngPath, {
+        polygonVertices,
+      })
+      const metadata = buildPlanRenderMetadata(renderResult)
+      if (metadata) {
+        roomRender = { localPngPath, metadata, roomId: params.roomId }
+      }
+    } catch (e) {
+      logStructured('warn', {
+        event: 'room_processing_render_skipped',
+        job_id: params.jobId,
+        correlation_id: params.roomCorrelationId,
+        room_id: params.roomId,
+        error: e instanceof Error ? e.message : String(e),
+      })
+    }
+  }
+
+  const geometryExtractScoped = scopeGeometryForRoom(params.geometryExtract, roomPolygon)
+
+  let normativeResult: Record<string, unknown> | undefined
+
+  await runInferWithRetries(
+    params.jobId,
+    params.roomCorrelationId,
+    'normative_inference',
+    async () => {
+      if (pipelineMode === 'live') {
+        normativeResult = (await buildLiveNormativeInferenceOutput(
+          params.jobId,
+          params.roomCorrelationId,
+          visionDoc,
+          {
+            roomIds: [params.roomId],
+            geometryExtractScoped,
+            roomRender: roomRender?.metadata
+              ? {
+                  localPngPath: roomRender.localPngPath,
+                  metadata: roomRender.metadata,
+                  roomId: params.roomId,
+                }
+              : undefined,
+          },
+        )) as Record<string, unknown>
+      } else {
+        normativeResult = buildStubNormativeInferenceOutput(
+          params.jobId,
+          params.roomCorrelationId,
+          visionDoc,
+          [params.roomId],
+        ) as Record<string, unknown>
+      }
+    },
+    { pipelineKind: PIPELINE_KIND },
+  )
+
+  if (!normativeResult) {
+    normativeResult = buildStubNormativeInferenceOutput(
+      params.jobId,
+      params.roomCorrelationId,
+      visionDoc,
+      [params.roomId],
+    ) as Record<string, unknown>
+  }
+
+  logStructured('info', {
+    event: 'room_processing_us008_complete',
+    job_id: params.jobId,
+    correlation_id: params.roomCorrelationId,
+    pipeline_kind: PIPELINE_KIND,
+    room_id: params.roomId,
+    outlets: Number((normativeResult.outlet_placements as unknown[] | undefined)?.length ?? 0),
+    has_room_image: Boolean(roomRender),
+  })
+
+  return {
+    outletPlacements: (normativeResult.outlet_placements as unknown[]) ?? [],
+    rulesVersion:
+      typeof normativeResult.normative_rules_version === 'string'
+        ? normativeResult.normative_rules_version
+        : rulesVersion,
+  }
 }
 
 /**
@@ -164,9 +300,6 @@ export async function runRoomProcessingPipeline(
     )
   }
 
-  const existingOutletPlacements: unknown[] = (meta.outlet_placements as unknown[]) ?? []
-  const normativeRulesVersion = meta.normative_rules_version ?? undefined
-
   const results: RoomProcessingResult[] = []
 
   for (const roomId of roomIds) {
@@ -198,7 +331,75 @@ export async function runRoomProcessingPipeline(
     })
 
     try {
-      const placements = filterPlacementsForRoom(existingOutletPlacements, roomId)
+      const visionLayout = currentMeta.vision_layout as Record<string, unknown> | undefined
+      if (!visionLayout) {
+        throw new Error(`No vision_layout for job ${jobId}; run preliminary analysis first`)
+      }
+
+      const geometryExtract = currentMeta.geometry_extract as Record<string, unknown> | undefined
+      let inputDxfPath: string | undefined
+      const fixture = cadWorkerFixturePath()
+
+      if (fixture) {
+        inputDxfPath = fixture
+      } else if (isStorageConfigured()) {
+        const supabase = getSupabaseServiceRole()
+        const inputFile = await findLatestInputForJob(supabase, jobId)
+        if (inputFile?.bucket_id === DXF_INPUT_BUCKET && inputFile.object_path) {
+          const downloaded = await downloadDxfToTemp(DXF_INPUT_BUCKET, inputFile.object_path)
+          inputDxfPath = downloaded?.localPath
+        }
+      }
+
+      const us008 = options?.skipUs008
+        ? {
+            outletPlacements: filterPlacementsForRoom(
+              (currentMeta.outlet_placements as unknown[]) ?? [],
+              roomId,
+            ),
+            rulesVersion:
+              (currentMeta.normative_rules_version as string | undefined) ??
+              resolveActiveNormativeRulesVersion(),
+          }
+        : await runUs008ForRoom({
+            jobId,
+            roomCorrelationId,
+            roomId,
+            visionLayout,
+            geometryExtract,
+            inputDxfPath,
+          })
+
+      const mergedPlacements = options?.skipUs008
+        ? ((currentMeta.outlet_placements as unknown[]) ?? [])
+        : mergeOutletPlacementsForRoom(
+            (currentMeta.outlet_placements as unknown[]) ?? [],
+            roomId,
+            us008.outletPlacements,
+          )
+      const recommendation = options?.skipUs008
+        ? undefined
+        : buildRecommendationForRoom(visionLayout, {
+            outlet_placements: us008.outletPlacements,
+          }, roomId)
+      const preliminaryRecommendations: PreliminaryRecommendation[] = recommendation
+        ? mergePreliminaryRecommendation(
+            (currentMeta.preliminary_recommendations as PreliminaryRecommendation[]) ?? [],
+            recommendation,
+          )
+        : ((currentMeta.preliminary_recommendations as PreliminaryRecommendation[]) ?? [])
+
+      await patchJob(jobId, {
+        pipeline_metadata: {
+          ...currentMeta,
+          outlet_placements: mergedPlacements,
+          normative_rules_version: us008.rulesVersion,
+          preliminary_recommendations: preliminaryRecommendations,
+        },
+      })
+
+      const placements = filterPlacementsForRoom(mergedPlacements, roomId)
+      const normativeRulesVersion = us008.rulesVersion
 
       if (placements.length === 0) {
         logStructured('warn', {
@@ -212,7 +413,7 @@ export async function runRoomProcessingPipeline(
       let outletCount = 0
 
       if (!isStorageConfigured() && !cadWorkerFixturePath()) {
-        // Stub path: no storage or fixture — simulate success for unit tests
+        // Stub path: no storage or fixture — simulate US-009 success for unit tests
         await sleep(5)
         logStructured('info', {
           event: 'room_processing_stub_success',
@@ -260,8 +461,6 @@ export async function runRoomProcessingPipeline(
           },
         })
 
-        // Download source DXF
-        const fixture = cadWorkerFixturePath()
         let localSourcePath: string
         let tempDir: string | undefined
 
@@ -399,7 +598,9 @@ export async function runRoomProcessingPipeline(
       const errorRun: RoomProcessingRun = {
         room_id: roomId,
         correlation_id: roomCorrelationId,
-        rules_version: normativeRulesVersion,
+        rules_version:
+          (failedMeta.normative_rules_version as string | undefined) ??
+          resolveActiveNormativeRulesVersion(),
         started_at: roomRunStart,
         completed_at: new Date().toISOString(),
         error: { code, message, correlation_id: roomCorrelationId },

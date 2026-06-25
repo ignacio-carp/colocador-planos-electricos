@@ -1,6 +1,7 @@
 import { existsSync, readFileSync, writeFileSync } from 'node:fs'
 import { spawn } from 'node:child_process'
 import { basename, join } from 'node:path'
+import type { CadWorkerRenderResult } from './llmRenderContext'
 import { logStructured } from './logger'
 import { repoRootDirectory } from './pipelinePackageRoot'
 
@@ -66,6 +67,8 @@ export class CadWorkerError extends Error {
     this.name = 'CadWorkerError'
   }
 }
+
+export type { CadWorkerRenderResult } from './llmRenderContext'
 
 export type CadWorkerTransport = 'http' | 'spawn' | 'disabled'
 
@@ -358,6 +361,64 @@ async function httpApplyElectricalLayer(
   return { ...meta, ok: true, output: outputPath }
 }
 
+async function httpRenderPng(
+  endpoint: string,
+  operation: string,
+  inputPath: string,
+  outputPath: string,
+  formFields: Record<string, string>,
+): Promise<CadWorkerRenderResult> {
+  const fileName = basename(inputPath)
+  const bytes = readFileSync(inputPath)
+  const form = new FormData()
+  form.append('file', new Blob([bytes]), fileName)
+  for (const [key, value] of Object.entries(formFields)) {
+    form.append(key, value)
+  }
+
+  const response = await fetchCadWorker(endpoint, {
+    method: 'POST',
+    body: form,
+    operation,
+    inputPath,
+  })
+
+  if (!response.ok) {
+    const body = await response.text()
+    let detail: unknown = body
+    try {
+      const parsed = JSON.parse(body) as { detail?: unknown }
+      if (parsed.detail !== undefined) detail = parsed.detail
+    } catch {
+      /* keep raw body */
+    }
+    throw mapExitCodeToError(
+      httpDetailCode(detail),
+      httpDetailMessage(detail),
+      response.status,
+    )
+  }
+
+  const metaHeaderRaw = response.headers.get(CAD_WORKER_RESULT_HEADER)
+  const metaEncoding = response.headers.get(CAD_WORKER_RESULT_ENCODING_HEADER)
+  let meta: CadWorkerRenderResult = { ok: true }
+  if (metaHeaderRaw) {
+    try {
+      const metaHeader = decodeCadWorkerResultHeader(metaHeaderRaw, metaEncoding)
+      meta = parseWorkerPayload(metaHeader, response.status) as CadWorkerRenderResult
+    } catch (e) {
+      logCadWorker('warn', {
+        event: 'cad_worker_render_meta_parse_failed',
+        error: e instanceof Error ? e.message : String(e),
+      })
+    }
+  }
+
+  const outputBytes = Buffer.from(await response.arrayBuffer())
+  writeFileSync(outputPath, outputBytes)
+  return { ...meta, ok: true, output: outputPath }
+}
+
 function spawnCadWorkerJson(args: string[], inputPath?: string): Promise<Record<string, unknown>> {
   if (cadWorkerDisabled()) {
     return Promise.reject(new CadWorkerError('CAD_WORKER_DISABLED', 'CAD worker disabled'))
@@ -594,4 +655,84 @@ export async function applyElectricalLayer(
   }
   const parsed = await spawnCadWorkerJson(spawnArgs, inputPath)
   return parsed as CadWorkerApplyLayerResult
+}
+
+export type RenderPlanOptions = {
+  widthPx?: number
+}
+
+export type RenderRoomOptions = {
+  polygonVertices: unknown[]
+  marginMm?: number
+  widthPx?: number
+}
+
+/** Rasterize full DXF plan to PNG (US-007 multimodal context). */
+export async function renderPlanFromDxf(
+  inputPath: string,
+  outputPath: string,
+  options?: RenderPlanOptions,
+): Promise<CadWorkerRenderResult> {
+  if (cadWorkerDisabled()) {
+    return { ok: false, code: 'CAD_WORKER_DISABLED', error: 'CAD worker disabled' }
+  }
+
+  const widthPx = options?.widthPx ?? 2048
+
+  if (cadWorkerTransport() === 'http') {
+    return httpRenderPng('/render-plan', 'render-plan', inputPath, outputPath, {
+      width_px: String(widthPx),
+    })
+  }
+
+  const spawnArgs = [
+    'render-plan',
+    '--input',
+    inputPath,
+    '--output',
+    outputPath,
+    '--width-px',
+    String(widthPx),
+  ]
+  const parsed = await spawnCadWorkerJson(spawnArgs, inputPath)
+  return parsed as CadWorkerRenderResult
+}
+
+/** Rasterize room crop to PNG (US-008 multimodal context). */
+export async function renderRoomFromDxf(
+  inputPath: string,
+  outputPath: string,
+  options: RenderRoomOptions,
+): Promise<CadWorkerRenderResult> {
+  if (cadWorkerDisabled()) {
+    return { ok: false, code: 'CAD_WORKER_DISABLED', error: 'CAD worker disabled' }
+  }
+
+  const polygonJson = JSON.stringify({ vertices: options.polygonVertices })
+  const marginMm = options.marginMm ?? 500
+  const widthPx = options.widthPx ?? 1024
+
+  if (cadWorkerTransport() === 'http') {
+    return httpRenderPng('/render-room', 'render-room', inputPath, outputPath, {
+      polygon_json: polygonJson,
+      margin_mm: String(marginMm),
+      width_px: String(widthPx),
+    })
+  }
+
+  const spawnArgs = [
+    'render-room',
+    '--input',
+    inputPath,
+    '--output',
+    outputPath,
+    '--polygon-json',
+    polygonJson,
+    '--margin-mm',
+    String(marginMm),
+    '--width-px',
+    String(widthPx),
+  ]
+  const parsed = await spawnCadWorkerJson(spawnArgs, inputPath)
+  return parsed as CadWorkerRenderResult
 }

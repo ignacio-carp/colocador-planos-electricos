@@ -98,31 +98,54 @@ export function buildStubNormativeInferenceOutput(
   jobId: string,
   correlationId: string,
   visionOutput: VisionLayoutOutputDoc,
+  roomIds?: string[],
 ): NormativeInferenceOutputDoc {
   const interpretation = visionOutput.layout_interpretation as { rooms?: { id?: string }[] }
-  const rooms = interpretation?.rooms
-  const roomId = typeof rooms?.[0]?.id === 'string' ? rooms[0].id : `room-${deterministicHex(jobId, 4)}`
+  const rooms = interpretation?.rooms ?? []
+  const targetRooms =
+    roomIds && roomIds.length > 0
+      ? rooms.filter((r) => r.id && roomIds.includes(r.id))
+      : rooms
+  const placements = targetRooms.map((room, index) => {
+    const roomId =
+      typeof room.id === 'string' ? room.id : `room-${deterministicHex(jobId, 4)}`
+    const outletSlug = deterministicHex(`${jobId}|outlet|${roomId}|${index}`, 6)
+    return {
+      id: `outlet-${outletSlug}`,
+      room_id: roomId,
+      position: { x: 1000 + index * 200, y: 2200, unit: 'drawing_units' },
+      outlet_type: 'standard',
+      mounting: 'wall',
+      height_mm: 300,
+      rationale: 'MVP deterministic stub outlet',
+      rule_ids: ['RULE-ROOM-MIN-OUTLET'],
+    }
+  })
+
+  if (placements.length === 0) {
+    const roomId =
+      typeof rooms?.[0]?.id === 'string' ? rooms[0].id : `room-${deterministicHex(jobId, 4)}`
+    const outletSlug = deterministicHex(`${jobId}|outlet`, 6)
+    placements.push({
+      id: `outlet-${outletSlug}`,
+      room_id: roomId,
+      position: { x: 1000, y: 2200, unit: 'drawing_units' },
+      outlet_type: 'standard',
+      mounting: 'wall',
+      height_mm: 300,
+      rationale: 'MVP deterministic stub outlet',
+      rule_ids: ['RULE-ROOM-MIN-OUTLET'],
+    })
+  }
 
   const rulesVersion = resolveActiveNormativeRulesVersion()
-  const outletSlug = deterministicHex(`${jobId}|outlet`, 6)
   const doc = {
     contract_version: PIPELINE_CONTRACT_VERSION,
     job_id: jobId,
     correlation_id: correlationId,
     story_id: 'US-008',
     normative_rules_version: rulesVersion,
-    outlet_placements: [
-      {
-        id: `outlet-${outletSlug}`,
-        room_id: roomId,
-        position: { x: 1000, y: 2200, unit: 'drawing_units' },
-        outlet_type: 'standard',
-        mounting: 'wall',
-        height_mm: 300,
-        rationale: 'MVP deterministic stub outlet',
-        rule_ids: ['RULE-ROOM-MIN-OUTLET'],
-      },
-    ],
+    outlet_placements: placements,
     warnings: [] as string[],
     completed_at: deterministicCompletedAt(jobId, correlationId, 'us008'),
   }

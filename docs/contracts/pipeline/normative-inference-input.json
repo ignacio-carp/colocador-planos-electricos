@@ -67,9 +67,33 @@
     },
     "room_ids": {
       "type": "array",
-      "description": "US-013 — Scope inference to specific rooms; omit for full layout (preliminary analysis).",
+      "description": "US-013 workspace: obligatorio en inferencia por habitación (un elemento por llamada). Omitir solo en jobs batch legacy (US-007→008 de una vez).",
       "items": { "type": "string" },
       "minItems": 1
+    },
+    "geometry_extract_scoped": {
+      "type": "object",
+      "description": "Geometría vectorial filtrada al polígono de la habitación (paredes, aberturas, muebles, etiquetas)."
+    },
+    "room_render": {
+      "type": "object",
+      "description": "Metadata del PNG de habitación (cad-worker render-room); la imagen se envía inline al LLM en MVP.",
+      "additionalProperties": false,
+      "properties": {
+        "width_px": { "type": "integer", "minimum": 1 },
+        "height_px": { "type": "integer", "minimum": 1 },
+        "bbox_drawing_units": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "min_x": { "type": "number" },
+            "min_y": { "type": "number" },
+            "max_x": { "type": "number" },
+            "max_y": { "type": "number" }
+          }
+        },
+        "pixels_per_drawing_unit": { "type": "number" }
+      }
     }
   }
 }

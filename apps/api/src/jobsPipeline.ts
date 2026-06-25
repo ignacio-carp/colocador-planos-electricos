@@ -26,11 +26,10 @@ import { findJob, patchJob, type JobRow } from './jobsStore'
 import { resolveActiveNormativeRulesVersion } from './normativeRules'
 import {
   incrementPipelineError,
-  recordIaCostUsd,
-  recordIaRetry,
   recordStepLatency,
 } from './metrics'
 import { PIPELINE_CONTRACT_VERSION } from './pipelineContracts'
+import { runInferWithRetries } from './pipelineInfer'
 import { assertValidCadGenerationInput } from './pipelineSchemaValidation'
 import {
   buildCadGenerationInput,
@@ -39,8 +38,6 @@ import {
   buildStubVisionLayoutOutput,
 } from './pipelineStubs'
 import { getSupabaseServiceRole, isStorageConfigured } from './supabaseService'
-
-const IA_MAX_ATTEMPTS = 3
 
 function cadWorkerFixturePath(): string | undefined {
   return (
@@ -163,71 +160,6 @@ async function runTimedStep(
     contract_version: PIPELINE_CONTRACT_VERSION,
     step,
   })
-}
-
-/**
- * When `CAD_IA_SIMULATE_FAILURE=true`, inference attempts fail until retries are exhausted
- * — job ends in `error` with correlation_id in logs and payload.
- */
-async function runInferWithRetries(
-  jobId: string,
-  correlationId: string,
-  step: string,
-  work: () => Promise<void>,
-): Promise<void> {
-  const simulateFailure =
-    process.env.CAD_IA_SIMULATE_FAILURE === 'true' && getPipelineMode() === 'stub'
-  let lastMessage = 'IA provider error'
-
-  for (let attempt = 1; attempt <= IA_MAX_ATTEMPTS; attempt++) {
-    logStructured('info', {
-      event: 'ia_attempt',
-      job_id: jobId,
-      correlation_id: correlationId,
-      contract_version: PIPELINE_CONTRACT_VERSION,
-      step,
-      attempt,
-      max_attempts: IA_MAX_ATTEMPTS,
-    })
-
-    if (!simulateFailure) {
-      try {
-        await work()
-        recordIaCostUsd(jobId, 0.002 * attempt)
-        logStructured('info', {
-          event: 'ia_attempt_success',
-          job_id: jobId,
-          correlation_id: correlationId,
-          attempt,
-          step,
-        })
-        return
-      } catch (e) {
-        lastMessage = e instanceof Error ? e.message : 'IA provider error'
-        if (e instanceof OpenAiClientError && e.code === 'OPENAI_RATE_LIMIT') {
-          lastMessage = e.message
-        }
-      }
-    } else {
-      await sleep(5)
-      lastMessage = 'IA provider transient failure (simulated)'
-    }
-    logStructured('warn', {
-      event: 'ia_attempt_failed',
-      job_id: jobId,
-      correlation_id: correlationId,
-      step,
-      attempt,
-      max_attempts: IA_MAX_ATTEMPTS,
-      error: lastMessage,
-    })
-    if (attempt < IA_MAX_ATTEMPTS) {
-      recordIaRetry(jobId)
-    }
-  }
-
-  recordIaCostUsd(jobId, 0.0005 * IA_MAX_ATTEMPTS)
-  throw new Error('IA provider exhausted retries')
 }
 
 /**

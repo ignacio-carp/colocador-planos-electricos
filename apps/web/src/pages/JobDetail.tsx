@@ -758,7 +758,9 @@ function WorkspacePanel({
                       Reglas normativas desactivadas.
                     </p>
                   ) : (
-                    <p className="text-body-sm text-outline italic">Sin recomendaciones.</p>
+                    <p className="text-body-sm text-outline italic">
+                      Las recomendaciones aparecen al procesar cada habitación.
+                    </p>
                   )}
                 </div>
               )

@@ -45,7 +45,7 @@ import {
 } from './quota'
 import { cadWorkerConfigSummary, cadWorkerTransport, probeCadWorkerOnStartup } from './cadWorkerBridge'
 import { logStructured } from './logger'
-import { enqueueJobPipeline, enqueuePreliminaryAnalysis } from './jobQueue'
+import { enqueueJobPipeline, enqueuePreliminaryAnalysis, enqueueRoomProcessing } from './jobQueue'
 import { drainPipelineQueueOnce, pipelineWorkerEnabled, startPipelineWorker } from './pipelineWorker'
 import { formatPrometheusMetrics, getMetricsSnapshot } from './metrics'
 import { correlationMiddleware } from './middleware/correlation'
@@ -1122,23 +1122,60 @@ app.post(
       typeof body.idempotency_key === 'string' ? body.idempotency_key : undefined
     const correlationId = req.correlationId ?? crypto.randomUUID()
 
-    try {
-      const result = await runRoomProcessingPipeline(jobId, roomIds, correlationId, idempotencyKey)
-      if (result.normative_rules_blocked) {
-        res.status(422).json({
-          error:
-            'Room processing blocked: normative_rules_enabled=false. Use chat (US-014) to process rooms.',
-          code: 'NORMATIVE_RULES_DISABLED',
-          job_id: jobId,
-        })
-        return
-      }
-      res.json(result)
-    } catch (e) {
-      const message = e instanceof Error ? e.message : 'Room processing failed'
-      const isStatus = message.includes('not allowed in status')
-      res.status(isStatus ? 409 : 500).json({ error: message })
+    const meta = job.pipeline_metadata ?? {}
+    if (meta.normative_rules_enabled === false) {
+      res.status(422).json({
+        error:
+          'Room processing blocked: normative_rules_enabled=false. Use chat (US-014) to process rooms.',
+        code: 'NORMATIVE_RULES_DISABLED',
+        job_id: jobId,
+      })
+      return
     }
+
+    const sync =
+      req.query.sync === '1' ||
+      req.query.sync === 'true' ||
+      process.env.PIPELINE_SYNC_PROCESS === 'true'
+
+    if (sync) {
+      try {
+        const result = await runRoomProcessingPipeline(jobId, roomIds, correlationId, idempotencyKey)
+        if (result.normative_rules_blocked) {
+          res.status(422).json({
+            error:
+              'Room processing blocked: normative_rules_enabled=false. Use chat (US-014) to process rooms.',
+            code: 'NORMATIVE_RULES_DISABLED',
+            job_id: jobId,
+          })
+          return
+        }
+        res.json(result)
+      } catch (e) {
+        const message = e instanceof Error ? e.message : 'Room processing failed'
+        const isStatus = message.includes('not allowed in status')
+        res.status(isStatus ? 409 : 500).json({ error: message })
+      }
+      return
+    }
+
+    const msg = await enqueueRoomProcessing(jobId, correlationId, roomIds, {
+      idempotencyKey,
+    })
+    if (!msg) {
+      res.status(409).json({ error: 'Cannot enqueue room processing in current state' })
+      return
+    }
+    if (pipelineWorkerEnabled()) {
+      void drainPipelineQueueOnce()
+    }
+    res.status(202).json({
+      queued: true,
+      jobId,
+      correlationId,
+      queueId: msg.id,
+      room_ids: roomIds,
+    })
   },
 )
 

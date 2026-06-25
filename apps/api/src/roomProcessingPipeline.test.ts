@@ -20,8 +20,8 @@ import { runPreliminaryAnalysisPipeline } from './preliminaryPipeline'
 function stubEnv() {
   process.env.JOBS_USE_MEMORY = '1'
   process.env.CAD_PIPELINE_MODE = 'stub'
+  process.env.CAD_WORKER_DISABLED = 'true'
   delete process.env.CAD_WORKER_FIXTURE_DXF
-  delete process.env.CAD_WORKER_DISABLED
   delete process.env.CAD_IA_SIMULATE_FAILURE
 }
 
@@ -61,6 +61,10 @@ describe('roomProcessingPipeline (stub mode)', { concurrency: false }, () => {
     assert.equal(updated!.status, 'parcialmente_procesado')
     const roomState = updated!.pipeline_metadata?.room_processing_state ?? {}
     assert.equal(roomState[roomId], 'procesada')
+    assert.ok(
+      (updated!.pipeline_metadata?.outlet_placements?.length ?? 0) > 0,
+      'US-008 should populate outlet_placements after room processing',
+    )
   })
 
   it('processes multiple rooms sequentially → all procesada', async () => {
@@ -71,10 +75,39 @@ describe('roomProcessingPipeline (stub mode)', { concurrency: false }, () => {
       status: 'listo_para_editar',
       pipeline_metadata: {
         normative_rules_enabled: true,
-        outlet_placements: [
-          { room_id: 'room-a', position: { x: 100, y: 100 }, outlet_type: 'standard', rule_ids: [] },
-          { room_id: 'room-b', position: { x: 200, y: 200 }, outlet_type: 'standard', rule_ids: [] },
-        ],
+        vision_layout: {
+          layout_interpretation: {
+            coordinate_system: 'drawing_origin_bottom_left',
+            rooms: [
+              {
+                id: 'room-a',
+                label: 'Room A',
+                room_type: 'other',
+                polygon: {
+                  vertices: [
+                    { x: 0, y: 0 },
+                    { x: 5000, y: 0 },
+                    { x: 5000, y: 4000 },
+                    { x: 0, y: 4000 },
+                  ],
+                },
+              },
+              {
+                id: 'room-b',
+                label: 'Room B',
+                room_type: 'other',
+                polygon: {
+                  vertices: [
+                    { x: 5000, y: 0 },
+                    { x: 10000, y: 0 },
+                    { x: 10000, y: 4000 },
+                    { x: 5000, y: 4000 },
+                  ],
+                },
+              },
+            ],
+          },
+        },
         room_processing_state: { 'room-a': 'pendiente', 'room-b': 'pendiente' },
       },
     })
@@ -193,10 +226,39 @@ describe('roomProcessingPipeline (stub mode)', { concurrency: false }, () => {
       status: 'listo_para_editar',
       pipeline_metadata: {
         normative_rules_enabled: true,
-        // No placements for room-fail → 0 placements, but stub path still succeeds
-        outlet_placements: [
-          { room_id: 'room-ok', position: { x: 100, y: 100 }, outlet_type: 'standard', rule_ids: [] },
-        ],
+        vision_layout: {
+          layout_interpretation: {
+            coordinate_system: 'drawing_origin_bottom_left',
+            rooms: [
+              {
+                id: 'room-ok',
+                label: 'OK',
+                room_type: 'other',
+                polygon: {
+                  vertices: [
+                    { x: 0, y: 0 },
+                    { x: 5000, y: 0 },
+                    { x: 5000, y: 4000 },
+                    { x: 0, y: 4000 },
+                  ],
+                },
+              },
+              {
+                id: 'room-fail',
+                label: 'Fail',
+                room_type: 'other',
+                polygon: {
+                  vertices: [
+                    { x: 5000, y: 0 },
+                    { x: 10000, y: 0 },
+                    { x: 10000, y: 4000 },
+                    { x: 5000, y: 4000 },
+                  ],
+                },
+              },
+            ],
+          },
+        },
         room_processing_state: { 'room-ok': 'pendiente', 'room-fail': 'pendiente' },
       },
     })

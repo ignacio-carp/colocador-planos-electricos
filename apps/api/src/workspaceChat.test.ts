@@ -59,6 +59,9 @@ async function createWorkspaceJob() {
 beforeEach(() => {
   clearJobsForTests()
   clearChatMessagesForTests()
+  process.env.JOBS_USE_MEMORY = '1'
+  process.env.CAD_PIPELINE_MODE = 'stub'
+  process.env.CAD_WORKER_DISABLED = 'true'
 })
 
 describe('electrical catalog matching', () => {

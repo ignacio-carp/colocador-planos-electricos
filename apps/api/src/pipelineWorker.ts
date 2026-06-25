@@ -2,6 +2,7 @@ import { logStructured } from './logger'
 import { releaseQueueMessage, claimNextQueueMessage, markQueueMessageDone, markQueueMessageFailed } from './jobQueue'
 import { runJobPipeline } from './jobsPipeline'
 import { runPreliminaryAnalysisPipeline } from './preliminaryPipeline'
+import { runRoomProcessingPipeline } from './roomProcessingPipeline'
 import { findJob } from './jobsStore'
 import { normalizeJobStatus } from './jobStatus'
 
@@ -48,6 +49,19 @@ async function processOneMessage(): Promise<void> {
   try {
     if (msg.run_type === 'preliminary_analysis') {
       await runPreliminaryAnalysisPipeline(msg.job_id, msg.correlation_id)
+    } else if (msg.run_type === 'room_processing') {
+      const roomIds = msg.room_ids ?? []
+      if (roomIds.length === 0) {
+        markQueueMessageFailed(msg.job_id, 'room_ids_missing')
+        return
+      }
+      await runRoomProcessingPipeline(
+        msg.job_id,
+        roomIds,
+        msg.correlation_id,
+        msg.idempotency_key,
+        { viaChat: msg.via_chat },
+      )
     } else {
       await runJobPipeline(msg.job_id, msg.correlation_id)
     }

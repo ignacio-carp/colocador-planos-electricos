@@ -626,7 +626,7 @@ export async function handleWorkspaceChatMessage(
           affectedRoomIds,
           input.correlationId,
           undefined,
-          { viaChat: true },
+          { viaChat: true, skipUs008: true },
         )
       } catch (e) {
         const message = e instanceof Error ? e.message : String(e)

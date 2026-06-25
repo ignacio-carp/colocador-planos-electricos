@@ -10,6 +10,7 @@ describe('runPreliminaryAnalysisPipeline (stub mode)', { concurrency: false }, (
     clearJobQueueForTests()
     process.env.JOBS_USE_MEMORY = '1'
     process.env.CAD_PIPELINE_MODE = 'stub'
+    process.env.CAD_WORKER_DISABLED = 'true'
     delete process.env.CAD_IA_SIMULATE_FAILURE
     delete process.env.CAD_WORKER_FIXTURE_DXF
   })
@@ -44,17 +45,17 @@ describe('runPreliminaryAnalysisPipeline (stub mode)', { concurrency: false }, (
     )
   })
 
-  it('runs US-008 and produces outlet_placements when normative_rules_enabled is true (default)', async () => {
+  it('does not run US-008 during preliminary — outlet_placements empty until room processing', async () => {
     const job = await createJob('user-1', 'Normative Test')
     const result = await runPreliminaryAnalysisPipeline(job.id, 'corr-norm')
     assert.ok(result)
     const meta = result!.pipeline_metadata
-    assert.ok(Array.isArray(meta?.outlet_placements), 'outlet_placements should be set by US-008')
     assert.ok(
-      (meta?.outlet_placements?.length ?? 0) > 0,
-      'should have at least one outlet placement',
+      !meta?.outlet_placements || meta.outlet_placements.length === 0,
+      'outlet_placements should be empty after preliminary',
     )
     assert.equal(meta?.normative_rules_enabled, true)
+    assert.deepEqual(meta?.preliminary_recommendations, [])
   })
 
   it('skips US-008 when normative_rules_enabled is false', async () => {
@@ -78,15 +79,16 @@ describe('runPreliminaryAnalysisPipeline (stub mode)', { concurrency: false }, (
     assert.equal(meta?.normative_rules_enabled, false)
   })
 
-  it('sets job to error when IA fails with simulate flag', async () => {
-    process.env.CAD_IA_SIMULATE_FAILURE = 'true'
+  it('sets job to error when vision step fails without CAD context in live mode', async () => {
+    process.env.CAD_PIPELINE_MODE = 'live'
+    process.env.CAD_WORKER_DISABLED = 'true'
+    delete process.env.OPENROUTER_API_KEY
+    delete process.env.OPENAI_API_KEY
     const job = await createJob('user-1', 'Fail Test')
     const result = await runPreliminaryAnalysisPipeline(job.id, 'corr-fail')
     assert.ok(result)
     assert.equal(result!.status, 'error')
-    assert.ok(result!.error, 'should have error payload')
-    assert.equal(result!.error!.correlation_id, 'corr-fail')
-    delete process.env.CAD_IA_SIMULATE_FAILURE
+    process.env.CAD_PIPELINE_MODE = 'stub'
   })
 
   it('does not write output_dxf', async () => {

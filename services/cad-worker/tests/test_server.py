@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import importlib
+import json
 from json import JSONDecodeError
 from json import loads as json_loads
 from pathlib import Path
@@ -77,6 +78,34 @@ def test_apply_electrical_layer(client: TestClient, sample_dxf: Path) -> None:
     assert response.status_code == 200
     assert response.headers.get("content-type", "").startswith("application/dxf")
     assert response.headers.get("x-cad-worker-result")
+
+
+def test_render_plan(client: TestClient, sample_dxf: Path) -> None:
+    with sample_dxf.open("rb") as handle:
+        response = client.post(
+            "/render-plan",
+            files={"file": ("sample.dxf", handle, "application/octet-stream")},
+            data={"width_px": "640"},
+        )
+    assert response.status_code == 200
+    assert response.headers.get("content-type", "").startswith("image/png")
+    assert len(response.content) > 100
+    assert response.headers.get("x-cad-worker-result")
+
+
+def test_render_room(client: TestClient, sample_dxf: Path) -> None:
+    polygon = json.dumps(
+        [{"x": 0, "y": 0}, {"x": 1000, "y": 0}, {"x": 1000, "y": 500}, {"x": 0, "y": 500}],
+    )
+    with sample_dxf.open("rb") as handle:
+        response = client.post(
+            "/render-room",
+            files={"file": ("sample.dxf", handle, "application/octet-stream")},
+            data={"polygon_json": polygon, "margin_mm": "50", "width_px": "512"},
+        )
+    assert response.status_code == 200
+    assert response.headers.get("content-type", "").startswith("image/png")
+    assert len(response.content) > 50
 
 
 def test_apply_electrical_layer_header_serialization_does_not_500(

@@ -56,7 +56,7 @@
     "render": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["format", "storage_path", "width_px", "height_px"],
+      "required": ["format", "width_px", "height_px"],
       "properties": {
         "format": {
           "type": "string",
@@ -64,10 +64,25 @@
         },
         "storage_path": {
           "type": "string",
-          "description": "Imagen o vector temporal derivado del DWG para el modelo de visión"
+          "description": "Opcional en MVP workspace: la imagen puede enviarse inline al LLM (data URL) sin persistir en storage. Requerido en jobs batch legacy."
         },
         "width_px": { "type": "integer", "minimum": 1 },
         "height_px": { "type": "integer", "minimum": 1 },
+        "bbox_drawing_units": {
+          "type": "object",
+          "description": "Bounding box del render en unidades del dibujo (cad-worker render-plan/render-room).",
+          "additionalProperties": false,
+          "properties": {
+            "min_x": { "type": "number" },
+            "min_y": { "type": "number" },
+            "max_x": { "type": "number" },
+            "max_y": { "type": "number" }
+          }
+        },
+        "pixels_per_drawing_unit": {
+          "type": "number",
+          "description": "Escala del raster respecto a unidades del dibujo."
+        },
         "dpi": { "type": "number", "minimum": 72 },
         "units": {
           "type": "string",

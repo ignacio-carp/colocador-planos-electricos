@@ -22,6 +22,8 @@ function legacyNormativeOutletPlacementsPromptSpec(): string {
   "warnings": ["optional strings"]
 }
 Rules:
+- When room_ids is provided, emit outlet_placements ONLY for those rooms.
+- When geometry_extract_scoped and/or room_render image are provided, use the image for visual context and the JSON for exact coordinates.
 - outlet id pattern: ^outlet-[a-z0-9-]+$
 - At least one outlet_placements entry per applicable normative rule and room.
 - Positions must lie inside the target room polygon (same coordinate system as layout_interpretation).

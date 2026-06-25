@@ -6,7 +6,7 @@ import math
 from dataclasses import dataclass
 from typing import Any, Literal
 
-from cad_worker.constants import DEFAULT_OUTLET_BLOCK_NAME, OUTLET_BLOCK_RADIUS
+from cad_worker.constants import OUTLET_BLOCK_RADIUS
 
 GeometryType = Literal[
     "circle_cross",
@@ -109,10 +109,10 @@ def resolve_placement_kind(item: dict[str, object]) -> str:
         return element
     raw = item.get("outlet_type")
     if isinstance(raw, str):
-        if raw in CATALOG:
-            return raw
         if raw in LEGACY_TO_ELEMENT:
             return LEGACY_TO_ELEMENT[raw]
+        if raw in CATALOG:
+            return raw
     return "standard"
 
 

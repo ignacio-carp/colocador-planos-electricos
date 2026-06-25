@@ -30,12 +30,21 @@ Opciones de visión evaluadas para layout/DWG (vía rasterización o vector temp
    - Constante de código: `PIPELINE_CONTRACT_VERSION = '1.0.0'` (`apps/api/src/pipelineContracts.ts`).
    - Campo obligatorio: `contract_version` (string semver) en input/output de cada paso y en `pipeline_*` logs.
 
-4. **Flujo de datos:**
+4. **Flujo de datos (workspace MVP):**
 
    ```text
-   DWG (Storage) → raster/vector (ingest) → vision-layout (US-007)
-        → normative-inference (US-008) → cad-generation (US-009) → DWG resultado
+   Fase 1 (carga DXF):
+   DXF → inspect + extract-geometry + render-plan (cad-worker) → vision-layout US-007 (JSON + PNG)
+        → job listo_para_editar (sin US-008)
+
+   Fase 2 (por habitación, async):
+   render-room PNG + geometry scoped + reglas → normative-inference US-008 (por room_id)
+        → merge outlet_placements → cad-generation US-009 incremental
    ```
+
+   Rasterización: `services/cad-worker` (`render-plan`, `render-room`) vía `ezdxf.addons.drawing` + matplotlib; la API pasa PNG al LLM como data URL sin persistir en storage (solo metadata `bbox`/`width_px` en `pipeline_metadata.plan_render`).
+
+   Jobs batch legacy (`jobsPipeline.ts`) mantienen US-007→US-008→US-009 en una sola corrida.
 
    Schemas: `docs/contracts/pipeline/*.json` y ejemplos en `docs/contracts/pipeline/examples/`.
 
