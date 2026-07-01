@@ -17,7 +17,7 @@
  */
 
 import { randomUUID } from 'node:crypto'
-import { appendChatMessage, type ChatIntent, type ChatMessage } from './chatStore'
+import { appendChatMessage, listChatMessages, type ChatIntent, type ChatMessage } from './chatStore'
 import {
   catalogForPrompt,
   findCatalogItem,
@@ -25,7 +25,7 @@ import {
   matchCatalogItemFromText,
   type ElectricalCatalogItem,
 } from './electricalCatalog'
-import { findJob, patchJob, type JobRow } from './jobsStore'
+import { findJob, patchJob, type JobRow, type PreliminaryRecommendation } from './jobsStore'
 import { logStructured } from './logger'
 import { resolveActiveNormativeRulesVersion } from './normativeRules'
 import { openaiChatJsonObject } from './openaiClient'
@@ -161,13 +161,230 @@ export function resolveRoomsFromText(
   return [...matches.values()]
 }
 
-/* ------------------------------------------------------------------ */
-/* Stub (deterministic) intent parsing                                 */
-/* ------------------------------------------------------------------ */
+export type ChatWorkspaceContext = {
+  jobStatus: string
+  placements: unknown[]
+  roomProcessingState: Record<string, string>
+  preliminaryRecommendations: PreliminaryRecommendation[]
+  normativeRulesEnabled: boolean
+}
+
+export function buildChatWorkspaceContext(job: JobRow): ChatWorkspaceContext {
+  const meta = job.pipeline_metadata ?? {}
+  return {
+    jobStatus: job.status,
+    placements: (meta.outlet_placements as unknown[] | undefined) ?? [],
+    roomProcessingState: (meta.room_processing_state ?? {}) as Record<string, string>,
+    preliminaryRecommendations:
+      (meta.preliminary_recommendations as PreliminaryRecommendation[] | undefined) ?? [],
+    normativeRulesEnabled: meta.normative_rules_enabled !== false,
+  }
+}
+
+const ROOM_STATE_LABELS: Record<string, string> = {
+  pendiente: 'pendiente de procesar',
+  procesando: 'en proceso',
+  procesada: 'procesada',
+  error: 'con error',
+  omitida: 'omitida',
+}
+
+function countPlacementsForRoom(placements: unknown[], roomId: string): number {
+  return placements.filter((p) => {
+    if (!p || typeof p !== 'object') return false
+    return (p as { room_id?: string }).room_id === roomId
+  }).length
+}
+
+function summarizePlacementsByRoom(
+  placements: unknown[],
+  rooms: ChatRoomContext[],
+): string {
+  const lines: string[] = []
+  for (const room of rooms) {
+    const count = countPlacementsForRoom(placements, room.id)
+    if (count > 0) {
+      lines.push(`${room.label}: ${count} elemento${count !== 1 ? 's' : ''}`)
+    }
+  }
+  return lines.length > 0 ? lines.join('; ') : 'todavía no hay elementos eléctricos colocados'
+}
+
+function formatRoomProcessingSummary(
+  rooms: ChatRoomContext[],
+  roomProcessingState: Record<string, string>,
+): string {
+  if (rooms.length === 0) return 'No hay habitaciones detectadas.'
+  return rooms
+    .map((room) => {
+      const state = roomProcessingState[room.id] ?? 'pendiente'
+      const label = ROOM_STATE_LABELS[state] ?? state
+      return `${room.label}: ${label}`
+    })
+    .join('; ')
+}
+
+type ChatHistoryTurn = { role: 'user' | 'assistant'; content: string }
 
 const ADD_PATTERN = /agreg|añad|anad|coloc|\bpon[eé]\b|\bsum[aá]\b|instal/
 const REMOVE_PATTERN = /quit|elimin|borr|sac[aá]|remov/
 const PROCESS_PATTERN = /proces|aplic[aá] (las )?reglas|motor de reglas/
+
+/**
+ * Deterministic conversational replies for stub mode (no LLM).
+ * Returns null when no conversational pattern matches.
+ */
+export function buildStubConversationalReply(
+  message: string,
+  rooms: ChatRoomContext[],
+  catalog: ElectricalCatalogItem[],
+  workspace: ChatWorkspaceContext,
+  recentHistory: ChatHistoryTurn[] = [],
+): string | null {
+  const lowered = message.trim().toLowerCase()
+  const referencedRooms = resolveRoomsFromText(rooms, message)
+
+  if (/^(hola|buen[oa]s|hey|qué tal|que tal|buen día|buenas)\b/.test(lowered)) {
+    const roomHint =
+      rooms.length > 0
+        ? ` Veo ${rooms.length} habitación${rooms.length !== 1 ? 'es' : ''} en el plano.`
+        : ''
+    return `¡Hola! Soy tu asistente eléctrico de Cambre.${roomHint} Podés preguntarme sobre el plano, las tomas propuestas o pedirme que agregue o procese habitaciones.`
+  }
+
+  if (/\b(gracias|muchas gracias|genial|perfecto|excelente|de acuerdo)\b/.test(lowered)) {
+    return 'De nada. Si necesitás algo más sobre el plano o la instalación eléctrica, preguntame.'
+  }
+
+  if (
+    /\b(ayuda|qué podés|que podes|qué sabés|que sabes|qué puedo hacer|cómo funciona|como funciona)\b/.test(
+      lowered,
+    )
+  ) {
+    return `Puedo conversar sobre el plano y ayudarte con la capa eléctrica:
+• Responder preguntas sobre habitaciones, tomas y estado de procesamiento.
+• Agregar o quitar productos del catálogo («agregá una toma doble en la cocina»).
+• Procesar habitaciones con el motor de reglas normativas («procesá el baño»).
+Cuando enviás un mensaje, también veo una captura de la vista actual del plano.`
+  }
+
+  if (
+    /\b(qué habitaciones|que habitaciones|cuántas habitaciones|cuantas habitaciones|ambientes detect|habitaciones hay|habitaciones tenés|habitaciones tiene)\b/.test(
+      lowered,
+    ) ||
+    /\b(qué detectaste|que detectaste)\b/.test(lowered)
+  ) {
+    if (rooms.length === 0) {
+      return 'Todavía no detecté habitaciones en este plano. Cuando termine el análisis preliminar van a aparecer acá.'
+    }
+    const details = rooms
+      .map((r) => {
+        const area = r.area_m2 != null ? `, ${r.area_m2} m²` : ''
+        return `${r.label} (${r.room_type}${area})`
+      })
+      .join('; ')
+    return `Detecté ${rooms.length} habitación${rooms.length !== 1 ? 'es' : ''}: ${details}.`
+  }
+
+  if (/\b(cuánto mide|cuantos m2|cuántos m2|área de|area de|superficie)\b/.test(lowered)) {
+    const target = referencedRooms[0]
+    if (!target) {
+      return '¿De qué habitación querés saber el área? Por ejemplo: «¿cuántos m² tiene la cocina?»'
+    }
+    if (target.area_m2 != null) {
+      return `${target.label} tiene aproximadamente ${target.area_m2} m².`
+    }
+    return `No tengo el área calculada para ${target.label} en este plano.`
+  }
+
+  if (
+    /\b(cuántas tomas|cuantas tomas|cuántos elementos|cuantos elementos|qué hay en|que hay en|tomas hay|elementos hay)\b/.test(
+      lowered,
+    ) ||
+    (referencedRooms.length > 0 &&
+      /\b(tomas|elementos|enchufes|instalación|instalacion)\b/.test(lowered) &&
+      !ADD_PATTERN.test(lowered) &&
+      !REMOVE_PATTERN.test(lowered))
+  ) {
+    const targets = referencedRooms.length > 0 ? referencedRooms : rooms
+    if (targets.length === 0) {
+      return 'Todavía no hay habitaciones para consultar.'
+    }
+    if (targets.length === 1) {
+      const room = targets[0]!
+      const count = countPlacementsForRoom(workspace.placements, room.id)
+      const rec = workspace.preliminaryRecommendations.find((r) => r.room_id === room.id)
+      if (count === 0 && rec && rec.outlet_count > 0) {
+        return `En ${room.label} hay ${rec.outlet_count} toma${rec.outlet_count !== 1 ? 's' : ''} propuesta${rec.outlet_count !== 1 ? 's' : ''} por las reglas normativas, pero todavía no están en la capa editable. Procesá la habitación para aplicarlas.`
+      }
+      if (count === 0) {
+        return `En ${room.label} no hay elementos eléctricos colocados todavía. Podés procesarla con las reglas o pedirme que agregue algo del catálogo.`
+      }
+      return `En ${room.label} hay ${count} elemento${count !== 1 ? 's' : ''} eléctrico${count !== 1 ? 's' : ''} en la capa editable.`
+    }
+    return `Resumen por habitación: ${summarizePlacementsByRoom(workspace.placements, targets)}.`
+  }
+
+  if (
+    /\b(estado|procesad|pendiente|falta procesar|qué falta|que falta|avance)\b/.test(lowered) &&
+    !PROCESS_PATTERN.test(lowered)
+  ) {
+    return `Estado de procesamiento: ${formatRoomProcessingSummary(rooms, workspace.roomProcessingState)}.`
+  }
+
+  if (/\b(recomendaciones|normativa|reglas normativas)\b/.test(lowered)) {
+    if (!workspace.normativeRulesEnabled) {
+      return 'Las reglas normativas están desactivadas para este proyecto. Igual podés editar la capa eléctrica manualmente o procesar habitaciones por chat.'
+    }
+    const withRecs = workspace.preliminaryRecommendations.filter((r) => r.recommendations.length > 0)
+    if (withRecs.length === 0) {
+      return 'Las recomendaciones normativas aparecen al procesar cada habitación. Todavía no hay ninguna generada.'
+    }
+    return withRecs
+      .map((r) => `${r.room_label ?? r.room_id}: ${r.recommendations[0]}`)
+      .join('\n')
+  }
+
+  if (/\b(catálogo|catalogo|productos|qué puedo agregar|que puedo agregar)\b/.test(lowered)) {
+    const sample = catalog.slice(0, 6).map((item) => `• ${item.name} (${item.sku})`)
+    const more = catalog.length > 6 ? `\n…y ${catalog.length - 6} productos más.` : ''
+    return `Algunos productos del catálogo eléctrico:\n${sample.join('\n')}${more}`
+  }
+
+  if (/\b(estado del proyecto|estado del trabajo|cómo va|como va)\b/.test(lowered)) {
+    const processed = rooms.filter((r) => workspace.roomProcessingState[r.id] === 'procesada').length
+    return `El trabajo está en estado «${workspace.jobStatus}». ${processed} de ${rooms.length} habitación${rooms.length !== 1 ? 'es' : ''} procesada${processed !== 1 ? 's' : ''}.`
+  }
+
+  // Short follow-ups using recent history ("¿y el baño?", "¿y en la cocina?")
+  if (
+    referencedRooms.length > 0 &&
+    /^(y |¿y |y en |¿y en )/.test(lowered) &&
+    recentHistory.length > 0
+  ) {
+    const room = referencedRooms[0]!
+    const count = countPlacementsForRoom(workspace.placements, room.id)
+    const state = workspace.roomProcessingState[room.id] ?? 'pendiente'
+    return `En ${room.label}: ${count} elemento${count !== 1 ? 's' : ''} eléctrico${count !== 1 ? 's' : ''}, estado ${ROOM_STATE_LABELS[state] ?? state}.`
+  }
+
+  if (
+    /\b(contame|cuéntame|explicame|explicá|qué opinás|que opinas|decime sobre)\b/.test(lowered)
+  ) {
+    if (referencedRooms.length === 1) {
+      const room = referencedRooms[0]!
+      const count = countPlacementsForRoom(workspace.placements, room.id)
+      const area = room.area_m2 != null ? `${room.area_m2} m²` : 'área no calculada'
+      const state = workspace.roomProcessingState[room.id] ?? 'pendiente'
+      return `${room.label} es un ${room.room_type} de ${area}, con ${count} elemento${count !== 1 ? 's' : ''} en la capa eléctrica y estado ${ROOM_STATE_LABELS[state] ?? state}.`
+    }
+    if (rooms.length > 0) {
+      return `Es un plano con ${rooms.length} habitaciones (${rooms.map((r) => r.label).join(', ')}). ${summarizePlacementsByRoom(workspace.placements, rooms)}. ¿Querés que profundice en alguna habitación?`
+    }
+  }
+
+  return null
+}
 
 type ParsedChatCommand = {
   intent: ChatIntent
@@ -176,10 +393,16 @@ type ParsedChatCommand = {
   processRoomIds: string[]
 }
 
+/* ------------------------------------------------------------------ */
+/* Stub (deterministic) intent parsing                                 */
+/* ------------------------------------------------------------------ */
+
 export function parseChatCommandStub(
   message: string,
   rooms: ChatRoomContext[],
   catalog: ElectricalCatalogItem[],
+  workspace?: ChatWorkspaceContext,
+  recentHistory: ChatHistoryTurn[] = [],
 ): ParsedChatCommand {
   const lowered = message.toLowerCase()
   const referencedRooms = resolveRoomsFromText(rooms, message)
@@ -272,12 +495,31 @@ export function parseChatCommandStub(
     }
   }
 
+  const conversational = workspace
+    ? buildStubConversationalReply(message, rooms, catalog, workspace, recentHistory)
+    : buildStubConversationalReply(
+        message,
+        rooms,
+        catalog,
+        {
+          jobStatus: 'listo_para_editar',
+          placements: [],
+          roomProcessingState: {},
+          preliminaryRecommendations: [],
+          normativeRulesEnabled: true,
+        },
+        recentHistory,
+      )
+  if (conversational) {
+    return { intent: 'query', reply: conversational, mutations: [], processRoomIds: [] }
+  }
+
   const summary =
     rooms.length === 0
-      ? 'Todavía no hay habitaciones detectadas en este plano.'
-      : `El plano tiene ${rooms.length} habitación(es): ${rooms
+      ? 'Todavía no hay habitaciones detectadas en este plano. Cuando termine el análisis vas a poder consultarme sobre cada ambiente.'
+      : `El plano tiene ${rooms.length} habitación${rooms.length !== 1 ? 'es' : ''}: ${rooms
           .map((r) => `${r.label} (${r.room_type})`)
-          .join(', ')}. Puedo agregar o quitar elementos del catálogo eléctrico, o procesar habitaciones con el motor de reglas.`
+          .join(', ')}. Preguntame lo que necesites, o pedime que agregue elementos / procese habitaciones.`
   return { intent: 'query', reply: summary, mutations: [], processRoomIds: [] }
 }
 
@@ -288,7 +530,7 @@ export function parseChatCommandStub(
 function chatResponseSpec(): string {
   return `Respond ONLY with a JSON object:
 {
-  "reply": string,                  // answer for the architect, in Spanish
+  "reply": string,                  // conversational answer in Spanish (vos, Argentina)
   "intent": "query" | "edit" | "action",
   "mutations": [                    // only for intent=edit; [] otherwise
     { "op": "add_element", "room_id": string, "catalog_sku": string, "quantity": number, "position": { "x": number, "y": number } | null },
@@ -296,11 +538,17 @@ function chatResponseSpec(): string {
   ],
   "process_room_ids": string[]      // only for intent=action; room ids to run through the rules engine
 }
-Rules:
+Intent rules:
+- intent=query for greetings, thanks, explanations, questions about rooms/placements/status/catalog/recommendations, and general conversation. mutations=[] and process_room_ids=[].
+- intent=edit ONLY when the user clearly asks to add or remove catalog elements on the electrical layer.
+- intent=action ONLY when the user explicitly asks to process/run normative rules on one or more rooms.
+Other rules:
 - catalog_sku MUST be one of the provided catalog skus.
 - room_id MUST be one of the provided room ids.
 - Never invent rooms or products. Ask for clarification in "reply" (intent=query) when ambiguous.
-- The attached image (if any) is a screenshot of what the user currently sees in the plan viewer; use it as spatial reference.`
+- Use recent_conversation for follow-ups ("¿y el baño?", "agregá otra ahí").
+- Be warm, concise, and helpful — you are a design assistant, not only a command parser.
+- The attached image (if any) is a screenshot of what the user currently sees in the plan viewer.`
 }
 
 async function parseChatCommandLive(params: {
@@ -311,15 +559,22 @@ async function parseChatCommandLive(params: {
   catalog: ElectricalCatalogItem[]
   placements: unknown[]
   roomProcessingState: Record<string, string>
+  workspace: ChatWorkspaceContext
+  recentHistory: ChatHistoryTurn[]
   imageDataUrl?: string
 }): Promise<ParsedChatCommand> {
-  const system = `You are the electrical-design assistant of the Cambre interactive workspace.
-The architect chats next to a rendered DXF floor plan. You manage ONLY the electrical layer (Cambre_Electrical): adding/removing catalog products and triggering rules-engine processing.
+  const system = `You are the Cambre electrical-design assistant in an interactive workspace.
+The architect chats next to a rendered DXF floor plan. You can hold natural conversations in Argentine Spanish (vos): answer questions about the plan, rooms, outlets, processing status, catalog, and normative recommendations.
+
+When the user gives explicit instructions, you may also update the electrical layer (add/remove catalog products) or trigger rules-engine processing per room.
 
 ${chatResponseSpec()}`
 
   const user = JSON.stringify({
     message: params.message,
+    recent_conversation: params.recentHistory.slice(-12),
+    job_status: params.workspace.jobStatus,
+    normative_rules_enabled: params.workspace.normativeRulesEnabled,
     rooms: params.rooms.map((r) => ({
       id: r.id,
       label: r.label,
@@ -327,6 +582,7 @@ ${chatResponseSpec()}`
       area_m2: r.area_m2 ?? undefined,
     })),
     room_processing_state: params.roomProcessingState,
+    preliminary_recommendations: params.workspace.preliminaryRecommendations.slice(0, 30),
     electrical_catalog: catalogForPrompt(params.catalog),
     current_electrical_elements: params.placements.slice(0, 120),
     normative_rules_version: safeRulesVersion(),
@@ -556,6 +812,15 @@ export async function handleWorkspaceChatMessage(
   const meta = job.pipeline_metadata ?? {}
   const placements = (meta.outlet_placements as unknown[] | undefined) ?? []
   const roomProcessingState = (meta.room_processing_state ?? {}) as Record<string, string>
+  const workspace = buildChatWorkspaceContext(job)
+
+  const priorHistory = await listChatMessages(input.jobId, 24)
+  const recentHistory: ChatHistoryTurn[] = priorHistory
+    .filter((m) => m.role === 'user' || m.role === 'assistant')
+    .map((m) => ({
+      role: m.role as 'user' | 'assistant',
+      content: m.content,
+    }))
 
   const userMessage = await appendChatMessage({
     jobId: input.jobId,
@@ -586,6 +851,8 @@ export async function handleWorkspaceChatMessage(
         catalog,
         placements,
         roomProcessingState,
+        workspace,
+        recentHistory,
         imageDataUrl: input.viewportImage,
       })
     } catch (e) {
@@ -595,10 +862,10 @@ export async function handleWorkspaceChatMessage(
         correlation_id: input.correlationId,
         error: e instanceof Error ? e.message : String(e),
       })
-      parsed = parseChatCommandStub(input.message, rooms, catalog)
+      parsed = parseChatCommandStub(input.message, rooms, catalog, workspace, recentHistory)
     }
   } else {
-    parsed = parseChatCommandStub(input.message, rooms, catalog)
+    parsed = parseChatCommandStub(input.message, rooms, catalog, workspace, recentHistory)
   }
 
   let mutationsApplied: AppliedMutation[] = []

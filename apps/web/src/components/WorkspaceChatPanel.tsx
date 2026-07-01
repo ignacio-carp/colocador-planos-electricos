@@ -138,10 +138,10 @@ export default function WorkspaceChatPanel({
       <div ref={listRef} className="flex-1 space-y-3 overflow-y-auto px-4 py-3">
         {messages.length === 0 ? (
           <p className="text-body-sm text-on-surface-variant">
-            Pedile a la IA que agregue o quite elementos eléctricos del catálogo
-            («agregá una toma doble en la cocina»), o que procese habitaciones con
-            el motor de reglas («procesá el baño»). Al enviar, se adjunta una
-            captura de la vista actual del plano como referencia.
+            Chateá conmigo sobre el plano: habitaciones detectadas, tomas propuestas,
+            estado de procesamiento o el catálogo eléctrico. También podés pedirme
+            cambios («agregá una toma doble en la cocina») o procesar habitaciones
+            («procesá el baño»). Al enviar, adjunto una captura de la vista actual.
           </p>
         ) : (
           messages.map((m) => (
@@ -200,7 +200,7 @@ export default function WorkspaceChatPanel({
           maxLength={4000}
           placeholder={
             canSend
-              ? 'Ej.: agregá una toma inteligente en el living…'
+              ? 'Preguntá sobre el plano o pedí un cambio…'
               : 'Chat disponible solo para el arquitecto dueño del proyecto.'
           }
           disabled={!canSend || sending}

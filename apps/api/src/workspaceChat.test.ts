@@ -14,6 +14,7 @@ import {
 import { clearJobsForTests, createJob, findJob, patchJob } from './jobsStore'
 import {
   buildChatRoomContext,
+  buildStubConversationalReply,
   handleWorkspaceChatMessage,
   parseChatCommandStub,
   resolveRoomsFromText,
@@ -156,6 +157,47 @@ describe('stub intent parsing', () => {
     assert.equal(parsed.intent, 'query')
     assert.match(parsed.reply, /Cocina/)
   })
+
+  it('greets and explains capabilities', async () => {
+    const job = await createWorkspaceJob()
+    const rooms = buildChatRoomContext(job)
+    const parsed = parseChatCommandStub('hola, ¿qué podés hacer?', rooms, DEFAULT_ELECTRICAL_CATALOG)
+    assert.equal(parsed.intent, 'query')
+    assert.match(parsed.reply, /asistente|habitación|plano/i)
+  })
+
+  it('answers outlet questions per room', async () => {
+    const job = await createWorkspaceJob()
+    await patchJob(job.id, {
+      pipeline_metadata: {
+        ...(job.pipeline_metadata ?? {}),
+        outlet_placements: [
+          {
+            id: 'p1',
+            room_id: 'room-cocina',
+            position: { x: 1, y: 1, unit: 'drawing_units' },
+            outlet_type: 'double',
+          },
+        ],
+      },
+    })
+    const fresh = (await findJob(job.id))!
+    const rooms = buildChatRoomContext(fresh)
+    const reply = buildStubConversationalReply(
+      '¿cuántas tomas hay en la cocina?',
+      rooms,
+      DEFAULT_ELECTRICAL_CATALOG,
+      {
+        jobStatus: fresh.status,
+        placements: fresh.pipeline_metadata?.outlet_placements ?? [],
+        roomProcessingState: (fresh.pipeline_metadata?.room_processing_state ?? {}) as Record<string, string>,
+        preliminaryRecommendations: [],
+        normativeRulesEnabled: true,
+      },
+    )
+    assert.ok(reply)
+    assert.match(reply!, /1 elemento/)
+  })
 })
 
 describe('handleWorkspaceChatMessage (end to end, stub mode)', () => {
@@ -281,5 +323,18 @@ describe('handleWorkspaceChatMessage (end to end, stub mode)', () => {
     assert.equal(result.intent, 'query')
     assert.equal(result.mutations_applied.length, 0)
     assert.match(result.reply, /qué habitación/)
+  })
+
+  it('responds conversationally to greetings without mutating state', async () => {
+    const job = await createWorkspaceJob()
+    const result = await handleWorkspaceChatMessage({
+      jobId: job.id,
+      userId: 'arch-1',
+      message: 'hola, ¿cómo estás?',
+      correlationId: 'corr-8',
+    })
+    assert.equal(result.intent, 'query')
+    assert.equal(result.mutations_applied.length, 0)
+    assert.match(result.reply, /Hola|asistente/i)
   })
 })
