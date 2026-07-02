@@ -9,6 +9,9 @@ import {
   RoomProcessingPanel,
   type RoomProcessingState,
 } from '../components/RoomProcessingPanel'
+import ActivityLogPanel, {
+  type RoomProcessingRun,
+} from '../components/ActivityLogPanel'
 import WorkspaceChatPanel from '../components/WorkspaceChatPanel'
 import { useAuth } from '../context/AuthContext'
 import {
@@ -57,6 +60,7 @@ type WorkspaceSummary = {
   rooms: Room[]
   preliminary_recommendations: PreliminaryRecommendation[]
   room_processing_state: RoomProcessingState
+  room_processing_runs?: RoomProcessingRun[]
   normative_rules_version: string | null
   preliminary_analysis_completed_at: string | null
   layer_suggestions?: LayerSuggestions | null
@@ -577,6 +581,17 @@ export default function JobDetail({ jobId, onNavigate }: JobDetailProps) {
               normativeRulesEnabled={workspace.normative_rules_enabled}
               accessToken={session.access_token}
               onStateChange={() => void load()}
+            />
+          ) : null}
+
+          {(isOwner || role === 'administrator') && workspace ? (
+            <ActivityLogPanel
+              rooms={workspace.rooms}
+              roomProcessingRuns={workspace.room_processing_runs ?? []}
+              roomProcessingState={workspace.room_processing_state ?? {}}
+              preliminaryAnalysisCompletedAt={workspace.preliminary_analysis_completed_at}
+              jobError={job.error ?? null}
+              onRefresh={() => void load()}
             />
           ) : null}
 
