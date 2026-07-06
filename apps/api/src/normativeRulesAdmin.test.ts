@@ -10,6 +10,28 @@ import {
   validateNormativeRulesBundle,
 } from './normativeRules'
 
+const TOMAS_FIXTURE = {
+  version: 'cambre-tomas-2026.07.1',
+  title: 'Test rules',
+  estrategia_procesamiento: {
+    scope: 'tomacorrientes_only',
+    steps: [{ id: 'match_room_type' }, { id: 'place_outlets' }],
+    defaults: { height_mm: 300 },
+  },
+  apliques_y_simbologia: {
+    cad_layer: { name: 'Cambre_Electrical', block_name: 'CAMBRE_OUTLET', color_aci: 3 },
+  },
+  reglas_por_habitacion: [
+    {
+      id: 'RULE-GENERICO',
+      summary: 'Mínimo 1 toma',
+      room_types: ['generico'],
+      min_outlets: 1,
+      height_mm: 300,
+    },
+  ],
+}
+
 describe('normativeRules admin', () => {
   let tempRoot: string
   let previousRulesRoot: string | undefined
@@ -18,17 +40,17 @@ describe('normativeRules admin', () => {
     clearNormativeRulesCache()
     delete process.env.NORMATIVE_RULES_VERSION
     tempRoot = mkdtempSync(join(tmpdir(), 'cambre-rules-admin-'))
-    const rulesDir = join(tempRoot, 'rules', 'cambre-normative', '2026.06.3')
+    const rulesDir = join(tempRoot, 'rules', 'cambre-normative', '2026.07.1')
     mkdirSync(rulesDir, { recursive: true })
     writeFileSync(
       join(tempRoot, 'rules', 'cambre-normative', 'manifest.json'),
       JSON.stringify(
         {
-          active_version: 'cambre-vivienda-2026.06.3',
+          active_version: 'cambre-tomas-2026.07.1',
           versions: [
             {
-              version: 'cambre-vivienda-2026.06.3',
-              path: '2026.06.3/rules.json',
+              version: 'cambre-tomas-2026.07.1',
+              path: '2026.07.1/rules.json',
               description: 'test bundle',
             },
           ],
@@ -38,19 +60,7 @@ describe('normativeRules admin', () => {
       ),
       'utf8',
     )
-    writeFileSync(
-      join(rulesDir, 'rules.json'),
-      JSON.stringify(
-        {
-          version: 'cambre-vivienda-2026.06.3',
-          title: 'Test rules',
-          pipeline: [{ id: 'classify' }],
-        },
-        null,
-        2,
-      ),
-      'utf8',
-    )
+    writeFileSync(join(rulesDir, 'rules.json'), JSON.stringify(TOMAS_FIXTURE, null, 2), 'utf8')
     previousRulesRoot = process.env.CAMBRE_RULES_ROOT
     process.env.CAMBRE_RULES_ROOT = join(tempRoot, 'rules', 'cambre-normative')
   })
@@ -65,72 +75,78 @@ describe('normativeRules admin', () => {
     assert.throws(() => validateNormativeRulesBundle({}), NormativeRulesValidationError)
   })
 
-  it('validateNormativeRulesBundle accepts vivienda bundle shape', () => {
-    const bundle = validateNormativeRulesBundle({
-      version: 'cambre-vivienda-2026.06.3',
-      pipeline: [{ id: 'classify' }],
-    })
-    assert.equal(bundle.version, 'cambre-vivienda-2026.06.3')
+  it('validateNormativeRulesBundle accepts tomacorrientes bundle shape', () => {
+    const bundle = validateNormativeRulesBundle(TOMAS_FIXTURE)
+    assert.equal(bundle.version, 'cambre-tomas-2026.07.1')
   })
 
   it('saveActiveNormativeRulesBundle writes JSON and clears cache', async () => {
     const updated = {
-      version: 'cambre-vivienda-2026.06.3',
+      ...TOMAS_FIXTURE,
       title: 'Updated title',
-      pipeline: [{ id: 'classify' }, { id: 'place' }],
+      reglas_por_habitacion: [
+        {
+          id: 'RULE-GENERICO',
+          summary: 'Dos tomas mínimo',
+          room_types: ['generico'],
+          min_outlets: 2,
+          height_mm: 300,
+        },
+      ],
     }
     const saved = await saveActiveNormativeRulesBundle(updated)
     assert.equal(saved.title, 'Updated title')
     const onDisk = JSON.parse(
-      readFileSync(join(tempRoot, 'rules', 'cambre-normative', '2026.06.3', 'rules.json'), 'utf8'),
-    ) as { title?: string; pipeline?: unknown[] }
+      readFileSync(join(tempRoot, 'rules', 'cambre-normative', '2026.07.1', 'rules.json'), 'utf8'),
+    ) as { title?: string; reglas_por_habitacion?: unknown[] }
     assert.equal(onDisk.title, 'Updated title')
-    assert.equal(onDisk.pipeline?.length, 2)
+    assert.equal(onDisk.reglas_por_habitacion?.length, 1)
   })
 
   it('saveActiveNormativeRulesBundle rejects version mismatch', async () => {
     await assert.rejects(
       () =>
         saveActiveNormativeRulesBundle({
+          ...TOMAS_FIXTURE,
           version: 'other-version',
-          pipeline: [{ id: 'classify' }],
         }),
       NormativeRulesValidationError,
     )
   })
 
-  it('rejects pipeline entries missing string id', () => {
+  it('rejects reglas_por_habitacion entries missing string id', () => {
     assert.throws(
       () =>
         validateNormativeRulesBundle({
-          version: 'cambre-vivienda-2026.06.3',
-          pipeline: [{ stage: 1 }],
+          ...TOMAS_FIXTURE,
+          reglas_por_habitacion: [{ min_outlets: 1 }],
         }),
       NormativeRulesValidationError,
     )
   })
 
-  it('rejects sections that are not JSON objects', () => {
+  it('rejects missing required tomacorrientes section', () => {
     assert.throws(
       () =>
         validateNormativeRulesBundle({
-          version: 'cambre-vivienda-2026.06.3',
-          pipeline: [{ id: 'classify' }],
-          normative: 'not-an-object',
+          version: 'cambre-tomas-2026.07.1',
+          estrategia_procesamiento: {},
+          reglas_por_habitacion: [{ id: 'RULE-X' }],
         }),
       NormativeRulesValidationError,
     )
   })
 
-  it('saveActiveNormativeRulesBundle rejects dropping top-level sections', async () => {
+  it('saveActiveNormativeRulesBundle rejects dropping required sections', async () => {
     await assert.rejects(
       () =>
         saveActiveNormativeRulesBundle({
-          version: 'cambre-vivienda-2026.06.3',
-          // "title" from the seeded bundle is missing here
-          pipeline: [{ id: 'classify' }],
+          version: 'cambre-tomas-2026.07.1',
+          estrategia_procesamiento: TOMAS_FIXTURE.estrategia_procesamiento,
+          apliques_y_simbologia: TOMAS_FIXTURE.apliques_y_simbologia,
+          reglas_por_habitacion: [],
         }),
-      /Cannot remove top-level sections/,
+      /reglas_por_habitacion|Cannot remove required sections/,
     )
   })
 })

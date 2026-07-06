@@ -1,0 +1,112 @@
+{
+  "version": "cambre-tomas-2026.07.1",
+  "title": "Cambre — Tomacorrientes por habitación",
+  "description": "Ruleset simplificado: solo ubicación de tomacorrientes (TUG) por ambiente. Sin iluminación, circuitos, tablero ni cómputo.",
+  "replaces": "cambre-vivienda-2026.06.3",
+  "estrategia_procesamiento": {
+    "scope": "tomacorrientes_only",
+    "summary": "Por cada habitación detectada en el plano: identificar el tipo de ambiente, aplicar la regla correspondiente en reglas_por_habitacion y ubicar las tomas en el perímetro interior.",
+    "excluded": [
+      "iluminacion",
+      "llaves",
+      "circuitos",
+      "tablero",
+      "computo",
+      "bom",
+      "canalizacion"
+    ],
+    "steps": [
+      {
+        "id": "match_room_type",
+        "summary": "Mapear room_type del layout a una regla en reglas_por_habitacion (sinónimos en room_types)."
+      },
+      {
+        "id": "apply_room_rule",
+        "summary": "Calcular cantidad mínima de tomas, altura y tipo según la regla que aplique."
+      },
+      {
+        "id": "place_outlets",
+        "summary": "Ubicar cada toma en coordenadas del polígono, preferentemente en muros y lejos de aberturas."
+      }
+    ],
+    "defaults": {
+      "outlet_type": "standard",
+      "mounting": "wall",
+      "height_mm": 300,
+      "clearance_from_opening_mm": 150,
+      "position_unit": "drawing_units"
+    }
+  },
+  "apliques_y_simbologia": {
+    "scope": "solo_tomacorrientes",
+    "cad_layer": {
+      "name": "Cambre_Electrical",
+      "block_name": "CAMBRE_OUTLET",
+      "color_aci": 3
+    },
+    "outlet_type": "standard",
+    "placement": {
+      "prefer": "wall_perimeter",
+      "avoid_openings": true,
+      "clearance_from_opening_mm": 150,
+      "distribute": "along_walls",
+      "notes": "No colocar tomas en vanos de puerta/ventana. Distribuir en paredes distintas cuando la regla lo pida."
+    },
+    "notes": "Este alcance no dibuja luminarias, apliques de luz, llaves ni canalización."
+  },
+  "reglas_por_habitacion": [
+    {
+      "id": "RULE-ESTAR",
+      "summary": "Estar/comedor: mínimo 2 tomas; una adicional cada ~6 m de perímetro útil si supera ~12 m.",
+      "room_types": ["estar_comedor", "living", "office", "escritorio"],
+      "min_outlets": 2,
+      "spacing_along_wall_m": 6,
+      "height_mm": 300
+    },
+    {
+      "id": "RULE-DORMITORIO",
+      "summary": "Dormitorio: mínimo 2 tomas en paredes distintas cuando el polígono lo permita.",
+      "room_types": ["dormitorio", "bedroom"],
+      "min_outlets": 2,
+      "height_mm": 300
+    },
+    {
+      "id": "RULE-COCINA",
+      "summary": "Cocina: mínimo 2 tomas sobre mesada (1100 mm); toma dedicada cerca de heladera si el layout lo sugiere.",
+      "room_types": ["cocina", "kitchen", "cocina_comedor"],
+      "min_outlets": 2,
+      "height_mm": 1100,
+      "notes": "300 mm en muro sin mesada."
+    },
+    {
+      "id": "RULE-BANO",
+      "summary": "Baño: mínimo 1 toma; lejos de ducha/bañera y zonas húmedas.",
+      "room_types": ["bano", "toilette", "bathroom"],
+      "min_outlets": 1,
+      "height_mm": 1100,
+      "notes": "Emitir warning WET-ZONE-UNVERIFIED si no hay datos de zona húmeda."
+    },
+    {
+      "id": "RULE-PASILLO",
+      "summary": "Pasillo/circulación: 1 toma cada ~5 m de recorrido, mínimo 1 si longitud > 3 m.",
+      "room_types": ["paso_circulacion", "hallway", "vestibulo_hall", "escalera"],
+      "min_outlets": 1,
+      "spacing_along_wall_m": 5,
+      "height_mm": 300
+    },
+    {
+      "id": "RULE-LAVADERO",
+      "summary": "Lavadero: mínimo 2 tomas a 300 mm.",
+      "room_types": ["lavadero"],
+      "min_outlets": 2,
+      "height_mm": 300
+    },
+    {
+      "id": "RULE-GENERICO",
+      "summary": "Ambiente no clasificado: mínimo 1 toma estándar en pared.",
+      "room_types": ["generico", "deposito", "garaje", "galeria", "exterior", "storage", "other"],
+      "min_outlets": 1,
+      "height_mm": 300
+    }
+  ]
+}

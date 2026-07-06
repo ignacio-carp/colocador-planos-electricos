@@ -32,6 +32,34 @@ Rules:
 - Do NOT return contract_version, job_id, correlation_id, story_id, normative_rules_version, or completed_at.`
 }
 
+function tomacorrientesNormativeOutletPlacementsPromptSpec(): string {
+  return `Return a JSON object with ONLY these top-level keys:
+{
+  "outlet_placements": [{
+    "id": "outlet-<lowercase-slug>",
+    "room_id": "<must match a room id from layout_interpretation>",
+    "position": { "x": number, "y": number, "unit": "drawing_units" },
+    "outlet_type": ${LEGACY_OUTLET_TYPES},
+    "mounting": "wall",
+    "height_mm": number,
+    "rationale": "brief normative justification",
+    "rule_ids": ["RULE-..."]
+  }],
+  "warnings": ["optional strings e.g. WET-ZONE-UNVERIFIED, GENERICO-ROOM"]
+}
+Rules:
+- Scope is OUTLETS ONLY (tomacorrientes). Do NOT place lighting, switches, circuits, or panels.
+- Follow estrategia_procesamiento: match room_type → apply reglas_por_habitacion → place outlets on wall perimeter.
+- Use apliques_y_simbologia for layer/block hints and placement defaults (clearance, wall preference).
+- When room_ids is provided, emit outlet_placements ONLY for those rooms.
+- outlet id pattern: ^outlet-[a-z0-9-]+$
+- Emit at least min_outlets from the matching reglas_por_habitacion entry per room.
+- Positions must lie inside the target room polygon (same coordinate system as layout_interpretation).
+- Prefer perimeter walls; respect clearance_from_opening_mm from defaults or apliques_y_simbologia.placement.
+- Reference reglas_por_habitacion ids in rule_ids and rationale.
+- Do NOT return contract_version, job_id, correlation_id, story_id, normative_rules_version, or completed_at.`
+}
+
 function viviendaNormativeOutletPlacementsPromptSpec(): string {
   return `Return a JSON object with ONLY these top-level keys:
 {
@@ -62,10 +90,12 @@ Rules:
 - Do NOT return contract_version, job_id, correlation_id, story_id, normative_rules_version, or completed_at.`
 }
 
-/** @deprecated Use normativeOutletPlacementsPromptSpec(rules) */
 export function normativeOutletPlacementsPromptSpec(
   rules?: Record<string, unknown>,
 ): string {
+  if (rules && Array.isArray(rules.reglas_por_habitacion)) {
+    return tomacorrientesNormativeOutletPlacementsPromptSpec()
+  }
   if (rules && Array.isArray(rules.pipeline)) {
     return viviendaNormativeOutletPlacementsPromptSpec()
   }

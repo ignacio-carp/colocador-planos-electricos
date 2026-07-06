@@ -1,5 +1,5 @@
 {
-  "active_version": "cambre-vivienda-2026.06.3",
+  "active_version": "cambre-tomas-2026.07.1",
   "versions": [
     {
       "version": "cambre-normative-2026.05.1",
@@ -11,6 +11,12 @@
       "path": "2026.06.3/rules.json",
       "description": "Reglas completas de generación de plano eléctrico vivienda (AEA 770/771): PMU, circuitos, simbología y cómputo",
       "replaces": "cambre-normative-2026.05.1"
+    },
+    {
+      "version": "cambre-tomas-2026.07.1",
+      "path": "2026.07.1/rules.json",
+      "description": "Tomacorrientes por habitación — 3 secciones: estrategia, apliques/simbología, reglas por ambiente",
+      "replaces": "cambre-vivienda-2026.06.3"
     }
   ]
 }

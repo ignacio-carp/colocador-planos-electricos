@@ -135,8 +135,8 @@ export default function NormativeRules({ onNavigate }: { onNavigate: (path: stri
         <div className="rounded-xl border border-outline-variant bg-surface-container-lowest p-6 shadow-[var(--shadow-ambient)]">
           <h1 className="text-headline-md text-primary">Ruleset del sistema</h1>
           <p className="text-body-sm mt-2 max-w-3xl text-on-surface-variant">
-            Un único conjunto de reglas para todos los usuarios. Con Supabase configurado, se persiste en
-            Postgres; si no, en el archivo del repositorio (solo desarrollo local).
+            Tres secciones: estrategia de procesamiento, apliques y simbología, y reglas por
+            habitación. Alcance actual: solo tomacorrientes por ambiente.
           </p>
           {activeVersion ? (
             <dl className="mt-4 grid gap-3 text-body-sm sm:grid-cols-2 lg:grid-cols-4">

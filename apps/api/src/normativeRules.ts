@@ -51,7 +51,27 @@ export type ViviendaNormativeRulesBundle = {
   validation?: unknown[]
 }
 
-export type NormativeRulesBundle = LegacyNormativeRulesBundle | ViviendaNormativeRulesBundle
+/** Tomacorrientes ruleset (cambre-tomas-2026.07.1) — outlets per room, 3 sections. */
+export type TomacorrientesRulesBundle = {
+  version: string
+  title?: string
+  replaces?: string
+  description?: string
+  estrategia_procesamiento: Record<string, unknown>
+  apliques_y_simbologia: Record<string, unknown>
+  reglas_por_habitacion: NormativeRule[]
+}
+
+export type NormativeRulesBundle =
+  | LegacyNormativeRulesBundle
+  | ViviendaNormativeRulesBundle
+  | TomacorrientesRulesBundle
+
+export const TOMAS_REQUIRED_SECTIONS = [
+  'estrategia_procesamiento',
+  'apliques_y_simbologia',
+  'reglas_por_habitacion',
+] as const
 
 export type NormativeRulesSource = 'database' | 'filesystem'
 
@@ -123,8 +143,10 @@ export async function warmNormativeRulesCache(): Promise<void> {
 }
 
 async function warmNormativeRulesCacheInner(): Promise<void> {
+  const manifestVersion =
+    process.env.NORMATIVE_RULES_VERSION?.trim() || loadNormativeManifest().active_version
   let active = await findActiveNormativeRuleset()
-  if (!active) {
+  if (!active || active.version !== manifestVersion) {
     await seedNormativeRulesFromFilesystem()
     active = await findActiveNormativeRuleset()
   }
@@ -140,6 +162,16 @@ async function seedNormativeRulesFromFilesystem(): Promise<void> {
   const bundle = loadNormativeRulesBundleFromFilesystem(version)
   validateNormativeRulesBundle(bundle)
   await activateNormativeRuleset(bundle)
+}
+
+export function isTomacorrientesRulesBundle(
+  bundle: NormativeRulesBundle,
+): bundle is TomacorrientesRulesBundle {
+  return (
+    'estrategia_procesamiento' in bundle &&
+    'apliques_y_simbologia' in bundle &&
+    Array.isArray((bundle as TomacorrientesRulesBundle).reglas_por_habitacion)
+  )
 }
 
 export function isViviendaRulesBundle(bundle: NormativeRulesBundle): bundle is ViviendaNormativeRulesBundle {
@@ -178,8 +210,8 @@ export type NormativeRulesAdminView = {
   updated_at?: string
 }
 
-/** Sections that, when present, must stay plain JSON objects for US-008 to consume them. */
-const OBJECT_SECTIONS = [
+/** Legacy / vivienda object sections — must stay JSON objects when present. */
+const LEGACY_OBJECT_SECTIONS = [
   'normative',
   'placement',
   'symbology',
@@ -188,6 +220,8 @@ const OBJECT_SECTIONS = [
   'normative_basis',
   'input_contract',
   'output_contract',
+  'estrategia_procesamiento',
+  'apliques_y_simbologia',
 ] as const
 
 function assertEntriesHaveId(entries: unknown[], sectionName: string): void {
@@ -216,10 +250,48 @@ export function validateNormativeRulesBundle(bundle: unknown): NormativeRulesBun
   }
   const legacy = Array.isArray(record.rules)
   const vivienda = Array.isArray(record.pipeline)
-  if (!legacy && !vivienda) {
+  const tomacorrientes = Array.isArray(record.reglas_por_habitacion)
+  if (!legacy && !vivienda && !tomacorrientes) {
     throw new NormativeRulesValidationError(
-      'Rules bundle must include a "rules" array (legacy) or "pipeline" array (vivienda)',
+      'Rules bundle must include "reglas_por_habitacion" (tomacorrientes), "rules" (legacy), or "pipeline" (vivienda)',
     )
+  }
+  if (tomacorrientes) {
+    for (const section of TOMAS_REQUIRED_SECTIONS) {
+      if (!(section in record)) {
+        throw new NormativeRulesValidationError(
+          `Tomacorrientes ruleset must include section "${section}"`,
+        )
+      }
+    }
+    const reglas = record.reglas_por_habitacion as unknown[]
+    if (reglas.length === 0) {
+      throw new NormativeRulesValidationError(
+        '"reglas_por_habitacion" must contain at least one rule',
+      )
+    }
+    assertEntriesHaveId(reglas, 'reglas_por_habitacion')
+    const estrategia = record.estrategia_procesamiento
+    if (!estrategia || typeof estrategia !== 'object' || Array.isArray(estrategia)) {
+      throw new NormativeRulesValidationError(
+        '"estrategia_procesamiento" must be a JSON object',
+      )
+    }
+    const apliques = record.apliques_y_simbologia
+    if (!apliques || typeof apliques !== 'object' || Array.isArray(apliques)) {
+      throw new NormativeRulesValidationError(
+        '"apliques_y_simbologia" must be a JSON object',
+      )
+    }
+    const steps = (estrategia as Record<string, unknown>).steps
+    if (steps !== undefined) {
+      if (!Array.isArray(steps)) {
+        throw new NormativeRulesValidationError(
+          '"estrategia_procesamiento.steps" must be an array when present',
+        )
+      }
+      assertEntriesHaveId(steps, 'estrategia_procesamiento.steps')
+    }
   }
   if (legacy) {
     const rules = record.rules as unknown[]
@@ -235,7 +307,7 @@ export function validateNormativeRulesBundle(bundle: unknown): NormativeRulesBun
     }
     assertEntriesHaveId(pipeline, 'pipeline')
   }
-  for (const section of OBJECT_SECTIONS) {
+  for (const section of LEGACY_OBJECT_SECTIONS) {
     const value = record[section]
     if (value !== undefined && (value === null || typeof value !== 'object' || Array.isArray(value))) {
       throw new NormativeRulesValidationError(
@@ -300,13 +372,14 @@ export async function saveActiveNormativeRulesBundle(
     currentBundle = undefined
   }
   if (currentBundle) {
+    const requiredKeys = isTomacorrientesRulesBundle(currentBundle)
+      ? [...TOMAS_REQUIRED_SECTIONS]
+      : Object.keys(currentBundle as Record<string, unknown>)
     const newKeys = new Set(Object.keys(validated as Record<string, unknown>))
-    const removed = Object.keys(currentBundle as Record<string, unknown>).filter(
-      (key) => !newKeys.has(key),
-    )
+    const removed = requiredKeys.filter((key) => !newKeys.has(key))
     if (removed.length > 0) {
       throw new NormativeRulesValidationError(
-        `Cannot remove top-level sections: ${removed.join(', ')}`,
+        `Cannot remove required sections: ${removed.join(', ')}`,
       )
     }
   }

@@ -5,26 +5,19 @@ const SECTION_LABELS: Record<string, string> = {
   version: 'Versión',
   title: 'Título',
   description: 'Descripción',
-  normative_basis: 'Base normativa',
-  room_type_taxonomy: 'Tipología de ambientes',
-  pipeline: 'Etapas del motor',
-  normative: 'Reglas normativas (PMU, grados)',
-  placement: 'Ubicación espacial',
-  symbology: 'Simbología',
-  defaults: 'Valores por defecto',
-  validation: 'Validaciones',
+  replaces: 'Reemplaza versión',
+  estrategia_procesamiento: 'Estrategia de procesamiento',
+  apliques_y_simbologia: 'Apliques y simbología',
+  reglas_por_habitacion: 'Reglas por habitación',
+  // legacy / vivienda (solo lectura si aparecen en versiones antiguas)
+  pipeline: 'Etapas del motor (legacy)',
+  normative: 'Reglas normativas (legacy)',
+  placement: 'Ubicación espacial (legacy)',
+  symbology: 'Simbología (legacy)',
   rules: 'Reglas (formato legacy)',
-  design_decisions: 'Decisiones de diseño',
-  assumptions: 'Supuestos',
-  input_contract: 'Contrato de entrada',
-  output_contract: 'Contrato de salida',
 }
 
-/**
- * Structural keys the editor must not let users rename, retype, or delete:
- * the US-008 prompt and merge logic reference them (rule_ids, PMU stages, etc.).
- */
-const PROTECTED_KEYS = new Set(['version', 'id', 'stage'])
+const PROTECTED_KEYS = new Set(['version', 'id'])
 
 function isProtectedKey(key: string | number | undefined): boolean {
   return typeof key === 'string' && PROTECTED_KEYS.has(key)
@@ -47,10 +40,15 @@ export function NormativeRulesEditor({
 }: NormativeRulesEditorProps) {
   const effectiveSearch = focusSection ?? searchText
 
-  const sectionKeys = useMemo(
-    () => Object.keys(bundle).filter((key) => key !== 'version'),
-    [bundle],
-  )
+  const sectionKeys = useMemo(() => {
+    const preferred = ['estrategia_procesamiento', 'apliques_y_simbologia', 'reglas_por_habitacion']
+    const keys = Object.keys(bundle).filter((key) => key !== 'version')
+    const ordered = preferred.filter((key) => keys.includes(key))
+    const rest = keys.filter((key) => !preferred.includes(key))
+    return [...ordered, ...rest]
+  }, [bundle])
+
+  const isTomacorrientes = Array.isArray(bundle.reglas_por_habitacion)
 
   return (
     <div className="grid gap-6 lg:grid-cols-[240px_minmax(0,1fr)]">
@@ -82,11 +80,9 @@ export function NormativeRulesEditor({
           })}
         </ul>
         <p className="text-body-sm text-on-surface-variant px-1">
-          Doble clic en un valor para editarlo. Las secciones y los identificadores (
-          <span className="font-mono text-xs">version</span>,{' '}
-          <span className="font-mono text-xs">id</span>,{' '}
-          <span className="font-mono text-xs">stage</span>) están protegidos y no se pueden
-          borrar ni renombrar.
+          {isTomacorrientes
+            ? 'Alcance: solo tomacorrientes por habitación. Editá valores dentro de las 3 secciones; no se pueden borrar secciones ni renombrar ids.'
+            : 'Doble clic en un valor para editarlo. Las secciones e ids están protegidos.'}
         </p>
       </aside>
 
@@ -99,7 +95,7 @@ export function NormativeRulesEditor({
             }
           }}
           rootName="rules"
-          collapse={2}
+          collapse={isTomacorrientes ? 1 : 2}
           searchText={effectiveSearch || undefined}
           searchFilter={focusSection ? 'key' : 'all'}
           restrictEdit={({ path, key }) =>
@@ -119,7 +115,11 @@ export function NormativeRulesEditor({
 }
 
 export function listNormativeSectionKeys(bundle: Record<string, unknown>): string[] {
-  return Object.keys(bundle).filter((key) => key !== 'version')
+  const preferred = ['estrategia_procesamiento', 'apliques_y_simbologia', 'reglas_por_habitacion']
+  const keys = Object.keys(bundle).filter((key) => key !== 'version')
+  const ordered = preferred.filter((key) => keys.includes(key))
+  const rest = keys.filter((key) => !preferred.includes(key))
+  return [...ordered, ...rest]
 }
 
 export function sectionLabel(key: string): string {
