@@ -20,6 +20,16 @@ const SECTION_LABELS: Record<string, string> = {
   output_contract: 'Contrato de salida',
 }
 
+/**
+ * Structural keys the editor must not let users rename, retype, or delete:
+ * the US-008 prompt and merge logic reference them (rule_ids, PMU stages, etc.).
+ */
+const PROTECTED_KEYS = new Set(['version', 'id', 'stage'])
+
+function isProtectedKey(key: string | number | undefined): boolean {
+  return typeof key === 'string' && PROTECTED_KEYS.has(key)
+}
+
 type NormativeRulesEditorProps = {
   bundle: Record<string, unknown>
   onChange: (next: Record<string, unknown>) => void
@@ -72,7 +82,11 @@ export function NormativeRulesEditor({
           })}
         </ul>
         <p className="text-body-sm text-on-surface-variant px-1">
-          Doble clic en un valor para editarlo. Los cambios se aplican al JSON completo del ruleset.
+          Doble clic en un valor para editarlo. Las secciones y los identificadores (
+          <span className="font-mono text-xs">version</span>,{' '}
+          <span className="font-mono text-xs">id</span>,{' '}
+          <span className="font-mono text-xs">stage</span>) están protegidos y no se pueden
+          borrar ni renombrar.
         </p>
       </aside>
 
@@ -88,8 +102,13 @@ export function NormativeRulesEditor({
           collapse={2}
           searchText={effectiveSearch || undefined}
           searchFilter={focusSection ? 'key' : 'all'}
-          restrictEdit={({ path }) => path.length === 1 && path[0] === 'version'}
-          restrictDelete={({ path }) => path.length === 1 && path[0] === 'version'}
+          restrictEdit={({ path, key }) =>
+            (path.length === 1 && path[0] === 'version') || isProtectedKey(key)
+          }
+          restrictDelete={({ path, key }) => path.length <= 1 || isProtectedKey(key)}
+          restrictAdd={({ path }) => path.length === 0}
+          restrictTypeSelection
+          restrictDrag
           enableClipboard
           showErrorMessages
           className="normative-rules-json-editor text-sm"

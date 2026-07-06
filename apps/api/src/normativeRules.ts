@@ -178,6 +178,34 @@ export type NormativeRulesAdminView = {
   updated_at?: string
 }
 
+/** Sections that, when present, must stay plain JSON objects for US-008 to consume them. */
+const OBJECT_SECTIONS = [
+  'normative',
+  'placement',
+  'symbology',
+  'defaults',
+  'room_type_taxonomy',
+  'normative_basis',
+  'input_contract',
+  'output_contract',
+] as const
+
+function assertEntriesHaveId(entries: unknown[], sectionName: string): void {
+  for (const entry of entries) {
+    if (!entry || typeof entry !== 'object' || Array.isArray(entry)) {
+      throw new NormativeRulesValidationError(
+        `Every "${sectionName}" entry must be a JSON object`,
+      )
+    }
+    const id = (entry as Record<string, unknown>).id
+    if (typeof id !== 'string' || !id.trim()) {
+      throw new NormativeRulesValidationError(
+        `Every "${sectionName}" entry must keep a non-empty string "id"`,
+      )
+    }
+  }
+}
+
 export function validateNormativeRulesBundle(bundle: unknown): NormativeRulesBundle {
   if (!bundle || typeof bundle !== 'object' || Array.isArray(bundle)) {
     throw new NormativeRulesValidationError('Rules bundle must be a JSON object')
@@ -193,11 +221,27 @@ export function validateNormativeRulesBundle(bundle: unknown): NormativeRulesBun
       'Rules bundle must include a "rules" array (legacy) or "pipeline" array (vivienda)',
     )
   }
-  if (legacy && (record.rules as unknown[]).length === 0) {
-    throw new NormativeRulesValidationError('Legacy "rules" array must not be empty')
+  if (legacy) {
+    const rules = record.rules as unknown[]
+    if (rules.length === 0) {
+      throw new NormativeRulesValidationError('Legacy "rules" array must not be empty')
+    }
+    assertEntriesHaveId(rules, 'rules')
   }
-  if (vivienda && (record.pipeline as unknown[]).length === 0) {
-    throw new NormativeRulesValidationError('Vivienda "pipeline" array must not be empty')
+  if (vivienda) {
+    const pipeline = record.pipeline as unknown[]
+    if (pipeline.length === 0) {
+      throw new NormativeRulesValidationError('Vivienda "pipeline" array must not be empty')
+    }
+    assertEntriesHaveId(pipeline, 'pipeline')
+  }
+  for (const section of OBJECT_SECTIONS) {
+    const value = record[section]
+    if (value !== undefined && (value === null || typeof value !== 'object' || Array.isArray(value))) {
+      throw new NormativeRulesValidationError(
+        `Section "${section}" must be a JSON object when present`,
+      )
+    }
   }
   return bundle as NormativeRulesBundle
 }
@@ -245,6 +289,26 @@ export async function saveActiveNormativeRulesBundle(
     throw new NormativeRulesValidationError(
       `Bundle version "${validated.version}" must match active version "${activeVersion}"`,
     )
+  }
+
+  // Safety net: the editor UI blocks section deletion, but reject it here too
+  // so a raw API call cannot silently drop a section the engine depends on.
+  let currentBundle: NormativeRulesBundle | undefined
+  try {
+    currentBundle = loadNormativeRulesBundle(activeVersion)
+  } catch {
+    currentBundle = undefined
+  }
+  if (currentBundle) {
+    const newKeys = new Set(Object.keys(validated as Record<string, unknown>))
+    const removed = Object.keys(currentBundle as Record<string, unknown>).filter(
+      (key) => !newKeys.has(key),
+    )
+    if (removed.length > 0) {
+      throw new NormativeRulesValidationError(
+        `Cannot remove top-level sections: ${removed.join(', ')}`,
+      )
+    }
   }
 
   if (isNormativeRulesDatabaseEnabled()) {

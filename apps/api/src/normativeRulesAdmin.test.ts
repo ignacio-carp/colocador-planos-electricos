@@ -98,4 +98,39 @@ describe('normativeRules admin', () => {
       NormativeRulesValidationError,
     )
   })
+
+  it('rejects pipeline entries missing string id', () => {
+    assert.throws(
+      () =>
+        validateNormativeRulesBundle({
+          version: 'cambre-vivienda-2026.06.3',
+          pipeline: [{ stage: 1 }],
+        }),
+      NormativeRulesValidationError,
+    )
+  })
+
+  it('rejects sections that are not JSON objects', () => {
+    assert.throws(
+      () =>
+        validateNormativeRulesBundle({
+          version: 'cambre-vivienda-2026.06.3',
+          pipeline: [{ id: 'classify' }],
+          normative: 'not-an-object',
+        }),
+      NormativeRulesValidationError,
+    )
+  })
+
+  it('saveActiveNormativeRulesBundle rejects dropping top-level sections', async () => {
+    await assert.rejects(
+      () =>
+        saveActiveNormativeRulesBundle({
+          version: 'cambre-vivienda-2026.06.3',
+          // "title" from the seeded bundle is missing here
+          pipeline: [{ id: 'classify' }],
+        }),
+      /Cannot remove top-level sections/,
+    )
+  })
 })
