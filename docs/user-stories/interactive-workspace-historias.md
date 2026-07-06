@@ -55,7 +55,7 @@ Pendiente ──► Analizando ──► Listo_para_editar ──┬──► Pa
 
 **Transiciones permitidas:**
 
-- **Pendiente → Analizando:** registro exitoso de `input_dxf` (enmienda US-006).
+- **Pendiente → Analizando:** registro exitoso de `input_dxf` + acción explícita **Iniciar análisis** (enmienda US-006 / US-012).
 - **Analizando → Listo_para_editar:** US-007 exitoso.
 - **Analizando → Error:** fallo terminal en análisis preliminar.
 - **Listo_para_editar → Parcialmente_procesado:** primera habitación procesada con éxito (US-008 + US-009).
@@ -209,7 +209,7 @@ Escenario: Acceso denegado a terceros
 
 ---
 
-## US-012 — Análisis preliminar automático al recibir DXF
+## US-012 — Análisis preliminar bajo demanda del arquitecto
 
 | Campo | Valor |
 |-------|--------|
@@ -218,18 +218,19 @@ Escenario: Acceso denegado a terceros
 | Módulo / Área | Workspace / Pipeline |
 | Epic | Cambre — Workspace interactivo |
 
-**Como** sistema  
-**quiero** ejecutar automáticamente el análisis preliminar del `.dxf` al registrarlo  
-**para** que el arquitecto disponga de habitaciones, superficies y recomendaciones antes de cualquier modificación al CAD.
+**Como** arquitecto  
+**quiero** iniciar explícitamente el análisis preliminar del `.dxf` cuando esté listo  
+**para** configurar reglas normativas y decidir el momento del análisis antes de cualquier modificación al CAD.
 
 #### Contexto
 
-En el MVP, el registro del archivo dispara el pipeline completo US-007 → US-008 → US-009. En el workspace interactivo, la carga solo debe producir **interpretación visual** y datos para la UI, sin escribir tomas ni generar `output_dxf` hasta que el arquitecto procese habitaciones (US-013).
+En el MVP, el registro del archivo dispara el pipeline completo US-007 → US-008 → US-009. En el workspace interactivo, la carga solo registra el archivo; el análisis preliminar produce **interpretación visual** y datos para la UI, sin escribir tomas ni generar `output_dxf` hasta que el arquitecto procese habitaciones (US-013).
 
 #### Alcance
 
 - Incluye:
-  - Tras `POST /api/jobs/:jobId/dxf-input/register`, encolar o ejecutar **análisis preliminar**: cad-worker `inspect` + `extract_geometry` + **US-007** (`vision_layout`) + **US-008** en modo lectura (si `normative_rules_enabled`, default `true`).
+  - Tras `POST /api/jobs/:jobId/dxf-input/register`, el job permanece **Pendiente** con `input_dxf` registrado (sin encolar análisis).
+  - `POST /api/jobs/:jobId/workspace/start-analysis` encola **análisis preliminar**: cad-worker `inspect` + `extract_geometry` + **US-007** (`vision_layout`).
   - Transición de job: **Pendiente** → **Analizando** → **Listo_para_editar** (o **Error**).
   - Persistencia en `pipeline_metadata`: `cad_worker_inspect`, `geometry_extract`, salida US-007, salida US-008 (`outlet_placements` propuestos, `normative_rules_version`).
   - Panel en workspace con:

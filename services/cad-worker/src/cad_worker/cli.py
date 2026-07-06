@@ -58,7 +58,7 @@ def main(argv: list[str] | None = None) -> None:
 
     p_extract = subparsers.add_parser(
         "extract-geometry",
-        help="Extract walls and text labels from DXF modelspace.",
+        help="Extract walls and furniture from DXF modelspace (other layers discarded).",
     )
     p_extract.add_argument("--input", required=True, help="Path to .dxf file")
     p_extract.add_argument("--json", action="store_true", help="Emit JSON (default)")

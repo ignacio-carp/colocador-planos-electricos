@@ -26,9 +26,14 @@ import {
   type ElectricalCatalogItem,
 } from './electricalCatalog'
 import { findJob, patchJob, type JobRow, type PreliminaryRecommendation } from './jobsStore'
+import { roomPolygonFromLayout } from './llmRenderContext'
 import { logStructured } from './logger'
 import { resolveActiveNormativeRulesVersion } from './normativeRules'
-import { openaiChatJsonObject } from './openaiClient'
+import {
+  openaiChatWithTools,
+  type LlmToolCall,
+  type LlmToolDefinition,
+} from './openaiClient'
 import { aiConfigured, getPipelineMode, normativeTimeoutMs, visionModel } from './pipelineMode'
 import { normalizeRenderRoomVertices, resolveLayoutInterpretation } from './renderDataHelpers'
 import {
@@ -524,34 +529,251 @@ export function parseChatCommandStub(
 }
 
 /* ------------------------------------------------------------------ */
-/* Live (LLM) intent parsing                                           */
+/* Live (LLM) agentic tool loop                                        */
 /* ------------------------------------------------------------------ */
 
-function chatResponseSpec(): string {
-  return `Respond ONLY with a JSON object:
-{
-  "reply": string,                  // conversational answer in Spanish (vos, Argentina)
-  "intent": "query" | "edit" | "action",
-  "mutations": [                    // only for intent=edit; [] otherwise
-    { "op": "add_element", "room_id": string, "catalog_sku": string, "quantity": number, "position": { "x": number, "y": number } | null },
-    { "op": "remove_element", "room_id": string, "catalog_sku": string | null, "element_id": string | null }
-  ],
-  "process_room_ids": string[]      // only for intent=action; room ids to run through the rules engine
-}
-Intent rules:
-- intent=query for greetings, thanks, explanations, questions about rooms/placements/status/catalog/recommendations, and general conversation. mutations=[] and process_room_ids=[].
-- intent=edit ONLY when the user clearly asks to add or remove catalog elements on the electrical layer.
-- intent=action ONLY when the user explicitly asks to process/run normative rules on one or more rooms.
-Other rules:
-- catalog_sku MUST be one of the provided catalog skus.
-- room_id MUST be one of the provided room ids.
-- Never invent rooms or products. Ask for clarification in "reply" (intent=query) when ambiguous.
-- Use recent_conversation for follow-ups ("¿y el baño?", "agregá otra ahí").
-- Be warm, concise, and helpful — you are a design assistant, not only a command parser.
-- The attached image (if any) is a screenshot of what the user currently sees in the plan viewer.`
+function chatToolDefinitions(): LlmToolDefinition[] {
+  return [
+    {
+      name: 'get_room_details',
+      description:
+        'Detalle completo de una habitación: polígono (coordenadas de dibujo), elementos eléctricos actuales con posiciones, estado de procesamiento. Usalo antes de posicionar elementos para elegir coordenadas con criterio (sobre muros del perímetro, lejos de aberturas).',
+      parameters: {
+        type: 'object',
+        properties: {
+          room_id: { type: 'string', description: 'Id de la habitación (de la lista provista)' },
+        },
+        required: ['room_id'],
+        additionalProperties: false,
+      },
+    },
+    {
+      name: 'add_elements',
+      description:
+        'Agrega productos del catálogo a la capa eléctrica de una habitación. Preferí posiciones explícitas dentro del polígono (consultá get_room_details primero); si no las das, se usa el centroide.',
+      parameters: {
+        type: 'object',
+        properties: {
+          room_id: { type: 'string' },
+          catalog_sku: { type: 'string', description: 'SKU exacto del catálogo provisto' },
+          positions: {
+            type: 'array',
+            description: 'Una posición por elemento a agregar, en coordenadas de dibujo',
+            items: {
+              type: 'object',
+              properties: { x: { type: 'number' }, y: { type: 'number' } },
+              required: ['x', 'y'],
+              additionalProperties: false,
+            },
+          },
+          quantity: {
+            type: 'integer',
+            minimum: 1,
+            maximum: 10,
+            description: 'Cantidad si no diste positions explícitas',
+          },
+        },
+        required: ['room_id', 'catalog_sku'],
+        additionalProperties: false,
+      },
+    },
+    {
+      name: 'remove_elements',
+      description:
+        'Quita elementos eléctricos. Por element_id puntual, o por habitación (y opcionalmente sku) para borrado masivo.',
+      parameters: {
+        type: 'object',
+        properties: {
+          room_id: { type: 'string' },
+          catalog_sku: { type: 'string' },
+          element_id: { type: 'string' },
+        },
+        additionalProperties: false,
+      },
+    },
+    {
+      name: 'process_room',
+      description:
+        'Procesa una habitación con el motor de reglas normativas (US-008 → US-009): infiere y coloca tomas según normativa y actualiza el DXF. Podés pasar una instrucción específica derivada de lo que pidió el arquitecto.',
+      parameters: {
+        type: 'object',
+        properties: {
+          room_id: { type: 'string' },
+          instruction: {
+            type: 'string',
+            description: 'Directiva para la inferencia normativa (opcional)',
+          },
+        },
+        required: ['room_id'],
+        additionalProperties: false,
+      },
+    },
+  ]
 }
 
-async function parseChatCommandLive(params: {
+type ChatToolLoopState = {
+  mutationsApplied: AppliedMutation[]
+  editedRoomIds: Set<string>
+  processedResults: RoomProcessingResultEntry[]
+  lastJobStatus: string
+}
+
+type RoomProcessingResultEntry = RoomProcessingPipelineResult['rooms'][number]
+
+function polygonVerticesForRoom(
+  visionLayout: Record<string, unknown> | undefined,
+  roomId: string,
+): { x: number; y: number }[] {
+  const polygon = roomPolygonFromLayout(visionLayout, roomId)
+  return normalizeRenderRoomVertices(polygon)
+}
+
+async function executeChatTool(params: {
+  call: LlmToolCall
+  jobId: string
+  correlationId: string
+  userMessage: string
+  viewportImage?: string
+  rooms: ChatRoomContext[]
+  catalog: ElectricalCatalogItem[]
+  state: ChatToolLoopState
+}): Promise<Record<string, unknown>> {
+  const { call, state } = params
+  const args = call.arguments
+
+  if (call.name === 'get_room_details') {
+    const roomId = typeof args.room_id === 'string' ? args.room_id : ''
+    const room = params.rooms.find((r) => r.id === roomId)
+    if (!room) return { error: `Habitación desconocida: ${roomId}` }
+    const job = await findJob(params.jobId)
+    const meta = job?.pipeline_metadata ?? {}
+    const placements = ((meta.outlet_placements as Record<string, unknown>[] | undefined) ?? [])
+      .filter((p) => p.room_id === roomId)
+      .slice(0, 60)
+    return {
+      room: {
+        id: room.id,
+        label: room.label,
+        room_type: room.room_type,
+        area_m2: room.area_m2,
+        centroid: room.centroid,
+        polygon_vertices: polygonVerticesForRoom(
+          meta.vision_layout as Record<string, unknown> | undefined,
+          roomId,
+        ),
+      },
+      elements: placements,
+      processing_state:
+        ((meta.room_processing_state ?? {}) as Record<string, string>)[roomId] ?? 'pendiente',
+    }
+  }
+
+  if (call.name === 'add_elements') {
+    const roomId = typeof args.room_id === 'string' ? args.room_id : ''
+    const sku = typeof args.catalog_sku === 'string' ? args.catalog_sku : ''
+    const positionsRaw = Array.isArray(args.positions) ? args.positions : []
+    const positions = positionsRaw
+      .filter(
+        (p): p is { x: number; y: number } =>
+          !!p &&
+          typeof p === 'object' &&
+          Number.isFinite((p as { x?: unknown }).x) &&
+          Number.isFinite((p as { y?: unknown }).y),
+      )
+      .slice(0, 10)
+    const quantity =
+      typeof args.quantity === 'number' && Number.isFinite(args.quantity)
+        ? Math.max(1, Math.min(10, Math.floor(args.quantity)))
+        : 1
+
+    const mutations: ChatMutation[] =
+      positions.length > 0
+        ? positions.map((position) => ({
+            op: 'add_element' as const,
+            room_id: roomId,
+            catalog_sku: sku,
+            quantity: 1,
+            position,
+          }))
+        : [{ op: 'add_element', room_id: roomId, catalog_sku: sku, quantity }]
+
+    const { applied, affectedRoomIds } = await applyChatMutations(
+      params.jobId,
+      mutations,
+      params.rooms,
+      params.catalog,
+    )
+    if (applied.length === 0) {
+      return { error: 'No se aplicó: verificá room_id y catalog_sku contra los datos provistos.' }
+    }
+    state.mutationsApplied.push(...applied)
+    for (const id of affectedRoomIds) state.editedRoomIds.add(id)
+    return {
+      ok: true,
+      added_element_ids: applied.flatMap((a) => a.element_ids),
+      room_id: roomId,
+    }
+  }
+
+  if (call.name === 'remove_elements') {
+    const mutation: ChatMutation = {
+      op: 'remove_element',
+      room_id: typeof args.room_id === 'string' ? args.room_id : undefined,
+      catalog_sku: typeof args.catalog_sku === 'string' ? args.catalog_sku : undefined,
+      element_id: typeof args.element_id === 'string' ? args.element_id : undefined,
+    }
+    if (!mutation.room_id && !mutation.element_id) {
+      return { error: 'Indicá room_id o element_id para quitar elementos.' }
+    }
+    const { applied, affectedRoomIds } = await applyChatMutations(
+      params.jobId,
+      [mutation],
+      params.rooms,
+      params.catalog,
+    )
+    if (applied.length === 0) {
+      return { ok: false, removed_element_ids: [], note: 'No había elementos que coincidan.' }
+    }
+    state.mutationsApplied.push(...applied)
+    for (const id of affectedRoomIds) state.editedRoomIds.add(id)
+    return { ok: true, removed_element_ids: applied.flatMap((a) => a.element_ids) }
+  }
+
+  if (call.name === 'process_room') {
+    const roomId = typeof args.room_id === 'string' ? args.room_id : ''
+    if (!params.rooms.some((r) => r.id === roomId)) {
+      return { error: `Habitación desconocida: ${roomId}` }
+    }
+    const instruction =
+      typeof args.instruction === 'string' && args.instruction.trim()
+        ? args.instruction.trim()
+        : params.userMessage.trim() || undefined
+    const result = await runRoomProcessingPipeline(
+      params.jobId,
+      [roomId],
+      `${params.correlationId}-tool`,
+      undefined,
+      {
+        viaChat: true,
+        processingInstruction: instruction,
+        viewportImageDataUrl: params.viewportImage,
+      },
+    )
+    state.processedResults.push(...result.rooms)
+    state.lastJobStatus = result.job_status
+    // Room already re-rendered by the pipeline; no US-009 re-apply needed.
+    state.editedRoomIds.delete(roomId)
+    return {
+      room_id: roomId,
+      results: result.rooms,
+      job_status: result.job_status,
+    }
+  }
+
+  return { error: `Herramienta desconocida: ${call.name}` }
+}
+
+async function runChatToolLoop(params: {
   jobId: string
   correlationId: string
   message: string
@@ -562,13 +784,30 @@ async function parseChatCommandLive(params: {
   workspace: ChatWorkspaceContext
   recentHistory: ChatHistoryTurn[]
   imageDataUrl?: string
-}): Promise<ParsedChatCommand> {
+}): Promise<{
+  reply: string
+  intent: ChatIntent
+  mutationsApplied: AppliedMutation[]
+  processResult?: RoomProcessingPipelineResult
+}> {
+  const state: ChatToolLoopState = {
+    mutationsApplied: [],
+    editedRoomIds: new Set(),
+    processedResults: [],
+    lastJobStatus: params.workspace.jobStatus,
+  }
+
   const system = `You are the Cambre electrical-design assistant in an interactive workspace.
-The architect chats next to a rendered DXF floor plan. You can hold natural conversations in Argentine Spanish (vos): answer questions about the plan, rooms, outlets, processing status, catalog, and normative recommendations.
+The architect chats next to a rendered DXF floor plan, in Argentine Spanish (vos). Answer questions about the plan, rooms, outlets, processing status, catalog and normative recommendations, and use your tools to act on the electrical layer when the user asks for it.
 
-When the user gives explicit instructions, you may also update the electrical layer (add/remove catalog products) or trigger rules-engine processing per room.
-
-${chatResponseSpec()}`
+Tool usage rules:
+- Use tools ONLY when the user clearly asks to add, remove, or process. Plain questions and conversation need no tools.
+- Before placing elements at specific coordinates, call get_room_details and choose positions inside the room polygon, preferring perimeter walls and avoiding overlaps with existing elements.
+- catalog_sku must be one of the provided catalog skus; room_id one of the provided room ids. Never invent rooms or products; ask for clarification instead.
+- process_room runs the normative rules engine for one room. Pass an instruction that captures the user's specific request when it goes beyond the default rules.
+- You may chain several tool calls (e.g. inspect, then add, then verify) before answering.
+- The attached image (if any) is a screenshot of what the user currently sees in the plan viewer.
+- Your final message is shown verbatim to the architect: reply in Spanish (vos), warm and concise, summarizing what you did or answering the question. Never mention tool names.`
 
   const user = JSON.stringify({
     message: params.message,
@@ -588,10 +827,22 @@ ${chatResponseSpec()}`
     normative_rules_version: safeRulesVersion(),
   })
 
-  const raw = await openaiChatJsonObject({
+  const { reply } = await openaiChatWithTools({
     model: visionModel(),
     system,
     user,
+    tools: chatToolDefinitions(),
+    executeTool: (call) =>
+      executeChatTool({
+        call,
+        jobId: params.jobId,
+        correlationId: params.correlationId,
+        userMessage: params.message,
+        viewportImage: params.imageDataUrl,
+        rooms: params.rooms,
+        catalog: params.catalog,
+        state,
+      }),
     timeoutMs: normativeTimeoutMs(),
     jobId: params.jobId,
     correlationId: params.correlationId,
@@ -599,51 +850,49 @@ ${chatResponseSpec()}`
     imageDataUrl: params.imageDataUrl,
   })
 
-  const intent: ChatIntent =
-    raw.intent === 'edit' || raw.intent === 'action' ? raw.intent : 'query'
-  const reply =
-    typeof raw.reply === 'string' && raw.reply.trim().length > 0
-      ? raw.reply.trim()
-      : 'No pude interpretar el pedido; ¿podés reformularlo?'
-
-  const mutations: ChatMutation[] = []
-  if (Array.isArray(raw.mutations)) {
-    for (const m of raw.mutations) {
-      if (!m || typeof m !== 'object') continue
-      const mut = m as Record<string, unknown>
-      if (mut.op === 'add_element' && typeof mut.room_id === 'string' && typeof mut.catalog_sku === 'string') {
-        const position =
-          mut.position && typeof mut.position === 'object'
-            ? (mut.position as Record<string, unknown>)
-            : undefined
-        const x = position ? Number(position.x) : NaN
-        const y = position ? Number(position.y) : NaN
-        mutations.push({
-          op: 'add_element',
-          room_id: mut.room_id,
-          catalog_sku: mut.catalog_sku,
-          quantity:
-            typeof mut.quantity === 'number' && Number.isFinite(mut.quantity)
-              ? Math.max(1, Math.min(10, Math.floor(mut.quantity)))
-              : 1,
-          position: Number.isFinite(x) && Number.isFinite(y) ? { x, y } : undefined,
-        })
-      } else if (mut.op === 'remove_element') {
-        mutations.push({
-          op: 'remove_element',
-          room_id: typeof mut.room_id === 'string' ? mut.room_id : undefined,
-          catalog_sku: typeof mut.catalog_sku === 'string' ? mut.catalog_sku : undefined,
-          element_id: typeof mut.element_id === 'string' ? mut.element_id : undefined,
-        })
-      }
+  // Rooms edited but not processed in the loop: re-apply US-009 so the
+  // output DXF reflects the chat edits (idempotent replace per room).
+  let dxfSyncError: string | undefined
+  if (state.editedRoomIds.size > 0) {
+    try {
+      const result = await runRoomProcessingPipeline(
+        params.jobId,
+        [...state.editedRoomIds],
+        `${params.correlationId}-sync`,
+        undefined,
+        { viaChat: true, skipUs008: true },
+      )
+      state.lastJobStatus = result.job_status
+    } catch (e) {
+      dxfSyncError = e instanceof Error ? e.message : String(e)
     }
   }
 
-  const processRoomIds = Array.isArray(raw.process_room_ids)
-    ? raw.process_room_ids.filter((id): id is string => typeof id === 'string')
-    : []
+  const intent: ChatIntent =
+    state.processedResults.length > 0
+      ? 'action'
+      : state.mutationsApplied.length > 0
+        ? 'edit'
+        : 'query'
 
-  return { intent, reply, mutations, processRoomIds }
+  const processResult: RoomProcessingPipelineResult | undefined =
+    state.processedResults.length > 0
+      ? {
+          job_id: params.jobId,
+          job_status: state.lastJobStatus,
+          rooms: state.processedResults,
+          normative_rules_blocked: false,
+        }
+      : undefined
+
+  return {
+    reply: dxfSyncError
+      ? `${reply}\n\nAviso: el cambio quedó en el plano editable, pero no se pudo actualizar el DXF de salida: ${dxfSyncError}`
+      : reply,
+    intent,
+    mutationsApplied: state.mutationsApplied,
+    processResult,
+  }
 }
 
 function safeRulesVersion(): string | null {
@@ -840,10 +1089,12 @@ export async function handleWorkspaceChatMessage(
     message_length: input.message.length,
   })
 
-  let parsed: ParsedChatCommand
+  // Live mode: agentic tool loop — the LLM executes tools (inspect, edit,
+  // process) directly and its final text is the reply. Falls back to the
+  // deterministic stub parser on LLM failure.
   if (useLive) {
     try {
-      parsed = await parseChatCommandLive({
+      const live = await runChatToolLoop({
         jobId: input.jobId,
         correlationId: input.correlationId,
         message: input.message,
@@ -855,6 +1106,27 @@ export async function handleWorkspaceChatMessage(
         recentHistory,
         imageDataUrl: input.viewportImage,
       })
+      const assistantMessage = await appendChatMessage({
+        jobId: input.jobId,
+        userId: null,
+        role: 'assistant',
+        content: live.reply,
+        intent: live.intent,
+        actionsTaken:
+          live.mutationsApplied.length > 0 || live.processResult
+            ? {
+                mutations: live.mutationsApplied,
+                processed_rooms: live.processResult?.rooms ?? [],
+              }
+            : undefined,
+      })
+      return {
+        reply: live.reply,
+        intent: live.intent,
+        mutations_applied: live.mutationsApplied,
+        process_result: live.processResult,
+        messages: [userMessage, assistantMessage],
+      }
     } catch (e) {
       logStructured('warn', {
         event: 'workspace_chat_llm_error',
@@ -862,11 +1134,11 @@ export async function handleWorkspaceChatMessage(
         correlation_id: input.correlationId,
         error: e instanceof Error ? e.message : String(e),
       })
-      parsed = parseChatCommandStub(input.message, rooms, catalog, workspace, recentHistory)
+      // fall through to stub parsing below
     }
-  } else {
-    parsed = parseChatCommandStub(input.message, rooms, catalog, workspace, recentHistory)
   }
+
+  const parsed = parseChatCommandStub(input.message, rooms, catalog, workspace, recentHistory)
 
   let mutationsApplied: AppliedMutation[] = []
   let processResult: RoomProcessingPipelineResult | undefined
@@ -911,7 +1183,11 @@ export async function handleWorkspaceChatMessage(
           validIds,
           input.correlationId,
           undefined,
-          { viaChat: true },
+          {
+            viaChat: true,
+            processingInstruction: input.message.trim() || undefined,
+            viewportImageDataUrl: input.viewportImage ?? undefined,
+          },
         )
         const ok = processResult.rooms.filter((r) => r.status === 'procesada').length
         const failed = processResult.rooms.filter((r) => r.status === 'error').length

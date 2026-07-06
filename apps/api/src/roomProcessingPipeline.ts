@@ -91,6 +91,10 @@ export type RoomProcessingOptions = {
    * already written by mutations (do not re-run US-008 for that room).
    */
   skipUs008?: boolean
+  /** Architect-edited US-008 directive (sidebar or chat). */
+  processingInstruction?: string
+  /** Client viewport PNG data URL sent with US-008. */
+  viewportImageDataUrl?: string
 }
 
 function sleep(ms: number): Promise<void> {
@@ -124,6 +128,8 @@ async function runUs008ForRoom(params: {
   visionLayout: Record<string, unknown>
   geometryExtract?: Record<string, unknown>
   inputDxfPath?: string
+  processingInstruction?: string
+  viewportImageDataUrl?: string
 }): Promise<{ outletPlacements: unknown[]; rulesVersion: string }> {
   const pipelineMode = getPipelineMode()
   const rulesVersion = resolveActiveNormativeRulesVersion()
@@ -184,6 +190,8 @@ async function runUs008ForRoom(params: {
                   roomId: params.roomId,
                 }
               : undefined,
+            architectInstruction: params.processingInstruction,
+            viewportImageDataUrl: params.viewportImageDataUrl,
           },
         )) as Record<string, unknown>
       } else {
@@ -368,6 +376,8 @@ export async function runRoomProcessingPipeline(
             visionLayout,
             geometryExtract,
             inputDxfPath,
+            processingInstruction: options?.processingInstruction,
+            viewportImageDataUrl: options?.viewportImageDataUrl,
           })
 
       const mergedPlacements = options?.skipUs008

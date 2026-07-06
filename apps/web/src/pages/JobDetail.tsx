@@ -12,10 +12,14 @@ import {
 import ActivityLogPanel, {
   type RoomProcessingRun,
 } from '../components/ActivityLogPanel'
-import WorkspaceChatPanel from '../components/WorkspaceChatPanel'
+import RoomListSidebar from '../components/RoomListSidebar'
+import RoomProcessingInstructionModal from '../components/RoomProcessingInstructionModal'
+import FloatingWorkspaceChat from '../components/FloatingWorkspaceChat'
 import { useAuth } from '../context/AuthContext'
 import {
   canDownloadProcessedDxf,
+  canStartPreliminaryAnalysis,
+  canReprocessPreliminaryAnalysis,
   fileRowStatus,
   formatJobCreatedAt,
   hasRegisteredDxfInput,
@@ -59,6 +63,7 @@ type WorkspaceSummary = {
   normative_rules_enabled: boolean
   rooms: Room[]
   preliminary_recommendations: PreliminaryRecommendation[]
+  preliminary_analysis_warnings?: string[]
   room_processing_state: RoomProcessingState
   room_processing_runs?: RoomProcessingRun[]
   normative_rules_version: string | null
@@ -79,7 +84,7 @@ export default function JobDetail({ jobId, onNavigate }: JobDetailProps) {
   const [error, setError] = useState<string | null>(null)
   const [loading, setLoading] = useState(true)
   const [hasInput, setHasInput] = useState(false)
-  const [processing, setProcessing] = useState(false)
+  const [startingAnalysis, setStartingAnalysis] = useState(false)
   const [downloading, setDownloading] = useState(false)
   const [uploadLabel, setUploadLabel] = useState<string | null>(null)
   const [workspace, setWorkspace] = useState<WorkspaceSummary | null>(null)
@@ -88,6 +93,10 @@ export default function JobDetail({ jobId, onNavigate }: JobDetailProps) {
   const [renderError, setRenderError] = useState<string | null>(null)
   const [selectedRoomId, setSelectedRoomId] = useState<string | null>(null)
   const [dxfReloadToken, setDxfReloadToken] = useState(0)
+  const [instructionModalRoomId, setInstructionModalRoomId] = useState<string | null>(null)
+  const [processingRoomId, setProcessingRoomId] = useState<string | null>(null)
+  const [omittingRoomId, setOmittingRoomId] = useState<string | null>(null)
+  const [roomProcessError, setRoomProcessError] = useState<string | null>(null)
   const captureViewRef = useRef<(() => string | null) | null>(null)
 
   const handleCaptureReady = useCallback((capture: (() => string | null) | null) => {
@@ -167,16 +176,31 @@ export default function JobDetail({ jobId, onNavigate }: JobDetailProps) {
       return
     }
     if (role === 'architect' && found.owner_user_id === session.user.id) {
+      let inputRegistered = false
       try {
         const fr = await fetch(`${apiBase}/api/jobs/${encodeURIComponent(jobId)}/files`, {
           headers: { Authorization: `Bearer ${session.access_token}` },
         })
         if (fr.ok) {
           const fb = (await fr.json()) as { files?: { kind: string }[] }
-          setHasInput(hasRegisteredDxfInput(fb.files ?? []))
+          inputRegistered = hasRegisteredDxfInput(fb.files ?? [])
+          setHasInput(inputRegistered)
         }
       } catch {
         if (!silent) setHasInput(false)
+      }
+
+      const renderableStatuses = [
+        'listo_para_editar',
+        'parcialmente_procesado',
+        'procesado',
+        'analizando',
+      ]
+      const needsWorkspace =
+        (found.status === 'pendiente' && inputRegistered) ||
+        renderableStatuses.includes(found.status ?? '')
+      if (found && needsWorkspace) {
+        await loadWorkspace(session)
       }
     }
     const renderableStatuses = [
@@ -197,6 +221,79 @@ export default function JobDetail({ jobId, onNavigate }: JobDetailProps) {
     setDxfReloadToken((t) => t + 1)
     void load({ silent: true })
   }, [load])
+
+  const processRoomWithInstruction = useCallback(
+    async (roomId: string, instruction: string) => {
+      if (!session) return
+      setRoomProcessError(null)
+      setProcessingRoomId(roomId)
+      setInstructionModalRoomId(null)
+      const viewportImage = captureViewRef.current?.() ?? null
+      try {
+        const res = await fetch(
+          `${apiBase}/api/jobs/${encodeURIComponent(jobId)}/workspace/process-rooms?sync=1`,
+          {
+            method: 'POST',
+            headers: {
+              Authorization: `Bearer ${session.access_token}`,
+              'Content-Type': 'application/json',
+              'X-Correlation-Id': crypto.randomUUID(),
+            },
+            body: JSON.stringify({
+              room_ids: [roomId],
+              idempotency_key: crypto.randomUUID(),
+              processing_instruction: instruction,
+              ...(viewportImage ? { viewport_image: viewportImage } : {}),
+            }),
+          },
+        )
+        const body = (await res.json().catch(() => ({}))) as { error?: string }
+        if (!res.ok) {
+          setRoomProcessError(body.error ?? `Error HTTP ${res.status}`)
+          return
+        }
+        refreshWorkspace()
+      } catch {
+        setRoomProcessError('Error de red al procesar la habitación.')
+      } finally {
+        setProcessingRoomId(null)
+      }
+    },
+    [jobId, session, refreshWorkspace],
+  )
+
+  const omitRoom = useCallback(
+    async (roomId: string) => {
+      if (!session) return
+      setRoomProcessError(null)
+      setOmittingRoomId(roomId)
+      try {
+        const res = await fetch(
+          `${apiBase}/api/jobs/${encodeURIComponent(jobId)}/workspace/omit-rooms`,
+          {
+            method: 'POST',
+            headers: {
+              Authorization: `Bearer ${session.access_token}`,
+              'Content-Type': 'application/json',
+              'X-Correlation-Id': crypto.randomUUID(),
+            },
+            body: JSON.stringify({ room_ids: [roomId] }),
+          },
+        )
+        if (!res.ok) {
+          const body = (await res.json().catch(() => ({}))) as { error?: string }
+          setRoomProcessError(body.error ?? `Error HTTP ${res.status}`)
+          return
+        }
+        refreshWorkspace()
+      } catch {
+        setRoomProcessError('Error de red al omitir la habitación.')
+      } finally {
+        setOmittingRoomId(null)
+      }
+    },
+    [jobId, session, refreshWorkspace],
+  )
 
   const fetchJobStatus = useCallback(async (): Promise<string | null> => {
     if (!session) return null
@@ -290,12 +387,12 @@ export default function JobDetail({ jobId, onNavigate }: JobDetailProps) {
     }
   }
 
-  async function processJob() {
+  async function startPreliminaryAnalysis() {
     if (!session || !job) return
-    setProcessing(true)
+    setStartingAnalysis(true)
     setError(null)
     const res = await fetch(
-      `${apiBase}/api/jobs/${encodeURIComponent(job.id)}/process?sync=1`,
+      `${apiBase}/api/jobs/${encodeURIComponent(job.id)}/workspace/start-analysis`,
       {
         method: 'POST',
         headers: {
@@ -305,7 +402,7 @@ export default function JobDetail({ jobId, onNavigate }: JobDetailProps) {
       },
     )
     const body = (await res.json().catch(() => ({}))) as { error?: string }
-    setProcessing(false)
+    setStartingAnalysis(false)
     if (!res.ok) {
       setError(body.error ?? `HTTP ${res.status}`)
       return
@@ -504,6 +601,29 @@ export default function JobDetail({ jobId, onNavigate }: JobDetailProps) {
             </p>
           ) : null}
 
+          {canEdit && canStartPreliminaryAnalysis(job.status, hasInput) ? (
+            <PreAnalysisSetup
+              normativeRulesEnabled={workspace?.normative_rules_enabled ?? true}
+              togglingRules={togglingRules}
+              startingAnalysis={startingAnalysis}
+              onToggleRules={(v) => void toggleNormativeRules(v)}
+              onStartAnalysis={() => void startPreliminaryAnalysis()}
+            />
+          ) : null}
+
+          {canEdit &&
+          canReprocessPreliminaryAnalysis(
+            job.status,
+            workspace?.rooms.length,
+            workspace?.preliminary_analysis_warnings,
+          ) &&
+          !canStartPreliminaryAnalysis(job.status, hasInput) ? (
+            <NoRoomsDetectedBanner
+              startingAnalysis={startingAnalysis}
+              onReprocess={() => void startPreliminaryAnalysis()}
+            />
+          ) : null}
+
           {isAnalyzing(job.status) ? (
             <div className="mb-6 flex items-center gap-3 rounded-xl border border-outline-variant bg-surface-container-low px-6 py-4">
               <div className="h-5 w-5 animate-spin rounded-full border-2 border-primary border-t-transparent" />
@@ -513,28 +633,43 @@ export default function JobDetail({ jobId, onNavigate }: JobDetailProps) {
             </div>
           ) : null}
 
-          {renderError ? (
-            <div className="mb-6 rounded-xl border border-outline-variant bg-surface-container-low px-6 py-4">
-              <h3 className="mb-2 flex items-center gap-2 font-bold text-on-surface">
-                <Icon name="map" className="text-[20px] text-primary" />
-                Vista 2D del plano
-              </h3>
-              <p className="text-body-sm text-on-surface-variant">{renderError}</p>
-            </div>
-          ) : null}
-
-          {renderData && session ? (
-            <div className="mb-6">
+          {session && isReadyForWorkspace(job.status) ? (
+            <div className="relative mb-24">
               <h3 className="mb-3 flex items-center gap-2 font-bold text-on-surface">
                 <Icon name="map" className="text-[20px] text-primary" />
-                Vista 2D del plano
+                Workspace
               </h3>
               <p className="mb-3 text-body-sm text-on-surface-variant">
-                Plano DXF original con control de capas. La capa eléctrica (
+                Seleccioná una habitación para enfocar el plano. La capa eléctrica (
                 <span className="font-mono text-xs">Cambre_Electrical</span>) se modifica desde el
-                chat o al procesar habitaciones con el motor de reglas.
+                chat o al procesar habitaciones.
               </p>
-              <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_340px]">
+              {renderError ? (
+                <p className="mb-3 rounded-lg bg-surface-container-low px-3 py-2 text-body-sm text-on-surface-variant">
+                  {renderError}
+                </p>
+              ) : null}
+              <div
+                className={`grid gap-4 ${(workspace?.rooms.length ?? 0) > 0 ? 'lg:grid-cols-[220px_minmax(0,1fr)]' : ''}`}
+              >
+                {(workspace?.rooms.length ?? 0) > 0 ? (
+                  <RoomListSidebar
+                    rooms={workspace?.rooms ?? []}
+                    roomProcessingState={workspace?.room_processing_state ?? {}}
+                    selectedRoomId={selectedRoomId}
+                    onSelectRoom={(id) => setSelectedRoomId((prev) => (prev === id ? null : id))}
+                    completedAt={workspace?.preliminary_analysis_completed_at}
+                    normativeRulesEnabled={workspace?.normative_rules_enabled ?? true}
+                    processingRoomId={processingRoomId}
+                    omittingRoomId={omittingRoomId}
+                    onProcessRoom={
+                      canEdit && (workspace?.normative_rules_enabled ?? true)
+                        ? (id) => setInstructionModalRoomId(id)
+                        : undefined
+                    }
+                    onOmitRoom={canEdit ? omitRoom : undefined}
+                  />
+                ) : null}
                 <DxfWorkspaceViewer
                   jobId={jobId}
                   apiBase={apiBase}
@@ -546,34 +681,48 @@ export default function JobDetail({ jobId, onNavigate }: JobDetailProps) {
                   onCaptureReady={handleCaptureReady}
                   reloadToken={dxfReloadToken}
                 />
-                <WorkspaceChatPanel
-                  jobId={jobId}
-                  apiBase={apiBase}
-                  accessToken={session.access_token}
-                  captureView={() => captureViewRef.current?.() ?? null}
-                  canSend={canEdit && isReadyForWorkspace(job.status)}
-                  onWorkspaceMutated={refreshWorkspace}
-                />
               </div>
+              <FloatingWorkspaceChat
+                jobId={jobId}
+                apiBase={apiBase}
+                accessToken={session.access_token}
+                captureView={() => captureViewRef.current?.() ?? null}
+                canSend={canEdit && isReadyForWorkspace(job.status)}
+                onWorkspaceMutated={refreshWorkspace}
+              />
+              {roomProcessError ? (
+                <p className="mt-3 rounded-lg border border-error-container bg-error-container/30 px-4 py-2 text-body-sm text-on-error-container">
+                  {roomProcessError}
+                </p>
+              ) : null}
+              {instructionModalRoomId && session ? (
+                <RoomProcessingInstructionModal
+                  open
+                  jobId={jobId}
+                  roomId={instructionModalRoomId}
+                  roomLabel={
+                    workspace?.rooms.find((r) => r.id === instructionModalRoomId)?.label ??
+                    instructionModalRoomId
+                  }
+                  isReprocess={
+                    (workspace?.room_processing_state?.[instructionModalRoomId] ?? 'pendiente') ===
+                      'procesada' ||
+                    workspace?.room_processing_state?.[instructionModalRoomId] === 'error'
+                  }
+                  accessToken={session.access_token}
+                  onClose={() => setInstructionModalRoomId(null)}
+                  onConfirm={(instruction) =>
+                    void processRoomWithInstruction(instructionModalRoomId, instruction)
+                  }
+                />
+              ) : null}
             </div>
-          ) : null}
-
-          {(isReadyForWorkspace(job.status) || (isAnalyzing(job.status) && workspace)) &&
-          workspace ? (
-            <WorkspacePanel
-              workspace={workspace}
-              jobStatus={job.status}
-              canEdit={canEdit && job.status === 'pendiente'}
-              togglingRules={togglingRules}
-              onToggleRules={(v) => void toggleNormativeRules(v)}
-              selectedRoomId={selectedRoomId}
-              onSelectRoom={(id) => setSelectedRoomId((prev) => (prev === id ? null : id))}
-            />
           ) : null}
 
           {canEdit &&
           isRoomProcessingAvailable(job.status) &&
           workspace &&
+          workspace.rooms.length > 0 &&
           session ? (
             <RoomProcessingPanel
               jobId={job.id}
@@ -613,23 +762,10 @@ export default function JobDetail({ jobId, onNavigate }: JobDetailProps) {
                 />
               </div>
 
-              {canEdit && hasInput ? (
-                <div className="mb-4 flex justify-end">
-                  <button
-                    type="button"
-                    className="btn-secondary-outline text-xs"
-                    disabled={processing}
-                    onClick={() => void processJob()}
-                  >
-                    {processing ? 'Procesando…' : 'Ejecutar procesamiento completo'}
-                  </button>
-                </div>
-              ) : null}
-
               {job.error ? (
                 <div className="rounded-lg border border-error/30 bg-error-container/40 p-4">
                   <p className="text-body-sm font-semibold text-on-error-container">
-                    El procesamiento falló
+                    El análisis falló
                   </p>
                   <p className="text-body-sm mt-1 text-on-error-container">
                     {job.error.message || job.error.code} — ID soporte: {job.error.correlation_id}
@@ -638,10 +774,10 @@ export default function JobDetail({ jobId, onNavigate }: JobDetailProps) {
                     <button
                       type="button"
                       className="btn-primary mt-4"
-                      disabled={processing}
-                      onClick={() => void processJob()}
+                      disabled={startingAnalysis}
+                      onClick={() => void startPreliminaryAnalysis()}
                     >
-                      {processing ? 'Reintentando…' : 'Reprocesar análisis'}
+                      {startingAnalysis ? 'Reintentando…' : 'Reintentar análisis'}
                     </button>
                   ) : null}
                 </div>
@@ -654,149 +790,84 @@ export default function JobDetail({ jobId, onNavigate }: JobDetailProps) {
   )
 }
 
-function WorkspacePanel({
-  workspace,
-  jobStatus,
-  canEdit,
-  togglingRules,
-  onToggleRules,
-  selectedRoomId,
-  onSelectRoom,
+function NoRoomsDetectedBanner({
+  startingAnalysis,
+  onReprocess,
 }: {
-  workspace: WorkspaceSummary
-  jobStatus?: string
-  canEdit: boolean
-  togglingRules: boolean
-  onToggleRules: (enabled: boolean) => void
-  selectedRoomId?: string | null
-  onSelectRoom?: (id: string) => void
+  startingAnalysis: boolean
+  onReprocess: () => void
 }) {
-  const isReady = isReadyForWorkspace(jobStatus)
-  const roomCount = workspace.rooms.length
-  const recsMap = new Map<string, PreliminaryRecommendation>()
-  for (const rec of workspace.preliminary_recommendations) {
-    recsMap.set(rec.room_id, rec)
-  }
+  return (
+    <div className="mb-6 rounded-xl border border-secondary-container bg-secondary-container/30 px-6 py-4">
+      <h3 className="mb-1 flex items-center gap-2 font-bold text-on-surface">
+        <Icon name="warning" className="text-[20px] text-secondary" />
+        No se detectaron habitaciones
+      </h3>
+      <p className="text-body-sm mb-4 text-on-surface-variant">
+        El análisis terminó sin identificar ambientes en el plano. Podés reprocesar el análisis o
+        trabajar manualmente con el chat y el visor.
+      </p>
+      <button
+        type="button"
+        className="btn-secondary-outline"
+        disabled={startingAnalysis}
+        onClick={onReprocess}
+      >
+        {startingAnalysis ? 'Reprocesando…' : 'Reprocesar análisis'}
+      </button>
+    </div>
+  )
+}
 
+function PreAnalysisSetup({
+  normativeRulesEnabled,
+  togglingRules,
+  startingAnalysis,
+  onToggleRules,
+  onStartAnalysis,
+}: {
+  normativeRulesEnabled: boolean
+  togglingRules: boolean
+  startingAnalysis: boolean
+  onToggleRules: (enabled: boolean) => void
+  onStartAnalysis: () => void
+}) {
   return (
     <div className="mb-6 overflow-hidden rounded-xl border border-outline-variant bg-surface-container-lowest shadow-sm">
       <div className="flex flex-wrap items-center justify-between gap-3 border-b border-outline-variant bg-surface-container-low/30 px-4 py-3">
         <h3 className="flex items-center gap-2 font-bold text-on-surface">
-          <Icon name="home_work" className="text-[20px] text-primary" />
-          Análisis preliminar del plano
-          {!isReady ? (
-            <span className="ml-2 text-technical-label font-normal text-on-surface-variant uppercase">
-              — en proceso
-            </span>
-          ) : null}
+          <Icon name="upload_file" className="text-[20px] text-primary" />
+          Listo para analizar
         </h3>
-        <div className="flex items-center gap-3">
-          {workspace.normative_rules_version ? (
-            <span className="text-technical-label text-outline">
-              v{workspace.normative_rules_version}
-            </span>
-          ) : null}
-          <label className="flex cursor-pointer items-center gap-2 select-none">
-            <span className="text-body-sm text-on-surface-variant">Reglas normativas</span>
-            <button
-              type="button"
-              role="switch"
-              aria-checked={workspace.normative_rules_enabled}
-              disabled={!canEdit || togglingRules}
-              onClick={() => onToggleRules(!workspace.normative_rules_enabled)}
-              className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors focus:outline-none disabled:opacity-50 ${workspace.normative_rules_enabled ? 'bg-primary' : 'bg-surface-container-high'}`}
-            >
-              <span
-                className={`inline-block h-4 w-4 transform rounded-full bg-white shadow transition-transform ${workspace.normative_rules_enabled ? 'translate-x-6' : 'translate-x-1'}`}
-              />
-            </button>
-          </label>
-        </div>
+        <label className="flex cursor-pointer items-center gap-2 select-none">
+          <span className="text-body-sm text-on-surface-variant">Reglas normativas</span>
+          <button
+            type="button"
+            role="switch"
+            aria-checked={normativeRulesEnabled}
+            disabled={togglingRules || startingAnalysis}
+            onClick={() => onToggleRules(!normativeRulesEnabled)}
+            className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors focus:outline-none disabled:opacity-50 ${normativeRulesEnabled ? 'bg-primary' : 'bg-surface-container-high'}`}
+          >
+            <span
+              className={`inline-block h-4 w-4 transform rounded-full bg-white shadow transition-transform ${normativeRulesEnabled ? 'translate-x-6' : 'translate-x-1'}`}
+            />
+          </button>
+        </label>
       </div>
-
-      <div className="px-4 py-3">
-        <p className="text-body-sm mb-3 text-on-surface-variant">
-          {roomCount === 0
-            ? 'No se detectaron habitaciones en el plano.'
-            : `${roomCount} habitación${roomCount !== 1 ? 'es' : ''} detectada${roomCount !== 1 ? 's' : ''}.`}
+      <div className="flex flex-wrap items-center justify-between gap-4 px-4 py-4">
+        <p className="text-body-sm max-w-xl text-on-surface-variant">
+          El plano DXF está registrado. Configurá las reglas normativas y pulsá iniciar análisis
+          cuando quieras detectar habitaciones y preparar el workspace.
         </p>
-
-        {roomCount > 0 ? (
-          <div className="grid gap-2 sm:grid-cols-2 xl:grid-cols-4">
-              {workspace.rooms.map((room, i) => {
-              const roomId = room.id ?? `room-${i}`
-              const rec = recsMap.get(roomId)
-              const isSelected = selectedRoomId === roomId
-              const showRecs = isSelected && rec
-              return (
-                <div
-                  key={roomId}
-                  className={`rounded-lg border p-2.5 transition-colors ${isSelected ? 'border-primary bg-primary-fixed/30' : 'border-outline-variant bg-surface-container-low'} ${onSelectRoom ? 'cursor-pointer' : ''}`}
-                  onClick={() => onSelectRoom?.(roomId)}
-                  role={onSelectRoom ? 'button' : undefined}
-                  tabIndex={onSelectRoom ? 0 : undefined}
-                  onKeyDown={(e) => {
-                    if (onSelectRoom && (e.key === 'Enter' || e.key === ' ')) {
-                      e.preventDefault()
-                      onSelectRoom(roomId)
-                    }
-                  }}
-                >
-                  <div className="mb-1 flex items-start justify-between gap-2">
-                    <div className="min-w-0">
-                      <p className="truncate text-sm font-semibold text-on-surface">
-                        {room.label ?? roomId}
-                      </p>
-                      <p className="text-technical-label truncate text-outline uppercase">
-                        {room.room_type ?? '—'}
-                        {room.area_m2 ? ` · ${room.area_m2} m²` : ''}
-                      </p>
-                    </div>
-                    {rec && rec.outlet_count > 0 ? (
-                      <span className="flex-shrink-0 rounded-full bg-primary-fixed px-1.5 py-0.5 text-[10px] font-semibold text-primary uppercase">
-                        {rec.outlet_count} toma{rec.outlet_count !== 1 ? 's' : ''}
-                      </span>
-                    ) : null}
-                  </div>
-                  {showRecs ? (
-                    <ul className="space-y-0.5">
-                      {rec.recommendations.map((r, ri) => (
-                        <li key={ri} className="text-body-sm line-clamp-2 text-on-surface-variant" title={r}>
-                          {r}
-                        </li>
-                      ))}
-                    </ul>
-                  ) : rec && !isSelected ? (
-                    <p className="text-body-sm text-outline italic">
-                      {rec.recommendations[0] ?? 'Ver recomendaciones'}
-                    </p>
-                  ) : !workspace.normative_rules_enabled ? (
-                    <p className="text-body-sm text-outline italic">
-                      Reglas normativas desactivadas.
-                    </p>
-                  ) : (
-                    <p className="text-body-sm text-outline italic">
-                      Las recomendaciones aparecen al procesar cada habitación.
-                    </p>
-                  )}
-                </div>
-              )
-            })}
-          </div>
-        ) : null}
-
-        {workspace.preliminary_analysis_completed_at ? (
-          <p className="mt-4 text-technical-label text-outline">
-            Análisis completado:{' '}
-            {new Intl.DateTimeFormat('es', {
-              year: 'numeric',
-              month: '2-digit',
-              day: '2-digit',
-              hour: '2-digit',
-              minute: '2-digit',
-            }).format(new Date(workspace.preliminary_analysis_completed_at))}
-          </p>
-        ) : null}
+        <button
+          type="button"
+          className="btn-primary shrink-0"
+          disabled={startingAnalysis}
+          onClick={onStartAnalysis}
+        >
+          {startingAnalysis ? 'Iniciando…' : 'Iniciar análisis'}
+        </button>
       </div>
     </div>
   )

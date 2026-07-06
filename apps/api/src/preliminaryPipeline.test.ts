@@ -102,6 +102,17 @@ describe('runPreliminaryAnalysisPipeline (stub mode)', { concurrency: false }, (
       'cad_generation should not be set by preliminary pipeline',
     )
   })
+
+  it('completes listo_para_editar with NO_ROOMS_DETECTED when US-007 finds no rooms', async () => {
+    process.env.CAD_STUB_EMPTY_ROOMS = '1'
+    const job = await createJob('user-1', 'Empty Rooms')
+    const result = await runPreliminaryAnalysisPipeline(job.id, 'corr-empty')
+    assert.ok(result)
+    assert.equal(result!.status, 'listo_para_editar')
+    assert.deepEqual(result!.pipeline_metadata?.preliminary_analysis_warnings, ['NO_ROOMS_DETECTED'])
+    assert.deepEqual(result!.pipeline_metadata?.room_processing_state, {})
+    delete process.env.CAD_STUB_EMPTY_ROOMS
+  })
 })
 
 describe('enqueuePreliminaryAnalysis', { concurrency: false }, () => {

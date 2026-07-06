@@ -7,6 +7,7 @@ import ElectricalSvgOverlay from './ElectricalSvgOverlay'
 import { normalizeElectricalElements, normalizeRenderData } from './normalizeRenderData'
 import type { RenderData } from './PlanViewer2D'
 import RoomSvgOverlay from './RoomSvgOverlay'
+import { zoomViewerToRoom } from './roomViewerZoom'
 
 type Props = {
   jobId: string
@@ -173,6 +174,14 @@ export default function DxfWorkspaceViewer({
     setLayerVisibility(next)
     applyLayerVisibility(next)
   }, [cadLayerNames, applyLayerVisibility])
+
+  useEffect(() => {
+    if (!selectedRoomId || canvasSize.width <= 0 || canvasSize.height <= 0) return
+    const room = normalizedRooms.find((r) => r.id === selectedRoomId)
+    if (!room || room.polygon.vertices.length < 3) return
+    const viewer = viewerRef.current?.getViewer() ?? null
+    zoomViewerToRoom(viewer, room.polygon.vertices, canvasSize.width, canvasSize.height)
+  }, [selectedRoomId, normalizedRooms, canvasSize.width, canvasSize.height])
 
   if (loading) {
     return (

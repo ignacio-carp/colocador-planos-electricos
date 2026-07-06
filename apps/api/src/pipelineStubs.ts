@@ -55,22 +55,25 @@ export function buildStubVisionLayoutOutput(jobId: string, correlationId: string
     layout_interpretation: {
       coordinate_system: 'drawing_origin_bottom_left',
       scale: { pixels_per_meter: 125, known: true },
-      rooms: [
-        {
-          id: roomId,
-          label: 'StubRoom',
-          room_type: 'other',
-          polygon: {
-            vertices: [
-              { x: 0, y: 0, unit: 'drawing_units' },
-              { x: 5000, y: 0, unit: 'drawing_units' },
-              { x: 5000, y: 4000, unit: 'drawing_units' },
-              { x: 0, y: 4000, unit: 'drawing_units' },
+      rooms:
+        process.env.CAD_STUB_EMPTY_ROOMS === '1'
+          ? []
+          : [
+              {
+                id: roomId,
+                label: 'StubRoom',
+                room_type: 'other',
+                polygon: {
+                  vertices: [
+                    { x: 0, y: 0, unit: 'drawing_units' },
+                    { x: 5000, y: 0, unit: 'drawing_units' },
+                    { x: 5000, y: 4000, unit: 'drawing_units' },
+                    { x: 0, y: 4000, unit: 'drawing_units' },
+                  ],
+                },
+                area_m2: 20,
+              },
             ],
-          },
-          area_m2: 20,
-        },
-      ],
       walls: [
         {
           id: `wall-${slug}`,

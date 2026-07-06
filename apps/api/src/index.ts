@@ -38,6 +38,10 @@ import {
   runRoomProcessingPipeline,
 } from './roomProcessingPipeline'
 import {
+  buildDefaultRoomProcessingInstruction,
+  findRoomInVisionLayout,
+} from './roomProcessingInstruction'
+import {
   applyDxfQuotaHeaders,
   assertDxfUploadWithinQuota,
   checkJobCreationQuota,
@@ -45,7 +49,8 @@ import {
 } from './quota'
 import { cadWorkerConfigSummary, cadWorkerTransport, probeCadWorkerOnStartup } from './cadWorkerBridge'
 import { logStructured } from './logger'
-import { enqueueJobPipeline, enqueuePreliminaryAnalysis, enqueueRoomProcessing } from './jobQueue'
+import { enqueueJobPipeline, enqueueRoomProcessing } from './jobQueue'
+import { StartPreliminaryAnalysisError, startPreliminaryAnalysis } from './startPreliminaryAnalysis'
 import { drainPipelineQueueOnce, pipelineWorkerEnabled, startPipelineWorker } from './pipelineWorker'
 import { formatPrometheusMetrics, getMetricsSnapshot } from './metrics'
 import { correlationMiddleware } from './middleware/correlation'
@@ -468,12 +473,7 @@ app.post(
         size_bytes: Math.floor(sizeBytes),
       })
       applyDxfQuotaHeaders(res.setHeader.bind(res))
-      const correlationId = req.correlationId
-      const queued = await enqueuePreliminaryAnalysis(job.id, correlationId)
-      if (pipelineWorkerEnabled() && queued) {
-        void drainPipelineQueueOnce()
-      }
-      res.status(201).json({ file: row, pipelineQueued: Boolean(queued) })
+      res.status(201).json({ file: row, pipelineQueued: false })
     } catch (e) {
       const msg = e instanceof Error ? e.message : String(e)
       if (msg.includes('duplicate') || msg.includes('unique')) {
@@ -802,6 +802,7 @@ app.get(
       room_processing_state: meta.room_processing_state ?? {},
       room_processing_runs: meta.room_processing_runs ?? [],
       preliminary_analysis_completed_at: meta.preliminary_analysis_completed_at ?? null,
+      preliminary_analysis_warnings: meta.preliminary_analysis_warnings ?? [],
       normative_rules_version: meta.normative_rules_version ?? null,
       outlet_placements: meta.outlet_placements ?? [],
       layer_suggestions: layerSuggestions,
@@ -1146,6 +1147,92 @@ app.patch(
 )
 
 /**
+ * US-012 (rediseño): inicia análisis preliminar bajo demanda del arquitecto.
+ * Requiere DXF registrado y job en pendiente o error (reintento).
+ */
+app.post(
+  '/api/jobs/:jobId/workspace/start-analysis',
+  requireAuth,
+  requireStorage,
+  requireRole('architect'),
+  async (req, res) => {
+    const { user } = req as AuthedRequest
+    const jobId = typeof req.params.jobId === 'string' ? req.params.jobId : req.params.jobId?.[0]
+    if (!jobId) {
+      res.status(400).json({ error: 'Missing jobId' })
+      return
+    }
+    try {
+      const result = await startPreliminaryAnalysis({
+        jobId,
+        ownerUserId: user.id,
+        correlationId: req.correlationId,
+      })
+      res.status(202).json({
+        queued: result.queued,
+        jobId,
+        correlationId: req.correlationId,
+        queueId: result.queueId,
+      })
+    } catch (e) {
+      if (e instanceof StartPreliminaryAnalysisError) {
+        const status =
+          e.code === 'NOT_JOB_OWNER'
+            ? 403
+            : e.code === 'JOB_NOT_FOUND'
+              ? 404
+              : e.code === 'NO_INPUT_DXF' || e.code === 'WRONG_STATUS' || e.code === 'ANALYSIS_IN_PROGRESS'
+                ? 409
+                : 500
+        res.status(status).json({ error: e.message, code: e.code })
+        return
+      }
+      console.error(e)
+      res.status(500).json({ error: 'Could not start preliminary analysis' })
+    }
+  },
+)
+
+/**
+ * US-013: default architect instruction preview for a room (editable before process).
+ */
+app.get(
+  '/api/jobs/:jobId/workspace/rooms/:roomId/processing-instruction',
+  requireAuth,
+  requireRole('architect'),
+  async (req, res) => {
+    const { user } = req as AuthedRequest
+    const jobId = typeof req.params.jobId === 'string' ? req.params.jobId : req.params.jobId?.[0]
+    const roomId =
+      typeof req.params.roomId === 'string' ? req.params.roomId : req.params.roomId?.[0]
+    if (!jobId || !roomId) {
+      res.status(400).json({ error: 'Missing jobId or roomId' })
+      return
+    }
+    const job = await findJob(jobId)
+    if (!job) {
+      res.status(404).json({ error: 'Job not found' })
+      return
+    }
+    if (job.owner_user_id !== user.id) {
+      res.status(403).json({ error: 'Forbidden', code: 'NOT_JOB_OWNER' })
+      return
+    }
+    const meta = job.pipeline_metadata ?? {}
+    const visionLayout = meta.vision_layout as Record<string, unknown> | undefined
+    const room = findRoomInVisionLayout(visionLayout, roomId)
+    if (!room) {
+      res.status(404).json({ error: 'Room not found in vision_layout', room_id: roomId })
+      return
+    }
+    res.json({
+      room_id: roomId,
+      instruction: buildDefaultRoomProcessingInstruction(room),
+    })
+  },
+)
+
+/**
  * US-013: process selected rooms incrementally.
  * Allows job in listo_para_editar or parcialmente_procesado.
  * With normative_rules_enabled=false returns 422 (botonera blocked, use chat US-014).
@@ -1171,7 +1258,12 @@ app.post(
       return
     }
 
-    const body = req.body as { room_ids?: unknown; idempotency_key?: unknown }
+    const body = req.body as {
+      room_ids?: unknown
+      idempotency_key?: unknown
+      processing_instruction?: unknown
+      viewport_image?: unknown
+    }
     if (!Array.isArray(body.room_ids) || body.room_ids.length === 0) {
       res.status(400).json({ error: 'room_ids must be a non-empty array' })
       return
@@ -1179,6 +1271,36 @@ app.post(
     const roomIds = (body.room_ids as unknown[]).map(String).filter(Boolean)
     if (roomIds.length === 0) {
       res.status(400).json({ error: 'room_ids contains no valid ids' })
+      return
+    }
+    let processingInstruction: string | undefined
+    if (typeof body.processing_instruction === 'string' && body.processing_instruction.trim()) {
+      processingInstruction = body.processing_instruction.trim()
+      if (processingInstruction.length > 16_000) {
+        res.status(400).json({ error: 'processing_instruction too long (max 16000 chars)' })
+        return
+      }
+    }
+    let viewportImageDataUrl: string | undefined
+    if (typeof body.viewport_image === 'string' && body.viewport_image.length > 0) {
+      if (!body.viewport_image.startsWith('data:image/')) {
+        res.status(400).json({ error: 'viewport_image must be a data:image/* URL' })
+        return
+      }
+      if (body.viewport_image.length > 6 * 1024 * 1024) {
+        res.status(413).json({ error: 'viewport_image too large (max ~6MB)' })
+        return
+      }
+      viewportImageDataUrl = body.viewport_image
+    }
+    if (
+      (processingInstruction || viewportImageDataUrl) &&
+      roomIds.length > 1
+    ) {
+      res.status(400).json({
+        error:
+          'processing_instruction and viewport_image are only supported for a single room_id',
+      })
       return
     }
     const idempotencyKey =
@@ -1203,7 +1325,10 @@ app.post(
 
     if (sync) {
       try {
-        const result = await runRoomProcessingPipeline(jobId, roomIds, correlationId, idempotencyKey)
+        const result = await runRoomProcessingPipeline(jobId, roomIds, correlationId, idempotencyKey, {
+          processingInstruction,
+          viewportImageDataUrl,
+        })
         if (result.normative_rules_blocked) {
           res.status(422).json({
             error:

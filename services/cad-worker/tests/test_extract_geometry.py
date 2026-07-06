@@ -14,10 +14,11 @@ from cad_worker.extract_geometry import classify_layer, extract_geometry, geomet
 
 def _write_sample_dxf(path: Path) -> None:
     doc = ezdxf.new()
+    doc.layers.add("MUROS")
     msp = doc.modelspace()
-    msp.add_line((0, 0), (100, 0))
-    msp.add_lwpolyline([(100, 0), (100, 50), (0, 50)], close=True)
-    msp.add_text("SALA", dxfattribs={"insert": (10, 10)})
+    msp.add_line((0, 0), (100, 0), dxfattribs={"layer": "MUROS"})
+    msp.add_lwpolyline([(100, 0), (100, 50), (0, 50)], close=True, dxfattribs={"layer": "MUROS"})
+    msp.add_text("SALA", dxfattribs={"insert": (10, 10), "layer": "MUROS"})
     doc.saveas(path)
 
 
@@ -26,10 +27,8 @@ def test_extract_geometry_structure(tmp_path: Path) -> None:
     _write_sample_dxf(src)
     result = extract_geometry(src)
     assert len(result["paredes"]) >= 1
-    assert any(
-        isinstance(etiqueta, dict) and etiqueta.get("texto") == "SALA"
-        for etiqueta in result["etiquetas_texto"]
-    )
+    assert "etiquetas_texto" not in result
+    assert "aberturas" not in result
     bbox = geometry_bounding_box(result)
     assert bbox is not None
     assert bbox["max_x"] >= bbox["min_x"]
@@ -50,8 +49,8 @@ def _write_layered_dxf(path: Path) -> None:
 
 def test_classify_layer_tokens() -> None:
     assert classify_layer("A-WALL") == "pared"
-    assert classify_layer("Puertas_PB") == "abertura"
-    assert classify_layer("VENTANAS") == "abertura"
+    assert classify_layer("Puertas_PB") is None
+    assert classify_layer("VENTANAS") is None
     assert classify_layer("Mobiliario fijo") == "mueble"
     assert classify_layer("Cotas") is None
     assert classify_layer(None) is None
@@ -66,8 +65,7 @@ def test_extract_geometry_classifies_layers(tmp_path: Path) -> None:
     assert any(seg.get("capa") == "MUROS" for seg in paredes)
     assert all(seg.get("capa") != "PUERTAS" for seg in paredes)
 
-    aberturas = result["aberturas"]
-    assert any(seg.get("capa") == "PUERTAS" for seg in aberturas)
+    assert "aberturas" not in result
 
     muebles = result["muebles"]
     assert len(muebles) == 1
@@ -76,7 +74,7 @@ def test_extract_geometry_classifies_layers(tmp_path: Path) -> None:
 
     capas = result["capas_clasificadas"]
     assert capas["paredes"] == ["MUROS"]
-    assert capas["aberturas"] == ["PUERTAS"]
+    assert "aberturas" not in capas
     assert capas["muebles"] == ["MOBILIARIO"]
 
 
@@ -93,3 +91,4 @@ def test_extract_geometry_cli(tmp_path: Path) -> None:
     payload = json.loads(proc.stdout)
     assert payload["ok"] is True
     assert "paredes" in payload
+    assert "muebles" in payload

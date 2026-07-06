@@ -30,6 +30,7 @@ import { PIPELINE_CONTRACT_VERSION } from './pipelineContracts'
 import { buildStubVisionLayoutOutput } from './pipelineStubs'
 import { getSupabaseServiceRole, isStorageConfigured } from './supabaseService'
 import { buildPlanRenderMetadata, type PlanRenderMetadata } from './llmRenderContext'
+import { PRELIMINARY_WARNING_NO_ROOMS } from './preliminaryAnalysis'
 
 function cadWorkerFixturePath(): string | undefined {
   return (
@@ -88,6 +89,7 @@ async function runCadWorkerGeometryExtract(
     correlation_id: correlationId,
     source: cadWorkerFixturePath() ? 'fixture' : 'storage',
     wall_count: geometry.paredes?.length ?? 0,
+    furniture_count: geometry.muebles?.length ?? 0,
   })
   return geometry as Record<string, unknown>
 }
@@ -310,8 +312,15 @@ export async function runPreliminaryAnalysisPipeline(
     const visionLayout = visionResult.layout_interpretation as { rooms?: Room[] } | undefined
     const rooms: Room[] = visionLayout?.rooms ?? []
 
+    const preliminaryWarnings: string[] = []
     if (rooms.length === 0) {
-      throw new Error('US-007 returned no rooms — cannot proceed with preliminary analysis')
+      preliminaryWarnings.push(PRELIMINARY_WARNING_NO_ROOMS)
+      logStructured('warn', {
+        event: 'preliminary_no_rooms_detected',
+        job_id: jobId,
+        correlation_id: correlationId,
+        contract_version: PIPELINE_CONTRACT_VERSION,
+      })
     }
 
     const roomProcessingState: Record<string, RoomProcessingStatus> = {}
@@ -333,6 +342,7 @@ export async function runPreliminaryAnalysisPipeline(
         preliminary_recommendations: [],
         room_processing_state: roomProcessingState,
         preliminary_analysis_completed_at: completedAt,
+        preliminary_analysis_warnings: preliminaryWarnings,
         normative_rules_enabled: normativeRulesEnabled,
       },
     })

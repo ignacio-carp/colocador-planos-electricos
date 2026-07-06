@@ -1,6 +1,8 @@
 import { describe, expect, it } from 'vitest'
 import {
   canDownloadProcessedDxf,
+  canReprocessPreliminaryAnalysis,
+  canStartPreliminaryAnalysis,
   formatJobCreatedAt,
   hasRegisteredDxfInput,
   JOB_ANALYSIS_INITIAL_WAIT_MS,
@@ -27,6 +29,18 @@ describe('jobPresentation', () => {
   it('allows download when procesado', () => {
     expect(canDownloadProcessedDxf('procesado')).toBe(true)
     expect(canDownloadProcessedDxf('pending')).toBe(false)
+  })
+
+  it('allows start analysis when pendiente with input', () => {
+    expect(canStartPreliminaryAnalysis('pendiente', true)).toBe(true)
+    expect(canStartPreliminaryAnalysis('pendiente', false)).toBe(false)
+    expect(canStartPreliminaryAnalysis('error', true)).toBe(true)
+    expect(canStartPreliminaryAnalysis('listo_para_editar', true)).toBe(false)
+  })
+
+  it('allows reprocess when no rooms detected', () => {
+    expect(canReprocessPreliminaryAnalysis('listo_para_editar', 0, ['NO_ROOMS_DETECTED'])).toBe(true)
+    expect(canReprocessPreliminaryAnalysis('listo_para_editar', 2, [])).toBe(false)
   })
 
   it('waits 60s before first analysis check, then 30s between retries', () => {

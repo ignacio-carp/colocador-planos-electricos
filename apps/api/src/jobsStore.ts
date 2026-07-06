@@ -66,6 +66,7 @@ export type JobPipelineMetadata = {
   room_processing_runs?: RoomProcessingRun[]
   dxf_checkpoints?: DxfCheckpoint[]
   preliminary_analysis_completed_at?: string
+  preliminary_analysis_warnings?: string[]
 }
 
 export type JobRow = {

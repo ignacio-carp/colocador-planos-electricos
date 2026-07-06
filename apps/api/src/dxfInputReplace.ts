@@ -1,11 +1,9 @@
 /**
- * Replace the active input DXF for a job and restart preliminary analysis.
+ * Replace the active input DXF for a job. Resets workspace state; analysis is started explicitly (US-012).
  */
 
 import { insertFileRow } from './filesStore'
 import { DXF_INPUT_BUCKET } from './dxfStorage'
-import { enqueuePreliminaryAnalysis } from './jobQueue'
-import { drainPipelineQueueOnce, pipelineWorkerEnabled } from './pipelineWorker'
 import { assertJobStatusTransition, normalizeJobStatus } from './jobStatus'
 import { findJob, patchJob, type JobRow, type JobStatus } from './jobsStore'
 import { getSupabaseServiceRole } from './supabaseService'
@@ -78,7 +76,7 @@ export async function replaceDxfInput(params: {
   contentType: string | null
   sizeBytes: number
   correlationId: string
-}): Promise<{ fileId: string; pipelineQueued: boolean }> {
+}): Promise<{ fileId: string }> {
   if (params.ownerUserId) {
     const job = await findJob(params.jobId)
     if (!job) {
@@ -102,10 +100,5 @@ export async function replaceDxfInput(params: {
     size_bytes: Math.floor(params.sizeBytes),
   })
 
-  const queued = await enqueuePreliminaryAnalysis(params.jobId, params.correlationId)
-  if (pipelineWorkerEnabled() && queued) {
-    void drainPipelineQueueOnce()
-  }
-
-  return { fileId: row.id, pipelineQueued: Boolean(queued) }
+  return { fileId: row.id }
 }

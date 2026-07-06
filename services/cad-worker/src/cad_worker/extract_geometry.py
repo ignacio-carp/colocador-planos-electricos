@@ -1,4 +1,4 @@
-"""Extract walls and text labels from a DXF modelspace."""
+"""Extract walls and furniture from a DXF modelspace (other entities discarded)."""
 
 from __future__ import annotations
 
@@ -15,16 +15,6 @@ ELECTRICAL_LAYER_NAME = OUTPUT_ELECTRICAL_LAYER_NAME
 
 # Layer-name tokens used to classify entities for the electrical analysis.
 WALL_LAYER_TOKENS = ("wall", "pared", "muro", "a-wall", "partition", "tabique")
-OPENING_LAYER_TOKENS = (
-    "door",
-    "puerta",
-    "window",
-    "ventana",
-    "a-door",
-    "a-glaz",
-    "abertura",
-    "opening",
-)
 FURNITURE_LAYER_TOKENS = (
     "mobili",
     "furnitur",
@@ -36,12 +26,10 @@ FURNITURE_LAYER_TOKENS = (
 
 
 def classify_layer(name: str | None) -> str | None:
-    """Classify a DXF layer name as pared | abertura | mueble (None when unknown)."""
+    """Classify a DXF layer name as pared | mueble (None when unknown / discarded)."""
     if not name:
         return None
     lowered = name.strip().lower()
-    if any(token in lowered for token in OPENING_LAYER_TOKENS):
-        return "abertura"
     if any(token in lowered for token in FURNITURE_LAYER_TOKENS):
         return "mueble"
     if any(token in lowered for token in WALL_LAYER_TOKENS):
@@ -63,31 +51,23 @@ def extract_geometry(dxf_path: str | Path) -> dict[str, object]:
     doc = open_dxf_file(dxf_path)
     msp = doc.modelspace()
     paredes: list[dict[str, object]] = []
-    aberturas: list[dict[str, object]] = []
     muebles: list[dict[str, object]] = []
-    etiquetas_texto: list[dict[str, object]] = []
-    capas: dict[str, set[str]] = {"paredes": set(), "aberturas": set(), "muebles": set()}
+    capas: dict[str, set[str]] = {"paredes": set(), "muebles": set()}
 
     def _entity_layer(entity: Any) -> str | None:
         layer = getattr(entity.dxf, "layer", None)
         return str(layer) if layer else None
 
-    def _add_segments(entity: Any, segments: list[tuple[list[float], list[float]]]) -> None:
+    def _add_wall_segments(entity: Any, segments: list[tuple[list[float], list[float]]]) -> None:
         layer = _entity_layer(entity)
-        kind = classify_layer(layer)
-        if kind == "abertura":
-            target = aberturas
-            capas["aberturas"].add(layer or "")
-        else:
-            # Unknown layers stay in paredes (backwards-compatible default).
-            target = paredes
-            if kind == "pared" and layer:
-                capas["paredes"].add(layer)
+        if classify_layer(layer) != "pared":
+            return
+        capas["paredes"].add(layer or "")
         for start, end in segments:
             item: dict[str, object] = {"inicio": start, "fin": end}
             if layer:
                 item["capa"] = layer
-            target.append(item)
+            paredes.append(item)
 
     for entity in msp:
         dxftype = entity.dxftype()
@@ -95,7 +75,7 @@ def extract_geometry(dxf_path: str | Path) -> dict[str, object]:
             start = _point_xy(entity.dxf.start)
             end = _point_xy(entity.dxf.end)
             if start and end:
-                _add_segments(entity, [(start, end)])
+                _add_wall_segments(entity, [(start, end)])
         elif dxftype == "LWPOLYLINE":
             points = [_point_xy(p) for p in entity.get_points(format="xy")]
             valid = [p for p in points if p is not None]
@@ -105,33 +85,19 @@ def extract_geometry(dxf_path: str | Path) -> dict[str, object]:
             if entity.closed and len(valid) > 2:
                 segments.append((valid[-1], valid[0]))
             if segments:
-                _add_segments(entity, segments)
+                _add_wall_segments(entity, segments)
         elif dxftype == "INSERT":
             layer = _entity_layer(entity)
-            kind = classify_layer(layer)
+            if classify_layer(layer) != "mueble":
+                continue
             pos = _point_xy(entity.dxf.insert)
             block_name = str(getattr(entity.dxf, "name", "") or "")
-            if pos and kind == "mueble":
+            if pos:
                 capas["muebles"].add(layer or "")
                 muebles.append({"bloque": block_name, "posicion": pos, "capa": layer})
-            elif pos and kind == "abertura":
-                capas["aberturas"].add(layer or "")
-                aberturas.append({"bloque": block_name, "posicion": pos, "capa": layer})
-        elif dxftype == "TEXT":
-            pos = _point_xy(entity.dxf.insert)
-            text = (entity.dxf.text or "").strip()
-            if pos and text:
-                etiquetas_texto.append({"texto": text, "posicion": pos})
-        elif dxftype == "MTEXT":
-            pos = _point_xy(entity.dxf.insert)
-            text = (entity.plain_text() or "").strip()
-            if pos and text:
-                etiquetas_texto.append({"texto": text, "posicion": pos})
 
     return {
         "paredes": paredes,
-        "etiquetas_texto": etiquetas_texto,
-        "aberturas": aberturas,
         "muebles": muebles,
         "capas_clasificadas": {
             key: sorted(value for value in values if value) for key, values in capas.items()
@@ -150,23 +116,16 @@ def geometry_bounding_box(geometry: dict[str, object]) -> dict[str, float] | Non
             if isinstance(pt, (list, tuple)) and len(pt) >= 2:
                 xs.append(float(pt[0]))
                 ys.append(float(pt[1]))
-    for label in geometry.get("etiquetas_texto", []):
-        if not isinstance(label, dict):
+    for item in geometry.get("muebles", []):
+        if not isinstance(item, dict):
             continue
-        pos = label.get("posicion")
+        pos = item.get("posicion")
         if isinstance(pos, (list, tuple)) and len(pos) >= 2:
             xs.append(float(pos[0]))
             ys.append(float(pos[1]))
     if not xs or not ys:
         return None
     return {"min_x": min(xs), "max_x": max(xs), "min_y": min(ys), "max_y": max(ys)}
-
-
-def point_inside_bbox(x: float, y: float, bbox: dict[str, float], margin: float = 0.0) -> bool:
-    return (
-        bbox["min_x"] - margin <= x <= bbox["max_x"] + margin
-        and bbox["min_y"] - margin <= y <= bbox["max_y"] + margin
-    )
 
 
 def extract_geometry_cmd(input_path: str) -> int:

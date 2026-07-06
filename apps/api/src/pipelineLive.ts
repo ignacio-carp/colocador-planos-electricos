@@ -49,6 +49,10 @@ export type LiveNormativeRoomContext = {
     roomId: string
   }
   roomIds: string[]
+  /** Architect-edited directive (US-013 sidebar flow). */
+  architectInstruction?: string
+  /** Client viewport capture; preferred over cad-worker room render when set. */
+  viewportImageDataUrl?: string
 }
 
 function loadNormativeRulesForPrompt(): Record<string, unknown> {
@@ -178,6 +182,7 @@ export async function buildLiveNormativeInferenceOutput(
 Apply the normative rules bundle to the supplied layout_interpretation.
 Place outlets at wall-accessible coordinates inside each affected room.
 ${roomIds && roomIds.length === 1 ? 'Scope: infer placements ONLY for the single room in room_ids.' : ''}
+When architect_instruction is present in the user JSON, treat it as the primary placement directive while still respecting normative safety minimums from the rules bundle.
 
 ${MULTIMODAL_RULES}
 
@@ -201,10 +206,16 @@ ${normativeOutletPlacementsPromptSpec(rules)}`
       ...roomContext.roomRender.metadata,
     }
   }
+  if (roomContext?.architectInstruction?.trim()) {
+    userPayload.architect_instruction = roomContext.architectInstruction.trim()
+  }
 
-  const imageDataUrl = roomContext?.roomRender?.localPngPath
-    ? pngFileToDataUrl(roomContext.roomRender.localPngPath)
-    : undefined
+  const imageDataUrl =
+    roomContext?.viewportImageDataUrl?.startsWith('data:image/')
+      ? roomContext.viewportImageDataUrl
+      : roomContext?.roomRender?.localPngPath
+        ? pngFileToDataUrl(roomContext.roomRender.localPngPath)
+        : undefined
 
   const raw = await openaiChatJsonObject({
     model,

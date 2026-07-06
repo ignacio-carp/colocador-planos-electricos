@@ -173,6 +173,26 @@ export function isAnalyzing(status?: string): boolean {
   return (status ?? '').toLowerCase() === 'analizando'
 }
 
+/** Returns true when architect can explicitly start preliminary analysis (US-012). */
+export function canStartPreliminaryAnalysis(status?: string, hasInput?: boolean): boolean {
+  if (!hasInput) return false
+  const s = (status ?? '').toLowerCase()
+  return s === 'pendiente' || s === 'error'
+}
+
+/** Returns true when architect can re-run preliminary analysis (e.g. no rooms detected). */
+export function canReprocessPreliminaryAnalysis(
+  status?: string,
+  roomCount?: number,
+  warnings?: string[],
+): boolean {
+  const s = (status ?? '').toLowerCase()
+  if (s === 'pendiente' || s === 'error') return true
+  if (s !== 'listo_para_editar') return false
+  if ((roomCount ?? 0) === 0) return true
+  return (warnings ?? []).includes('NO_ROOMS_DETECTED')
+}
+
 /** Wait before the first background status check while IA analyzes the DXF. */
 export const JOB_ANALYSIS_INITIAL_WAIT_MS = 60_000
 
