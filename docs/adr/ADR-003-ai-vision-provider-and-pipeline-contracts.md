@@ -24,7 +24,7 @@ Opciones de visión evaluadas para layout/DWG (vía rasterización o vector temp
    - **Motivos:** encaje con la propuesta técnica del MVP, API de visión madura, salida JSON predecible para encadenar US-008, ecosistema Node ya previsto en el monorepo.
    - **Alternativa no descartada:** Claude 3.5 Sonnet como proveedor secundario o A/B de calidad; cambiar implica adaptador en capa IA sin romper schemas si se respeta `contract_version`.
 
-2. **Inferencia normativa (US-008):** mismo proveedor LLM (GPT-4o) con prompt versionado (`normative_rules_version` en payload); motor de reglas determinista puede sustituir parte del LLM más adelante sin cambiar el contrato de salida hacia US-009.
+2. **Inferencia normativa (US-008):** mismo proveedor LLM (GPT-4o) con bundle versionado (`normative_rules_version` en payload). Ruleset activo **`cambre-tomas-2026.07.1`**: solo tomacorrientes por habitación (tres secciones: estrategia, apliques/simbología, reglas por ambiente). El prompt de salida pide únicamente `outlet_placements[]`; un motor determinista puede sustituir parte del LLM sin cambiar el contrato hacia US-009. Ver [docs/normative-rules.md](../normative-rules.md).
 
 3. **Versionado de contrato:** semver en metadata de cada payload y en logs del pipeline:
    - Constante de código: `PIPELINE_CONTRACT_VERSION = '1.0.0'` (`apps/api/src/pipelineContracts.ts`).
@@ -85,3 +85,4 @@ Opciones de visión evaluadas para layout/DWG (vía rasterización o vector temp
 - US-007, US-008, US-009: `docs/user-stories/cambre-planos-mvp-historias.md`
 - ADR-002 (estilo): `docs/adr/ADR-002-transactional-email-provider.md`
 - Contratos: `docs/contracts/pipeline/README.md`
+- Reglas normativas: `docs/normative-rules.md`

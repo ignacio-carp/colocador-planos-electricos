@@ -9,9 +9,9 @@
 
 ## Resumen ejecutivo
 
-Plataforma web para que arquitectos invitados carguen planos `.dwg`, los procese un pipeline de IA con reglas normativas de Cambre, y obtengan el mismo archivo con una capa adicional (`Cambre_Electrical`) con la propuesta de tomas de luz, descargable sin alterar el diseño base del arquitecto.
+Plataforma web para que arquitectos invitados carguen planos `.dwg`, los procese un pipeline de IA con reglas normativas de Cambre, y obtengan el mismo archivo con una capa adicional (`Cambre_Electrical`) con la propuesta de **tomacorrientes** por habitación, descargable sin alterar el diseño base del arquitecto.
 
-**Objetivo de negocio:** reducir trabajo manual de interpretación y ubicación de tomas según normativa, acelerando entregables manteniendo el CAD original como fuente de verdad.
+**Objetivo de negocio:** reducir trabajo manual de interpretación y ubicación de tomacorrientes según normativa, acelerando entregables manteniendo el CAD original como fuente de verdad.
 
 ### Roles del dominio
 
@@ -517,50 +517,54 @@ Propuesta: conversión temporal a vectorial/imagen para análisis; modelo GPT-4o
 
 | Campo | Valor |
 |-------|--------|
-| Estado | borrador |
+| Estado | en progreso |
 | Prioridad | Alta (Sprint 3) |
 | Módulo / Área | Motor IA |
 | Epic | MVP Cambre — Integración IA |
 
 **Como** sistema  
-**quiero** aplicar un prompt preconfigurado con reglas de negocio de Cambre y normativa eléctrica  
+**quiero** aplicar un bundle versionado de reglas Cambre (tomacorrientes por habitación) vía LLM  
 **para** proponer ubicaciones de tomas coherentes con la política comercial/técnica acordada.
 
 #### Contexto
 
-Propuesta menciona explícitamente prompt preconfigurado con reglas Cambre + normativas eléctricas.
+Ruleset activo `cambre-tomas-2026.07.1`: tres secciones (`estrategia_procesamiento`, `apliques_y_simbologia`, `reglas_por_habitacion`). Sin iluminación, circuitos ni cómputo. Documentación: [`docs/normative-rules.md`](../normative-rules.md).
 
 #### Alcance
 
-- Incluye: versión versionada del prompt/reglas, trazabilidad de qué versión se usó en cada job (TBD).
-- No incluye: UI para que el arquitecto edite reglas (no en MVP).
+- Incluye: versión versionada del ruleset, trazabilidad `normative_rules_version` por job, salida `outlet_placements[]` hacia US-009.
+- Incluye (implementado): editor del ruleset del sistema en `/normative-rules` (arquitecto y administrador); persistencia en Postgres (`normative_rulesets`) con fallback a archivos en repo.
+- No incluye: edición de reglas por proyecto o por usuario (solo ruleset global del sistema).
 
 #### Flujo principal
 
-1. Entrada: salida estructurada de US-007 + contexto mínimo del job.
-2. Aplicación de plantilla de reglas + LLM o motor de reglas (TBD arquitectura exacta).
-3. Salida: coordenadas o instrucciones para US-009.
+1. Entrada: salida estructurada de US-007 (`layout_interpretation`) + bundle activo + contexto mínimo del job.
+2. Mapeo `room_type` → regla en `reglas_por_habitacion`; LLM devuelve `outlet_placements` con `rule_ids` y coordenadas en unidades del plano.
+3. Salida: `outlet_placements[]` consumida por US-009 (bloque `CAMBRE_OUTLET`, capa `Cambre_Electrical`).
 
 #### Variaciones y errores
 
-- Conflicto entre reglas: prioridad relativa **debe** documentarse con negocio (hueco).
+- Habitación sin tipo reconocido: aplica `RULE-GENERICO` y opcional warning en salida.
+- Conflicto entre reglas: prioridad por orden de match de `room_types` (documentar con negocio si hace falta).
 
 #### Datos y reglas
 
-- Reglas de negocio en texto gestionado (repo o DB); actualización sin redeploy preferible (TBD).
+- Fuente: `rules/cambre-normative/` + tabla `normative_rulesets` cuando Supabase está configurado.
+- Actualización sin redeploy: guardar desde `/normative-rules` o `PUT /api/normative-rules` (misma `version`).
 
 #### Integraciones
 
-- Mismo proveedor IA o componente dedicado (TBD).
+- OpenAI GPT-4o (stub o live en `pipelineLive.ts`); prompt en `normativePromptSpec.ts`.
 
 #### Requisitos no funcionales
 
-- Auditoría: registro de versión de normativa/prompt usada en el job.
+- Auditoría: `normative_rules_version` en `pipeline_metadata` y endpoint `GET /api/jobs/:jobId/normative-rules`.
 
 #### Criterios de aceptación (verificables)
 
 - Dado un juego de planos golden definido con Cambre, cuando se ejecuta inferencia, entonces las salidas cumplen criterios de validación humana acordados en Sprint 4 (QA propuesta).
 - Dado cambio de versión de reglas, cuando se procesa un job nuevo, entonces queda asociada la versión aplicada consultable por soporte.
+- Dado arquitecto autenticado, cuando abre `/normative-rules`, entonces ve las tres secciones del ruleset activo y puede guardar cambios válidos.
 
 #### Dependencias y supuestos
 
@@ -574,7 +578,7 @@ Propuesta menciona explícitamente prompt preconfigurado con reglas Cambre + nor
 
 ---
 
-## US-009 — Generar capa CAD con tomas de luz
+## US-009 — Generar capa CAD con tomacorrientes
 
 | Campo | Valor |
 |-------|--------|
@@ -593,7 +597,7 @@ Output: capa de arquitectura + capa `Cambre_Electrical` (nombre según propuesta
 
 #### Alcance
 
-- Incluye: merge no destructivo, entidades en layer dedicado, convención de símbolos/blocks (TBD con Cambre).
+- Incluye: merge no destructivo, entidades en layer dedicado, bloque `CAMBRE_OUTLET` (definido en `apliques_y_simbologia` del ruleset activo).
 - No incluye: cómputo de materiales (futuro).
 
 #### Flujo principal

@@ -95,6 +95,7 @@ Esquema principal en `supabase/migrations/`:
 | `jobs` | Trabajos del arquitecto (`job_status`: ver [docs/db/job_status.md](docs/db/job_status.md)) |
 | `files` | Metadatos DWG en Storage |
 | `job_pipeline_queue` | Cola async del pipeline (S-01) |
+| `normative_rulesets` | Ruleset activo US-008 (tomacorrientes); ver [docs/normative-rules.md](docs/normative-rules.md) |
 
 Enlaza el proyecto remoto y aplica migraciones pendientes:
 
@@ -172,6 +173,14 @@ En la API puedes fijar `CAD_WORKER_PYTHON` a la ruta del intérprete del venv (`
 | Subir DWG | Tras login como arquitecto → trabajos → subir `.dwg` |
 
 Con `PIPELINE_WORKER_ENABLED` activo (por defecto fuera de tests), al registrar el archivo el job pasa a `procesando` sin pulsar «Procesar». El botón «Procesar» usa `?sync=1` para esperar el resultado en la misma petición.
+
+### Reglas normativas (US-008)
+
+Alcance actual: **solo tomacorrientes por habitación** (versión `cambre-tomas-2026.07.1`), con tres secciones editables: estrategia de procesamiento, apliques y simbología, reglas por habitación.
+
+- Editor: `/normative-rules` (roles arquitecto y administrador).
+- Documentación: [docs/normative-rules.md](docs/normative-rules.md).
+- Fuente canónica en repo: `rules/cambre-normative/2026.07.1/rules.json`; en producción se persiste en `normative_rulesets` (Postgres).
 
 ### 9. Verificación local (equivalente a CI)
 

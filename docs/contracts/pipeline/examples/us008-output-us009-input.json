@@ -13,27 +13,27 @@
     "normative_result": {
       "story_id": "US-008",
       "contract_version": "1.0.0",
-      "normative_rules_version": "cambre-normative-2026.05.1",
+      "normative_rules_version": "cambre-tomas-2026.07.1",
       "outlet_placements": [
         {
           "id": "outlet-living-01",
           "room_id": "room-living-01",
           "position": { "x": 800, "y": 300, "unit": "drawing_units" },
-          "outlet_type": "double",
+          "outlet_type": "standard",
           "mounting": "wall",
           "height_mm": 300,
-          "rationale": "Toma general salón según regla CAMBRE-LIV-01",
-          "rule_ids": ["CAMBRE-LIV-01"]
+          "rationale": "Estar/comedor — mínimo 2 tomas según RULE-ESTAR",
+          "rule_ids": ["RULE-ESTAR"]
         },
         {
           "id": "outlet-kitchen-01",
           "room_id": "room-kitchen-01",
           "position": { "x": 6000, "y": 400, "unit": "drawing_units" },
-          "outlet_type": "dedicated_appliance",
+          "outlet_type": "standard",
           "mounting": "wall",
           "height_mm": 1100,
-          "rationale": "Encimera — distancia mínima fregadero",
-          "rule_ids": ["CAMBRE-KIT-03"]
+          "rationale": "Cocina — tomas sobre mesada según RULE-COCINA",
+          "rule_ids": ["RULE-COCINA"]
         }
       ]
     },

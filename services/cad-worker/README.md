@@ -7,7 +7,7 @@ La plataforma ya no acepta `.dwg`; el worker usa `ezdxf` directamente sobre DXF.
 
 - Inspeccionar archivos DXF y devolver un resumen estructurado.
 - Extraer geometría (paredes como segmentos, etiquetas de texto) para el pipeline de IA.
-- Aplicar la capa vectorial `Cambre_Electrical` (bloques `CAMBRE_OUTLET`) con placements normativos.
+- Aplicar la capa vectorial `Cambre_Electrical` (bloques `CAMBRE_OUTLET`) con placements normativos de US-008 (solo tomacorrientes).
 - Aislar dependencias CAD (`ezdxf`) en un servicio dedicado.
 
 ## Flujo de llamados (alto nivel)

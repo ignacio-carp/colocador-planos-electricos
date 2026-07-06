@@ -132,7 +132,7 @@
         }
       ]
     },
-    "normative_rules_version": "cambre-normative-2026.05.1",
+    "normative_rules_version": "cambre-tomas-2026.07.1",
     "job_context": {
       "project_type": "residential",
       "country_code": "ES"

@@ -33,6 +33,12 @@ flowchart LR
 
 **Regla de parseo:** el objeto `layout_interpretation` en la salida US-007 debe ser aceptado sin transformación obligatoria por `normative-inference-input.json` (mismo subschema). Ver fixture `examples/us007-output-us008-input.json`.
 
+## Reglas normativas (US-008)
+
+El payload de US-008 incluye `normative_rules_version` y el bundle completo se inyecta al LLM. La versión activa del sistema es **`cambre-tomas-2026.07.1`**: ruleset de **solo tomacorrientes** con tres secciones (`estrategia_procesamiento`, `apliques_y_simbologia`, `reglas_por_habitacion`). La salida sigue siendo `outlet_placements[]` hacia US-009; la capa CAD (`Cambre_Electrical`, bloque `CAMBRE_OUTLET`) se define en `apliques_y_simbologia`.
+
+Detalle de estructura, persistencia y editor: [docs/normative-rules.md](../../normative-rules.md).
+
 ## `contract_version`
 
 | Versión | Alcance | Notas |

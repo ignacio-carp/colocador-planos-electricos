@@ -6,6 +6,8 @@
 
 **Documento:** Alcance y Especificaciones del MVP
 
+> **Nota de implementación (2026-07):** el motor normativo activo se limita a **tomacorrientes por habitación** (ruleset `cambre-tomas-2026.07.1`). Iluminación, circuitos y cómputo quedan fuera del alcance actual. Detalle técnico: [`docs/normative-rules.md`](normative-rules.md).
+
 ## **1\. Introducción y Objetivo**
 
 El presente documento detalla la propuesta para el desarrollo de un Producto Mínimo Viable (MVP) diseñado para optimizar el flujo de trabajo de arquitectos mediante el uso de inteligencia artificial.
