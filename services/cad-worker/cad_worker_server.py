@@ -21,7 +21,7 @@ from cad_worker.electrical_layer import (
 from cad_worker.extract_geometry import extract_geometry
 from cad_worker.http_json import dumps_ascii_safe, encode_result_header
 from cad_worker.inspect_dxf import inspect_dxf_file
-from cad_worker.render_plan import render_plan, render_room
+from cad_worker.render_plan import render_plan
 
 if hasattr(sys.stdout, "reconfigure"):
     try:
@@ -160,60 +160,6 @@ async def render_plan_endpoint(
     except ezdxf.DXFStructureError as exc:
         _cleanup_paths(input_path, output_path)
         raise _http_error(400, INVALID_DXF_CODE, str(exc)) from exc
-    except Exception as exc:  # noqa: BLE001
-        _cleanup_paths(input_path, output_path)
-        raise _http_error(500, "CAD_WORKER_ERROR", str(exc)) from exc
-
-
-@app.post("/render-room")
-async def render_room_endpoint(
-    file: UploadFile = File(...),
-    polygon_json: str = Form(...),
-    margin_mm: float = Form(default=500.0),
-    width_px: int = Form(default=1024),
-) -> FileResponse:
-    input_suffix = Path(file.filename or "input.dxf").suffix or ".dxf"
-    with NamedTemporaryFile(delete=False, suffix=input_suffix) as input_tmp:
-        input_tmp.write(await file.read())
-        input_path = Path(input_tmp.name)
-
-    with NamedTemporaryFile(delete=False, suffix=".png") as output_tmp:
-        output_path = Path(output_tmp.name)
-
-    try:
-        raw = json_loads(polygon_json)
-        if isinstance(raw, dict) and isinstance(raw.get("vertices"), list):
-            vertices = raw["vertices"]
-        elif isinstance(raw, list):
-            vertices = raw
-        else:
-            raise ValueError("polygon_json must be a vertex list or {vertices: [...]}")
-        result = render_room(
-            input_path,
-            output_path,
-            polygon_vertices=vertices,
-            margin_mm=margin_mm,
-            width_px=width_px,
-        )
-        return FileResponse(
-            path=output_path,
-            media_type="image/png",
-            filename="room.png",
-            headers=_safe_result_headers(result),
-            background=BackgroundTask(_cleanup_paths, input_path, output_path),
-        )
-    except FileNotFoundError as exc:
-        _cleanup_paths(input_path, output_path)
-        raise _http_error(404, "CAD_WORKER_FILE_NOT_FOUND", str(exc)) from exc
-    except ezdxf.DXFStructureError as exc:
-        _cleanup_paths(input_path, output_path)
-        raise _http_error(400, INVALID_DXF_CODE, str(exc)) from exc
-    except JSONDecodeError as exc:
-        _cleanup_paths(input_path, output_path)
-        raise _http_error(400, "CAD_WORKER_INVALID_JSON", str(exc)) from exc
-    except ValueError as exc:
-        _cleanup_paths(input_path, output_path)
-        raise _http_error(400, "CAD_WORKER_INVALID_JSON", str(exc)) from exc
     except Exception as exc:  # noqa: BLE001
         _cleanup_paths(input_path, output_path)
         raise _http_error(500, "CAD_WORKER_ERROR", str(exc)) from exc

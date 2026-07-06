@@ -11,8 +11,9 @@ describe('pipelineWorker', () => {
     assert.equal(shouldSkipQueuedMessage('room_processing', 'procesado'), true)
   })
 
-  it('still skips full_pipeline when job is listo_para_editar', () => {
-    assert.equal(shouldSkipQueuedMessage('full_pipeline', 'listo_para_editar'), true)
+  it('skips preliminary_analysis when job is listo_para_editar', () => {
+    assert.equal(shouldSkipQueuedMessage('preliminary_analysis', 'listo_para_editar'), true)
+    assert.equal(shouldSkipQueuedMessage('preliminary_analysis', 'procesado'), true)
   })
 })
 

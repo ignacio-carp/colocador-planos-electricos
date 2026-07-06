@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict'
 import { describe, it } from 'node:test'
 import {
+  CadWorkerError,
   cadWorkerBaseUrl,
   cadWorkerDisabled,
   cadWorkerTransport,
@@ -9,13 +10,16 @@ import {
 } from './cadWorkerBridge'
 
 describe('cadWorkerBridge S-02', () => {
-  it('reports disabled when CAD_WORKER_DISABLED=true', async () => {
+  it('throws when CAD_WORKER_DISABLED=true', () => {
     const prev = process.env.CAD_WORKER_DISABLED
     process.env.CAD_WORKER_DISABLED = 'true'
     try {
-      const result = await inspectDxfFile('/nonexistent.dxf')
-      assert.equal(result.ok, false)
-      assert.equal(result.code, 'CAD_WORKER_DISABLED')
+      assert.throws(
+        () => {
+          void inspectDxfFile('/nonexistent.dxf')
+        },
+        (e: unknown) => e instanceof CadWorkerError && e.code === 'CAD_WORKER_DISABLED',
+      )
     } finally {
       if (prev === undefined) delete process.env.CAD_WORKER_DISABLED
       else process.env.CAD_WORKER_DISABLED = prev

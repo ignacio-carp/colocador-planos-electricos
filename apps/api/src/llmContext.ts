@@ -22,17 +22,21 @@ export function slimCadInspectForLlm(raw: Record<string, unknown>): Record<strin
 
 export function slimGeometryExtractForLlm(raw: Record<string, unknown>): Record<string, unknown> | undefined {
   const walls = Array.isArray(raw.paredes) ? raw.paredes.slice(0, MAX_WALLS) : []
+  const openings = Array.isArray(raw.aberturas) ? raw.aberturas.slice(0, MAX_OPENINGS) : []
   const furniture = Array.isArray(raw.muebles) ? raw.muebles.slice(0, MAX_FURNITURE) : []
-  if (walls.length === 0 && furniture.length === 0) {
+  if (walls.length === 0 && openings.length === 0 && furniture.length === 0) {
     return undefined
   }
   const slim: Record<string, unknown> = {}
   if (walls.length > 0) slim.paredes = walls
+  if (openings.length > 0) slim.aberturas = openings
   if (furniture.length > 0) slim.muebles = furniture
   if (raw.capas_clasificadas && typeof raw.capas_clasificadas === 'object') {
     slim.capas_clasificadas = raw.capas_clasificadas
   }
   const totalWalls = Array.isArray(raw.paredes) ? raw.paredes.length : 0
   if (totalWalls > walls.length) slim.paredes_truncated = totalWalls - walls.length
+  const totalOpenings = Array.isArray(raw.aberturas) ? raw.aberturas.length : 0
+  if (totalOpenings > openings.length) slim.aberturas_truncated = totalOpenings - openings.length
   return slim
 }

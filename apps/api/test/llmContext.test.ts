@@ -19,7 +19,7 @@ describe('llmContext', () => {
     assert.deepEqual(slim.layers, ['A-WALL', 'A-TEXT'])
   })
 
-  it('slimGeometryExtractForLlm keeps walls and furniture only', () => {
+  it('slimGeometryExtractForLlm keeps walls, openings and furniture', () => {
     const slim = slimGeometryExtractForLlm({
       paredes: [{ inicio: [0, 0], fin: [1000, 0] }],
       muebles: [{ bloque: 'SILLA', posicion: [500, 500] }],
@@ -29,7 +29,7 @@ describe('llmContext', () => {
     assert.ok(slim)
     assert.equal(Array.isArray(slim!.paredes), true)
     assert.equal(Array.isArray(slim!.muebles), true)
+    assert.equal(Array.isArray(slim!.aberturas), true)
     assert.equal(slim!.etiquetas_texto, undefined)
-    assert.equal(slim!.aberturas, undefined)
   })
 })

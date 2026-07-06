@@ -102,6 +102,13 @@ export function cadWorkerDisabled(): boolean {
   return raw === '1' || raw === 'true' || raw === 'yes'
 }
 
+/** Throws when CAD worker is explicitly disabled (production paths must not silently stub). */
+export function assertCadWorkerEnabled(): void {
+  if (cadWorkerDisabled()) {
+    throw new CadWorkerError('CAD_WORKER_DISABLED', 'CAD worker is disabled')
+  }
+}
+
 export function cadWorkerTimeoutMs(): number {
   const n = Number(process.env.CAD_WORKER_TIMEOUT_MS ?? 30_000)
   return Number.isFinite(n) && n > 0 ? n : 30_000
@@ -596,9 +603,7 @@ export async function probeCadWorkerOnStartup(): Promise<void> {
  * Runs `python -m cad_worker inspect --input <path> --json` or POST /inspect when CAD_WORKER_URL is set.
  */
 export function inspectDxfFile(inputPath: string): Promise<CadWorkerInspectResult> {
-  if (cadWorkerDisabled()) {
-    return Promise.resolve({ ok: false, code: 'CAD_WORKER_DISABLED', error: 'CAD worker disabled' })
-  }
+  assertCadWorkerEnabled()
   return invokeCadWorkerJson(
     'inspect',
     ['inspect', '--input', inputPath, '--json'],
@@ -608,9 +613,7 @@ export function inspectDxfFile(inputPath: string): Promise<CadWorkerInspectResul
 }
 
 export function extractGeometryFromDxf(inputPath: string): Promise<CadWorkerGeometryExtract> {
-  if (cadWorkerDisabled()) {
-    return Promise.resolve({ ok: false, code: 'CAD_WORKER_DISABLED', error: 'CAD worker disabled' })
-  }
+  assertCadWorkerEnabled()
   return invokeCadWorkerJson(
     'extract-geometry',
     ['extract-geometry', '--input', inputPath, '--json'],
@@ -629,9 +632,7 @@ export async function applyElectricalLayer(
   placements: unknown[],
   options?: ApplyElectricalLayerOptions,
 ): Promise<CadWorkerApplyLayerResult> {
-  if (cadWorkerDisabled()) {
-    return { ok: false, code: 'CAD_WORKER_DISABLED', error: 'CAD worker disabled' }
-  }
+  assertCadWorkerEnabled()
 
   if (cadWorkerTransport() === 'http') {
     return httpApplyElectricalLayer(inputPath, outputPath, placements, options)
@@ -661,21 +662,13 @@ export type RenderPlanOptions = {
   widthPx?: number
 }
 
-export type RenderRoomOptions = {
-  polygonVertices: unknown[]
-  marginMm?: number
-  widthPx?: number
-}
-
 /** Rasterize full DXF plan to PNG (US-007 multimodal context). */
 export async function renderPlanFromDxf(
   inputPath: string,
   outputPath: string,
   options?: RenderPlanOptions,
 ): Promise<CadWorkerRenderResult> {
-  if (cadWorkerDisabled()) {
-    return { ok: false, code: 'CAD_WORKER_DISABLED', error: 'CAD worker disabled' }
-  }
+  assertCadWorkerEnabled()
 
   const widthPx = options?.widthPx ?? 2048
 
@@ -691,45 +684,6 @@ export async function renderPlanFromDxf(
     inputPath,
     '--output',
     outputPath,
-    '--width-px',
-    String(widthPx),
-  ]
-  const parsed = await spawnCadWorkerJson(spawnArgs, inputPath)
-  return parsed as CadWorkerRenderResult
-}
-
-/** Rasterize room crop to PNG (US-008 multimodal context). */
-export async function renderRoomFromDxf(
-  inputPath: string,
-  outputPath: string,
-  options: RenderRoomOptions,
-): Promise<CadWorkerRenderResult> {
-  if (cadWorkerDisabled()) {
-    return { ok: false, code: 'CAD_WORKER_DISABLED', error: 'CAD worker disabled' }
-  }
-
-  const polygonJson = JSON.stringify({ vertices: options.polygonVertices })
-  const marginMm = options.marginMm ?? 500
-  const widthPx = options.widthPx ?? 1024
-
-  if (cadWorkerTransport() === 'http') {
-    return httpRenderPng('/render-room', 'render-room', inputPath, outputPath, {
-      polygon_json: polygonJson,
-      margin_mm: String(marginMm),
-      width_px: String(widthPx),
-    })
-  }
-
-  const spawnArgs = [
-    'render-room',
-    '--input',
-    inputPath,
-    '--output',
-    outputPath,
-    '--polygon-json',
-    polygonJson,
-    '--margin-mm',
-    String(marginMm),
     '--width-px',
     String(widthPx),
   ]

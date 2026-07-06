@@ -720,10 +720,10 @@ export default function JobDetail({ jobId, onNavigate }: JobDetailProps) {
           ) : null}
 
           {canEdit &&
-          isRoomProcessingAvailable(job.status) &&
+          isReadyForWorkspace(job.status) &&
           workspace &&
-          workspace.rooms.length > 0 &&
-          session ? (
+          session &&
+          (isRoomProcessingAvailable(job.status) || job.status === 'procesado') ? (
             <RoomProcessingPanel
               jobId={job.id}
               jobStatus={job.status ?? 'pendiente'}

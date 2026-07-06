@@ -20,7 +20,6 @@ import {
   applyElectricalLayer,
   CadWorkerError,
   cadWorkerDisabled,
-  renderRoomFromDxf,
 } from './cadWorkerBridge'
 import { US009_OUTPUT_LAYER } from './cadGeneration'
 import { DXF_INPUT_BUCKET, DXF_OUTPUT_BUCKET, buildDxfObjectPath } from './dxfStorage'
@@ -36,10 +35,8 @@ import {
 } from './jobsStore'
 import { isRoomProcessingAllowed } from './jobStatus'
 import {
-  buildPlanRenderMetadata,
   roomPolygonFromLayout,
   scopeGeometryForRoom,
-  type PlanRenderMetadata,
 } from './llmRenderContext'
 import {
   buildRecommendationForRoom,
@@ -135,37 +132,6 @@ async function runUs008ForRoom(params: {
   const rulesVersion = resolveActiveNormativeRulesVersion()
   const visionDoc = params.visionLayout as VisionLayoutOutputDoc
   const roomPolygon = roomPolygonFromLayout(params.visionLayout, params.roomId)
-  const polygonVertices =
-    roomPolygon && typeof roomPolygon === 'object' && Array.isArray((roomPolygon as { vertices?: unknown[] }).vertices)
-      ? ((roomPolygon as { vertices: unknown[] }).vertices)
-      : []
-
-  let roomRender:
-    | { localPngPath: string; metadata: PlanRenderMetadata; roomId: string }
-    | undefined
-
-  if (params.inputDxfPath && polygonVertices.length >= 3 && !cadWorkerDisabled()) {
-    const renderDir = mkdtempSync(join(tmpdir(), 'cambre-room-render-'))
-    const localPngPath = join(renderDir, `${params.roomId}.png`)
-    try {
-      const renderResult = await renderRoomFromDxf(params.inputDxfPath, localPngPath, {
-        polygonVertices,
-      })
-      const metadata = buildPlanRenderMetadata(renderResult)
-      if (metadata) {
-        roomRender = { localPngPath, metadata, roomId: params.roomId }
-      }
-    } catch (e) {
-      logStructured('warn', {
-        event: 'room_processing_render_skipped',
-        job_id: params.jobId,
-        correlation_id: params.roomCorrelationId,
-        room_id: params.roomId,
-        error: e instanceof Error ? e.message : String(e),
-      })
-    }
-  }
-
   const geometryExtractScoped = scopeGeometryForRoom(params.geometryExtract, roomPolygon)
 
   let normativeResult: Record<string, unknown> | undefined
@@ -183,13 +149,6 @@ async function runUs008ForRoom(params: {
           {
             roomIds: [params.roomId],
             geometryExtractScoped,
-            roomRender: roomRender?.metadata
-              ? {
-                  localPngPath: roomRender.localPngPath,
-                  metadata: roomRender.metadata,
-                  roomId: params.roomId,
-                }
-              : undefined,
             architectInstruction: params.processingInstruction,
             viewportImageDataUrl: params.viewportImageDataUrl,
           },
@@ -222,7 +181,7 @@ async function runUs008ForRoom(params: {
     pipeline_kind: PIPELINE_KIND,
     room_id: params.roomId,
     outlets: Number((normativeResult.outlet_placements as unknown[] | undefined)?.length ?? 0),
-    has_room_image: Boolean(roomRender),
+    has_room_image: Boolean(params.viewportImageDataUrl),
   })
 
   return {
@@ -422,8 +381,8 @@ export async function runRoomProcessingPipeline(
 
       let outletCount = 0
 
-      if (!isStorageConfigured() && !cadWorkerFixturePath()) {
-        // Stub path: no storage or fixture — simulate US-009 success for unit tests
+      if ((!isStorageConfigured() || cadWorkerDisabled()) && !cadWorkerFixturePath()) {
+        // Stub path: no storage/fixture or CAD worker disabled — simulate US-009 for unit tests
         await sleep(5)
         logStructured('info', {
           event: 'room_processing_stub_success',
@@ -704,4 +663,36 @@ export async function markJobProcessed(
   })
 
   return patchJob(jobId, { status: 'procesado', error: undefined })
+}
+
+/**
+ * Reopen a closed job so the architect can keep processing rooms (Cap. 7).
+ * Target: parcialmente_procesado if any room was procesada, else listo_para_editar.
+ */
+export async function reopenJobWorkspace(
+  jobId: string,
+  correlationId: string,
+): Promise<JobRow | undefined> {
+  const job = await findJob(jobId)
+  if (!job) throw new Error(`Job not found: ${jobId}`)
+  if (job.status !== 'procesado') {
+    throw new Error(
+      `Reopen only allowed from procesado (current: '${job.status}')`,
+    )
+  }
+
+  const meta = job.pipeline_metadata ?? {}
+  const roomState = (meta.room_processing_state ?? {}) as Record<string, string>
+  const hasProcessedRoom = Object.values(roomState).some((s) => s === 'procesada')
+  const nextStatus = hasProcessedRoom ? 'parcialmente_procesado' : 'listo_para_editar'
+
+  logStructured('info', {
+    event: 'job_reopen_workspace',
+    job_id: jobId,
+    correlation_id: correlationId,
+    next_status: nextStatus,
+    has_processed_room: hasProcessedRoom,
+  })
+
+  return patchJob(jobId, { status: nextStatus, error: undefined })
 }

@@ -1,6 +1,5 @@
 import { logStructured } from './logger'
 import { releaseQueueMessage, claimNextQueueMessage, markQueueMessageDone, markQueueMessageFailed, type QueueMessage } from './jobQueue'
-import { runJobPipeline } from './jobsPipeline'
 import { runPreliminaryAnalysisPipeline } from './preliminaryPipeline'
 import { runRoomProcessingPipeline } from './roomProcessingPipeline'
 import { findJob } from './jobsStore'
@@ -38,7 +37,7 @@ export function shouldSkipQueuedMessage(
   if (runType === 'preliminary_analysis') {
     return status === 'procesado' || status === 'listo_para_editar' || status === 'error'
   }
-  return status === 'procesado' || status === 'listo_para_editar' || status === 'error'
+  return true
 }
 
 async function processOneMessage(): Promise<void> {
@@ -65,7 +64,7 @@ async function processOneMessage(): Promise<void> {
   try {
     if (msg.run_type === 'preliminary_analysis') {
       await runPreliminaryAnalysisPipeline(msg.job_id, msg.correlation_id)
-    } else if (msg.run_type === 'room_processing') {
+    } else {
       const roomIds = msg.room_ids ?? []
       if (roomIds.length === 0) {
         markQueueMessageFailed(msg.job_id, 'room_ids_missing')
@@ -78,8 +77,6 @@ async function processOneMessage(): Promise<void> {
         msg.idempotency_key,
         { viaChat: msg.via_chat },
       )
-    } else {
-      await runJobPipeline(msg.job_id, msg.correlation_id)
     }
     markQueueMessageDone(msg.job_id)
   } catch (e) {

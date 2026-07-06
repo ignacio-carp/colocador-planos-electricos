@@ -35,6 +35,7 @@ import { createJob, findJob, listAllJobs, listJobsForOwner, patchJob, type JobRo
 import {
   markJobProcessed,
   omitRooms,
+  reopenJobWorkspace,
   runRoomProcessingPipeline,
 } from './roomProcessingPipeline'
 import {
@@ -49,7 +50,7 @@ import {
 } from './quota'
 import { cadWorkerConfigSummary, cadWorkerTransport, probeCadWorkerOnStartup } from './cadWorkerBridge'
 import { logStructured } from './logger'
-import { enqueueJobPipeline, enqueueRoomProcessing } from './jobQueue'
+import { enqueueRoomProcessing } from './jobQueue'
 import { StartPreliminaryAnalysisError, startPreliminaryAnalysis } from './startPreliminaryAnalysis'
 import { drainPipelineQueueOnce, pipelineWorkerEnabled, startPipelineWorker } from './pipelineWorker'
 import { formatPrometheusMetrics, getMetricsSnapshot } from './metrics'
@@ -171,68 +172,6 @@ app.post('/api/jobs', requireAuth, requireRole('architect'), async (req, res) =>
     res.status(500).json({ error: 'Could not create job' })
   }
 })
-
-/**
- * S-01: encola pipeline (async). Worker `PIPELINE_WORKER_ENABLED` o drain manual en tests.
- * `?sync=1` ejecuta un ciclo de worker en la misma request (dev/legacy).
- */
-app.post(
-  '/api/jobs/:jobId/process',
-  requireAuth,
-  requireRole('architect'),
-  async (req, res) => {
-    const { user } = req as AuthedRequest
-    const correlationId = req.correlationId
-    const jobId = typeof req.params.jobId === 'string' ? req.params.jobId : req.params.jobId?.[0]
-    if (!jobId) {
-      res.status(400).json({ error: 'Missing jobId' })
-      return
-    }
-    const job = await findJob(jobId)
-    if (!job) {
-      res.status(404).json({ error: 'Job not found' })
-      return
-    }
-    if (job.owner_user_id !== user.id) {
-      res.status(403).json({ error: 'Forbidden', code: 'NOT_JOB_OWNER' })
-      return
-    }
-    if (job.status === 'procesando' || job.status === 'analizando') {
-      res.status(409).json({ error: 'Job already processing' })
-      return
-    }
-    if (job.status === 'procesado') {
-      res.status(409).json({ error: 'Job already processed' })
-      return
-    }
-    if (job.status === 'error') {
-      await patchJob(jobId, { status: 'pendiente', error: undefined })
-    }
-    const msg = await enqueueJobPipeline(jobId, correlationId)
-    if (!msg) {
-      res.status(409).json({ error: 'Cannot enqueue job in current state' })
-      return
-    }
-    const sync =
-      req.query.sync === '1' ||
-      req.query.sync === 'true' ||
-      process.env.PIPELINE_SYNC_PROCESS === 'true'
-    if (sync) {
-      await drainPipelineQueueOnce()
-      const updated = await findJob(jobId)
-      if (!updated) {
-        res.status(404).json({ error: 'Job not found' })
-        return
-      }
-      res.status(200).json(updated)
-      return
-    }
-    if (pipelineWorkerEnabled()) {
-      void drainPipelineQueueOnce()
-    }
-    res.status(202).json({ queued: true, jobId, correlationId, queueId: msg.id })
-  },
-)
 
 /** T-07 métricas — JSON y Prometheus; solo administrador. */
 app.get('/api/metrics', requireAuth, requireRole('administrator'), (_req, res) => {
@@ -1440,6 +1379,46 @@ app.post(
     } catch (e) {
       const message = e instanceof Error ? e.message : 'Mark complete failed'
       res.status(409).json({ error: message })
+    }
+  },
+)
+
+/**
+ * US-013: reopen a closed job for further room processing (Cap. 7).
+ */
+app.post(
+  '/api/jobs/:jobId/workspace/reopen',
+  requireAuth,
+  requireRole('architect'),
+  async (req, res) => {
+    const { user } = req as AuthedRequest
+    const jobId = typeof req.params.jobId === 'string' ? req.params.jobId : req.params.jobId?.[0]
+    if (!jobId) {
+      res.status(400).json({ error: 'Missing jobId' })
+      return
+    }
+    const job = await findJob(jobId)
+    if (!job) {
+      res.status(404).json({ error: 'Job not found' })
+      return
+    }
+    if (job.owner_user_id !== user.id) {
+      res.status(403).json({ error: 'Forbidden', code: 'NOT_JOB_OWNER' })
+      return
+    }
+    const correlationId = req.correlationId ?? crypto.randomUUID()
+
+    try {
+      const updated = await reopenJobWorkspace(jobId, correlationId)
+      res.json({
+        job_id: jobId,
+        status: updated?.status ?? 'listo_para_editar',
+        job: updated,
+      })
+    } catch (e) {
+      const message = e instanceof Error ? e.message : 'Reopen failed'
+      const isStatus = message.includes('only allowed')
+      res.status(isStatus ? 409 : 500).json({ error: message })
     }
   },
 )

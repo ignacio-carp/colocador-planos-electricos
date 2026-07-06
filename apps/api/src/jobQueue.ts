@@ -4,7 +4,7 @@ import { normalizeJobStatus } from './jobStatus'
 
 export type QueueMessageStatus = 'queued' | 'processing' | 'done' | 'failed'
 
-export type QueueRunType = 'full_pipeline' | 'preliminary_analysis' | 'room_processing'
+export type QueueRunType = 'preliminary_analysis' | 'room_processing'
 
 export type QueueMessage = {
   id: string
@@ -27,39 +27,9 @@ function nowIso(): string {
   return new Date().toISOString()
 }
 
-/** Terminal job states — do not enqueue again. */
+/** Terminal job states — do not enqueue preliminary analysis again. */
 function jobIsTerminal(status: JobStatus): boolean {
   return status === 'procesado' || status === 'listo_para_editar' || status === 'error'
-}
-
-/**
- * Enqueue full pipeline run for a job (idempotent per job_id while queued/processing).
- */
-export async function enqueueJobPipeline(jobId: string, correlationId: string): Promise<QueueMessage | null> {
-  const job = await findJob(jobId)
-  if (!job) return null
-
-  const status = normalizeJobStatus(job.status)
-  if (jobIsTerminal(status)) return null
-  if (status === 'procesando') return null
-
-  const existing = queue.find(
-    (m) => m.job_id === jobId && (m.status === 'queued' || m.status === 'processing'),
-  )
-  if (existing) return existing
-
-  const msg: QueueMessage = {
-    id: randomUUID(),
-    job_id: jobId,
-    correlation_id: correlationId,
-    status: 'queued',
-    run_type: 'full_pipeline',
-    attempts: 0,
-    locked_at: null,
-    created_at: nowIso(),
-  }
-  queue.push(msg)
-  return msg
 }
 
 /**

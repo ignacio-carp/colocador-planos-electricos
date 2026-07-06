@@ -219,52 +219,20 @@ export async function runPreliminaryAnalysisPipeline(
       if (!local) {
         throw new Error('No CAD_WORKER_FIXTURE_DXF and no input file in storage')
       }
-      try {
-        cadInspect = await runCadWorkerInspect(jobId, correlationId, local.localPath)
-      } catch (e) {
-        const message = e instanceof Error ? e.message : String(e)
-        logStructured('warn', {
-          event: 'cad_worker_inspect_skipped',
-          job_id: jobId,
-          correlation_id: correlationId,
-          cad_worker_transport: cadWorkerTransport(),
-          error: message,
-          error_code: e instanceof CadWorkerError ? e.code : undefined,
-        })
-      }
-      try {
-        geometryExtract = await runCadWorkerGeometryExtract(jobId, correlationId, local.localPath)
-      } catch (e) {
-        const message = e instanceof Error ? e.message : String(e)
-        logStructured('warn', {
-          event: 'cad_worker_geometry_extract_skipped',
-          job_id: jobId,
-          correlation_id: correlationId,
-          error: message,
-        })
-      }
-      try {
-        planRender = await runCadWorkerPlanRender(jobId, correlationId, local.localPath)
-      } catch (e) {
-        const message = e instanceof Error ? e.message : String(e)
-        logStructured('warn', {
-          event: 'cad_worker_render_plan_skipped',
-          job_id: jobId,
-          correlation_id: correlationId,
-          error: message,
-        })
-      }
-      if (cadInspect || geometryExtract || planRender) {
-        await patchJob(jobId, {
-          pipeline_metadata: {
-            ...(await findJob(jobId))?.pipeline_metadata,
-            ...(cadInspect ? { cad_worker_inspect: cadInspect } : {}),
-            ...(geometryExtract ? { geometry_extract: geometryExtract } : {}),
-            ...(planRender ? { plan_render: planRender.metadata } : {}),
-            pipeline_mode: pipelineMode,
-          },
-        })
-      }
+      cadInspect = await runCadWorkerInspect(jobId, correlationId, local.localPath)
+      geometryExtract = await runCadWorkerGeometryExtract(jobId, correlationId, local.localPath)
+      planRender = await runCadWorkerPlanRender(jobId, correlationId, local.localPath)
+      await patchJob(jobId, {
+        pipeline_metadata: {
+          ...(await findJob(jobId))?.pipeline_metadata,
+          ...(cadInspect ? { cad_worker_inspect: cadInspect } : {}),
+          ...(geometryExtract ? { geometry_extract: geometryExtract } : {}),
+          ...(planRender ? { plan_render: planRender.metadata } : {}),
+          pipeline_mode: pipelineMode,
+        },
+      })
+    } else if (pipelineMode === 'live') {
+      throw new Error('CAD worker is required for preliminary analysis in live mode')
     }
 
     lastExecutedStep = 'vision_layout'

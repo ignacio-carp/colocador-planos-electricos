@@ -92,7 +92,8 @@ def test_apply_skips_out_of_bbox(tmp_path: Path) -> None:
     src = tmp_path / "in.dxf"
     out = tmp_path / "out.dxf"
     doc = ezdxf.new()
-    doc.modelspace().add_line((0, 0), (100, 0))
+    doc.layers.add("MUROS")
+    doc.modelspace().add_line((0, 0), (100, 0), dxfattribs={"layer": "MUROS"})
     doc.saveas(str(src))
 
     placements = [{"position": {"x": 99999, "y": 99999}}]

@@ -14,7 +14,7 @@
 import assert from 'node:assert/strict'
 import { describe, it, beforeEach } from 'node:test'
 import { clearJobsForTests, createJob, findJob, patchJob } from './jobsStore'
-import { runRoomProcessingPipeline, omitRooms, markJobProcessed } from './roomProcessingPipeline'
+import { runRoomProcessingPipeline, omitRooms, markJobProcessed, reopenJobWorkspace } from './roomProcessingPipeline'
 import { runPreliminaryAnalysisPipeline } from './preliminaryPipeline'
 
 function stubEnv() {
@@ -180,6 +180,32 @@ describe('roomProcessingPipeline (stub mode)', { concurrency: false }, () => {
     assert.equal(final!.status, 'procesado')
   })
 
+  it('markJobProcessed works from listo_para_editar with pending rooms', async () => {
+    const { jobId } = await createJobWithPreliminary()
+
+    await markJobProcessed(jobId, 'corr-early-close')
+
+    const final = await findJob(jobId)
+    assert.equal(final!.status, 'procesado')
+  })
+
+  it('reopenJobWorkspace returns to parcialmente_procesado when rooms were processed', async () => {
+    const { jobId, roomId } = await createJobWithPreliminary()
+    await runRoomProcessingPipeline(jobId, [roomId], 'corr-pp2')
+    await markJobProcessed(jobId, 'corr-close')
+
+    const reopened = await reopenJobWorkspace(jobId, 'corr-reopen')
+    assert.equal(reopened!.status, 'parcialmente_procesado')
+  })
+
+  it('reopenJobWorkspace returns to listo_para_editar when no room was processed', async () => {
+    const { jobId } = await createJobWithPreliminary()
+    await markJobProcessed(jobId, 'corr-close2')
+
+    const reopened = await reopenJobWorkspace(jobId, 'corr-reopen2')
+    assert.equal(reopened!.status, 'listo_para_editar')
+  })
+
   it('reprocesar a procesada room still succeeds (idempotent)', async () => {
     const { jobId, roomId } = await createJobWithPreliminary()
 
@@ -297,11 +323,13 @@ describe('jobStatus transitions for parcialmente_procesado (US-013)', { concurre
     )
   })
 
-  it('procesado → parcialmente_procesado is NOT allowed', async () => {
-    const { assertJobStatusTransition, InvalidJobStatusTransitionError } = await import('./jobStatus')
-    assert.throws(
-      () => assertJobStatusTransition('procesado', 'parcialmente_procesado'),
-      InvalidJobStatusTransitionError,
-    )
+  it('procesado → parcialmente_procesado is allowed (reopen workspace)', async () => {
+    const { assertJobStatusTransition } = await import('./jobStatus')
+    assert.doesNotThrow(() => assertJobStatusTransition('procesado', 'parcialmente_procesado'))
+  })
+
+  it('procesado → listo_para_editar is allowed (reopen without processed rooms)', async () => {
+    const { assertJobStatusTransition } = await import('./jobStatus')
+    assert.doesNotThrow(() => assertJobStatusTransition('procesado', 'listo_para_editar'))
   })
 })

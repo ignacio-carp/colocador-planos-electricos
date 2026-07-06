@@ -30,7 +30,7 @@ Documento de decisiones de la sesión iterativa. **Interfaces, roles y responsab
 | Objetivo | Detectar habitaciones y polígonos para futuras capturas por ambiente |
 | US-007 | Sí — núcleo del análisis |
 | US-008 | No en preliminar |
-| CAD `extract_geometry` | Solo **paredes** y **muebles**; descarta aberturas, textos y capas no clasificadas |
+| CAD `extract_geometry` | **Paredes**, **aberturas** (puertas/ventanas) y **muebles**; descarta textos y capas no clasificadas |
 | 0 habitaciones | Job → `listo_para_editar` con warning `NO_ROOMS_DETECTED`; workspace habilitado; botón reprocesar |
 | Fallo global | Solo errores técnicos (IA, DXF ilegible), no por ausencia de habitaciones |
 
@@ -80,21 +80,44 @@ Documento de decisiones de la sesión iterativa. **Interfaces, roles y responsab
 
 ## Capítulo 7 — Cerrar y descargar
 
-**Decisión:** Sin cambios. `mark-complete`, descarga incremental, `procesado` no bloquea habitaciones pendientes.
+**Decisión:** Cierre flexible + descarga incremental + reabrir trabajo cerrado.
+
+| Aspecto | Comportamiento |
+|--------|----------------|
+| Marcar procesado | En **cualquier momento** (`listo_para_editar` o `parcialmente_procesado`), aunque queden habitaciones pendientes |
+| Descarga DXF | Disponible desde la **primera habitación procesada** (`parcialmente_procesado`); sin cambio |
+| UI descarga | Barra superior (Export) + ProjectFileBar |
+| Trabajo `procesado` | Chat y ediciones siguen activos; procesamiento por sidebar deshabilitado hasta reabrir |
+| Reabrir | `POST …/workspace/reopen`: `procesado` → `parcialmente_procesado` si hay habitaciones procesadas, si no → `listo_para_editar` |
 
 ## Capítulo 8 — CAD Worker
 
-**Decisión:** Sin cambios en contrato Python. Mismas operaciones vía `cadWorkerBridge`.
+**Decisión:** Recortar operaciones, enriquecer extract-geometry y exigir worker en rutas productivas.
+
+| Aspecto | Comportamiento |
+|--------|----------------|
+| Operaciones | `inspect`, `extract-geometry`, `render-plan` (US-007), `apply-electrical-layer` (US-009 incremental por `room_id`) |
+| Eliminado | `render-room` — la captura del visor reemplaza el PNG de habitación en US-008 |
+| `extract-geometry` | Paredes + **aberturas** (puertas/ventanas) + muebles; sin textos |
+| US-009 | Merge incremental por habitación (sin cambio) |
+| Transporte | Spawn local + HTTP (`CAD_WORKER_URL`) según entorno |
+| Worker deshabilitado | Las funciones del bridge **lanzan error**; en live el análisis preliminar falla si `CAD_WORKER_DISABLED=true`. Modo stub sigue operando sin CAD en dev/test |
 
 ## Capítulo 9 — Cola y batch legacy
 
-**Decisión:** Deprecar botón UI de pipeline batch completo; mantener `POST …/process` por compatibilidad API.
+**Decisión:** Eliminar el endpoint batch `POST /api/jobs/:jobId/process`. La cola in-memory y el worker de fondo se mantienen para análisis preliminar y process-rooms async.
 
-- Cola in-memory sin cambio en esta iteración.
-- Flujo canónico: start-analysis → workspace → process-rooms.
+| Aspecto | Comportamiento |
+|--------|----------------|
+| Eliminado | `POST …/process` (pipeline batch completo) y `full_pipeline` en cola |
+| Cola | In-memory FIFO; tipos: `preliminary_analysis`, `room_processing` |
+| Worker | `PIPELINE_WORKER_ENABLED` drena cola en background |
+| UI | `process-rooms` siempre con `?sync=1`; `start-analysis` encola y el worker procesa en background (UI hace polling) |
+| Integraciones | Pueden encolar process-rooms sin sync y confiar en el worker |
+| Flujo canónico | start-analysis → workspace → process-rooms |
 
 ## Orden sugerido de PRs
 
 1. **PR1 — Disparador manual de análisis** (API register/replace + `start-analysis` + UI)
 2. **PR2 — Docs US-012** (historias de usuario alineadas)
-3. Futuro: cola Postgres, retiro de `/process` batch
+3. Futuro: cola Postgres

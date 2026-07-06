@@ -93,21 +93,6 @@ def test_render_plan(client: TestClient, sample_dxf: Path) -> None:
     assert response.headers.get("x-cad-worker-result")
 
 
-def test_render_room(client: TestClient, sample_dxf: Path) -> None:
-    polygon = json.dumps(
-        [{"x": 0, "y": 0}, {"x": 1000, "y": 0}, {"x": 1000, "y": 500}, {"x": 0, "y": 500}],
-    )
-    with sample_dxf.open("rb") as handle:
-        response = client.post(
-            "/render-room",
-            files={"file": ("sample.dxf", handle, "application/octet-stream")},
-            data={"polygon_json": polygon, "margin_mm": "50", "width_px": "512"},
-        )
-    assert response.status_code == 200
-    assert response.headers.get("content-type", "").startswith("image/png")
-    assert len(response.content) > 50
-
-
 def test_apply_electrical_layer_header_serialization_does_not_500(
     client: TestClient,
     sample_dxf: Path,

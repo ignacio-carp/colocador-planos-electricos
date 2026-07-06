@@ -7,7 +7,7 @@ from datetime import datetime, timezone
 from cad_worker.electrical_layer import apply_layer_cmd
 from cad_worker.extract_geometry import extract_geometry_cmd
 from cad_worker.inspect_dxf import inspect_cmd
-from cad_worker.render_plan import render_plan_cmd, render_room_cmd
+from cad_worker.render_plan import render_plan_cmd
 
 
 def _health_payload() -> dict[str, object]:
@@ -58,7 +58,7 @@ def main(argv: list[str] | None = None) -> None:
 
     p_extract = subparsers.add_parser(
         "extract-geometry",
-        help="Extract walls and furniture from DXF modelspace (other layers discarded).",
+        help="Extract walls, openings and furniture from DXF modelspace (other layers discarded).",
     )
     p_extract.add_argument("--input", required=True, help="Path to .dxf file")
     p_extract.add_argument("--json", action="store_true", help="Emit JSON (default)")
@@ -100,20 +100,6 @@ def main(argv: list[str] | None = None) -> None:
     p_render_plan.add_argument("--output", required=True)
     p_render_plan.add_argument("--width-px", type=int, default=2048, dest="width_px")
 
-    p_render_room = subparsers.add_parser(
-        "render-room",
-        help="Rasterize room crop to PNG for multimodal LLM (US-008).",
-    )
-    p_render_room.add_argument("--input", required=True)
-    p_render_room.add_argument("--output", required=True)
-    p_render_room.add_argument(
-        "--polygon-json",
-        required=True,
-        help='JSON: [{"x":0,"y":0},...] or {"vertices":[...]}',
-    )
-    p_render_room.add_argument("--margin-mm", type=float, default=500.0, dest="margin_mm")
-    p_render_room.add_argument("--width-px", type=int, default=1024, dest="width_px")
-
     args = parser.parse_args(argv)
 
     if args.command == "health":
@@ -136,16 +122,6 @@ def main(argv: list[str] | None = None) -> None:
         )
     if args.command == "render-plan":
         raise SystemExit(render_plan_cmd(args.input, args.output, width_px=args.width_px))
-    if args.command == "render-room":
-        raise SystemExit(
-            render_room_cmd(
-                args.input,
-                args.output,
-                args.polygon_json,
-                margin_mm=args.margin_mm,
-                width_px=args.width_px,
-            ),
-        )
 
     raise SystemExit(2)
 

@@ -14,7 +14,7 @@ export const JOB_STATUSES: readonly JobStatus[] = [
 const ALLOWED_TRANSITIONS: Record<JobStatus, readonly JobStatus[]> = {
   pendiente: ['procesando', 'analizando', 'error'],
   procesando: ['procesado', 'error'],
-  procesado: ['pendiente'],
+  procesado: ['pendiente', 'parcialmente_procesado', 'listo_para_editar'],
   error: ['pendiente'],
   analizando: ['listo_para_editar', 'error'],
   listo_para_editar: ['procesando', 'parcialmente_procesado', 'procesado', 'error', 'pendiente'],
