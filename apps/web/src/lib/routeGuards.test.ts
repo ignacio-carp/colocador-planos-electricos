@@ -38,24 +38,34 @@ describe('routeGuards', () => {
     ).toBeNull()
   })
 
-  it('denies architect access to normative rules admin', () => {
+  it('allows architect access to normative rules', () => {
+    expect(
+      resolveAuthRedirect({
+        pathname: '/normative-rules',
+        hasSession: true,
+        role: 'architect',
+      }),
+    ).toBeNull()
+  })
+
+  it('allows administrator to normative rules', () => {
+    expect(
+      resolveAuthRedirect({
+        pathname: '/normative-rules',
+        hasSession: true,
+        role: 'administrator',
+      }),
+    ).toBeNull()
+  })
+
+  it('redirects legacy normative rules admin path', () => {
     expect(
       resolveAuthRedirect({
         pathname: '/admin/normative-rules',
         hasSession: true,
         role: 'architect',
       }),
-    ).toBe('/dashboard')
-  })
-
-  it('allows administrator to normative rules admin', () => {
-    expect(
-      resolveAuthRedirect({
-        pathname: '/admin/normative-rules',
-        hasSession: true,
-        role: 'administrator',
-      }),
-    ).toBeNull()
+    ).toBe('/normative-rules')
   })
 
   it('restricts /jobs/new to architects (US-005)', () => {

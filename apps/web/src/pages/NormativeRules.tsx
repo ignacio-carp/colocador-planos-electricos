@@ -7,7 +7,6 @@ import {
   sectionLabel,
 } from '../components/NormativeRulesEditor'
 import { useAuth } from '../context/AuthContext'
-import { getAppRole } from '../lib/roles'
 
 const apiBase = import.meta.env.VITE_API_URL ?? 'http://localhost:3001'
 
@@ -27,7 +26,6 @@ function bundlesEqual(a: Record<string, unknown>, b: Record<string, unknown>): b
 
 export default function NormativeRules({ onNavigate }: { onNavigate: (path: string) => void }) {
   const { session } = useAuth()
-  const role = getAppRole(session?.user)
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -46,7 +44,7 @@ export default function NormativeRules({ onNavigate }: { onNavigate: (path: stri
     setLoading(true)
     setError(null)
     try {
-      const res = await fetch(`${apiBase}/api/admin/normative-rules`, {
+      const res = await fetch(`${apiBase}/api/normative-rules`, {
         headers: { Authorization: `Bearer ${session.access_token}` },
       })
       const body = (await res.json().catch(() => ({}))) as NormativeRulesResponse
@@ -89,7 +87,7 @@ export default function NormativeRules({ onNavigate }: { onNavigate: (path: stri
     setError(null)
     setMessage(null)
     try {
-      const res = await fetch(`${apiBase}/api/admin/normative-rules`, {
+      const res = await fetch(`${apiBase}/api/normative-rules`, {
         method: 'PUT',
         headers: {
           Authorization: `Bearer ${session.access_token}`,
@@ -129,14 +127,6 @@ export default function NormativeRules({ onNavigate }: { onNavigate: (path: stri
     setDraftBundle(structuredClone(savedBundle))
     setMessage(null)
     setError(null)
-  }
-
-  if (role !== 'administrator') {
-    return (
-      <AppShell activeNav="normative-rules" onNavigate={onNavigate} headerTitle="Reglas normativas">
-        <p className="text-body-md text-on-surface-variant">Solo el administrador puede editar las reglas del sistema.</p>
-      </AppShell>
-    )
   }
 
   return (

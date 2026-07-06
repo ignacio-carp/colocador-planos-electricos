@@ -239,8 +239,8 @@ app.get('/api/metrics/prometheus', requireAuth, requireRole('administrator'), (_
   res.send(formatPrometheusMetrics())
 })
 
-/** Admin: read active system normative rules bundle (single ruleset for all users). */
-app.get('/api/admin/normative-rules', requireAuth, requireRole('administrator'), async (_req, res) => {
+/** Read active system normative rules bundle (single ruleset for all users). */
+app.get('/api/normative-rules', requireAuth, requireArchitectOrAdmin, async (_req, res) => {
   try {
     const view = await getActiveNormativeRulesAdminView()
     res.json({
@@ -257,8 +257,8 @@ app.get('/api/admin/normative-rules', requireAuth, requireRole('administrator'),
   }
 })
 
-/** Admin: persist edits to the active system normative rules bundle. */
-app.put('/api/admin/normative-rules', requireAuth, requireRole('administrator'), async (req, res) => {
+/** Persist edits to the active system normative rules bundle. */
+app.put('/api/normative-rules', requireAuth, requireArchitectOrAdmin, async (req, res) => {
   const { user } = req as AuthedRequest
   const body = req.body as { bundle?: unknown }
   if (!body || typeof body !== 'object' || body.bundle === undefined) {

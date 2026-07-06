@@ -33,18 +33,18 @@ export function AppShell({
 
   const navItems: { id: AppNavId; label: string; icon: string; path: string }[] = [
     { id: 'dashboard', label: 'Proyectos', icon: 'account_tree', path: '/dashboard' },
-    ...(role === 'administrator'
-      ? [
-          { id: 'invites' as const, label: 'Invitaciones', icon: 'mail', path: '/invites' },
-          {
-            id: 'normative-rules' as const,
-            label: 'Reglas normativas',
-            icon: 'rule',
-            path: '/admin/normative-rules',
-          },
-        ]
-      : []),
   ]
+  if (role === 'architect' || role === 'administrator') {
+    navItems.push({
+      id: 'normative-rules',
+      label: 'Reglas normativas',
+      icon: 'rule',
+      path: '/normative-rules',
+    })
+  }
+  if (role === 'administrator') {
+    navItems.push({ id: 'invites', label: 'Invitaciones', icon: 'mail', path: '/invites' })
+  }
 
   return (
     <div className="min-h-screen bg-background">

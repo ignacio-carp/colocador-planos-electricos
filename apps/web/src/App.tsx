@@ -37,7 +37,7 @@ function AppRoutes() {
     else if (isJobDetailPath(pathname)) document.title = 'Archivos DXF — Cambre Planos'
     else if (pathname === '/jobs/new') document.title = 'Nuevo proyecto — Cambre Planos'
     else if (pathname === '/invites') document.title = 'Invitaciones — Cambre Planos'
-    else if (pathname === '/admin/normative-rules') document.title = 'Reglas normativas — Cambre Planos'
+    else if (pathname === '/normative-rules') document.title = 'Reglas normativas — Cambre Planos'
     else if (pathname === INVITE_SET_PASSWORD_PATH) document.title = 'Contraseña — Cambre Planos'
     else if (pathname === INVITE_PROFILE_PATH) document.title = 'Perfil — Cambre Planos'
     else if (isInviteOnboardingPath(pathname)) document.title = 'Invitación — Cambre Planos'
@@ -97,7 +97,7 @@ function AppRoutes() {
       {pathname === '/invites' && showProtected && role === 'administrator' ? (
         <Invites onNavigate={navigate} />
       ) : null}
-      {pathname === '/admin/normative-rules' && showProtected && role === 'administrator' ? (
+      {pathname === '/normative-rules' && showProtected && (role === 'architect' || role === 'administrator') ? (
         <NormativeRules onNavigate={navigate} />
       ) : null}
       {pathname === INVITE_LANDING_PATH ? <InviteLanding onNavigate={navigate} /> : null}
