@@ -221,7 +221,7 @@ export default function JobDetail({ jobId, onNavigate }: JobDetailProps) {
     if (!session || !job || !analyzing) return
 
     let cancelled = false
-    let timeoutId: ReturnType<typeof setTimeout> | undefined
+    let timeoutId: number | undefined
 
     const schedule = (delayMs: number) => {
       timeoutId = window.setTimeout(() => {

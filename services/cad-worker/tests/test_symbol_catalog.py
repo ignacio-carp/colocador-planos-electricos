@@ -39,7 +39,8 @@ def test_resolve_placement_kind_legacy_alias() -> None:
 
 
 def test_vivienda_element_types_in_catalog() -> None:
-    for element in ("centro", "brazo", "toma", "toma_especial", "llave", "tablero", "puesta_tierra"):
+    elements = ("centro", "brazo", "toma", "toma_especial", "llave", "tablero", "puesta_tierra")
+    for element in elements:
         assert element in CATALOG
 
 

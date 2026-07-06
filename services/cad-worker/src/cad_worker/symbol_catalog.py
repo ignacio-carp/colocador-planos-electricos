@@ -178,7 +178,11 @@ def infer_insunits(
     return 4
 
 
-def drawing_units_per_meter(insunits: int | None, bbox: dict[str, float] | None, geometry: dict[str, object] | None) -> float:
+def drawing_units_per_meter(
+    insunits: int | None,
+    bbox: dict[str, float] | None,
+    geometry: dict[str, object] | None,
+) -> float:
     if insunits and insunits in INSUNITS_PER_METER:
         return INSUNITS_PER_METER[insunits]
     inferred = infer_insunits(bbox, geometry)
