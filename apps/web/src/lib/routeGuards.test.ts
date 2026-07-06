@@ -38,6 +38,26 @@ describe('routeGuards', () => {
     ).toBeNull()
   })
 
+  it('denies architect access to normative rules admin', () => {
+    expect(
+      resolveAuthRedirect({
+        pathname: '/admin/normative-rules',
+        hasSession: true,
+        role: 'architect',
+      }),
+    ).toBe('/dashboard')
+  })
+
+  it('allows administrator to normative rules admin', () => {
+    expect(
+      resolveAuthRedirect({
+        pathname: '/admin/normative-rules',
+        hasSession: true,
+        role: 'administrator',
+      }),
+    ).toBeNull()
+  })
+
   it('restricts /jobs/new to architects (US-005)', () => {
     expect(
       resolveAuthRedirect({ pathname: '/jobs/new', hasSession: true, role: 'administrator' }),

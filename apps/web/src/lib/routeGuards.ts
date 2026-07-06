@@ -2,9 +2,9 @@ import type { AppRole } from './roles'
 import { isInviteOnboardingPath } from './inviteRoutes'
 import { isJobDetailPath } from './routes'
 
-const AUTH_REQUIRED = new Set(['/dashboard', '/jobs', '/invites', '/jobs/new'])
+const AUTH_REQUIRED = new Set(['/dashboard', '/jobs', '/invites', '/jobs/new', '/admin/normative-rules'])
 
-const ADMIN_ONLY = new Set(['/invites'])
+const ADMIN_ONLY = new Set(['/invites', '/admin/normative-rules'])
 
 const ARCHITECT_ONLY = new Set(['/jobs/new'])
 

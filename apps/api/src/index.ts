@@ -68,6 +68,13 @@ import {
   WorkspaceChatError,
 } from './workspaceChat'
 import { getSupabaseServiceRole, isStorageConfigured } from './supabaseService'
+import {
+  getActiveNormativeRulesAdminView,
+  NormativeRulesValidationError,
+  saveActiveNormativeRulesBundle,
+  warmNormativeRulesCache,
+  getNormativeRulesSource,
+} from './normativeRules'
 
 const app = express()
 app.use(cors(getCorsOptions()))
@@ -230,6 +237,62 @@ app.get('/api/metrics', requireAuth, requireRole('administrator'), (_req, res) =
 app.get('/api/metrics/prometheus', requireAuth, requireRole('administrator'), (_req, res) => {
   res.setHeader('Content-Type', 'text/plain; version=0.0.4; charset=utf-8')
   res.send(formatPrometheusMetrics())
+})
+
+/** Admin: read active system normative rules bundle (single ruleset for all users). */
+app.get('/api/admin/normative-rules', requireAuth, requireRole('administrator'), async (_req, res) => {
+  try {
+    const view = await getActiveNormativeRulesAdminView()
+    res.json({
+      active_version: view.active_version,
+      file_path: view.file_path,
+      source: view.source,
+      updated_at: view.updated_at ?? null,
+      manifest: view.manifest,
+      bundle: view.bundle,
+    })
+  } catch (e) {
+    const message = e instanceof Error ? e.message : 'Could not load normative rules'
+    res.status(500).json({ error: message })
+  }
+})
+
+/** Admin: persist edits to the active system normative rules bundle. */
+app.put('/api/admin/normative-rules', requireAuth, requireRole('administrator'), async (req, res) => {
+  const { user } = req as AuthedRequest
+  const body = req.body as { bundle?: unknown }
+  if (!body || typeof body !== 'object' || body.bundle === undefined) {
+    res.status(400).json({ error: 'Request body must include "bundle" object' })
+    return
+  }
+  try {
+    const saved = await saveActiveNormativeRulesBundle(body.bundle, user.id)
+    const source = getNormativeRulesSource()
+    logStructured('info', {
+      event: 'normative_rules_saved',
+      version: saved.version,
+      correlation_id: req.correlationId,
+      source,
+    })
+    res.json({
+      ok: true,
+      active_version: saved.version,
+      source,
+      bundle: saved,
+    })
+  } catch (e) {
+    if (e instanceof NormativeRulesValidationError) {
+      res.status(400).json({ error: e.message, code: e.code })
+      return
+    }
+    const message = e instanceof Error ? e.message : 'Could not save normative rules'
+    logStructured('error', {
+      event: 'normative_rules_save_failed',
+      correlation_id: req.correlationId,
+      error: message,
+    })
+    res.status(500).json({ error: message })
+  }
 })
 
 /**
@@ -1419,5 +1482,15 @@ app.listen(port, () => {
     ...cadWorkerConfigSummary(),
   })
   void probeCadWorkerOnStartup()
-  startPipelineWorker()
+  void (async () => {
+    try {
+      await warmNormativeRulesCache()
+    } catch (e) {
+      logStructured('warn', {
+        event: 'normative_rules_cache_warm_failed',
+        error: e instanceof Error ? e.message : String(e),
+      })
+    }
+    startPipelineWorker()
+  })()
 })

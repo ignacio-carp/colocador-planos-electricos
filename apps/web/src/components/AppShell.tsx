@@ -3,7 +3,7 @@ import { useAuth } from '../context/AuthContext'
 import { getAppRole } from '../lib/roles'
 import { Icon } from './Icon'
 
-export type AppNavId = 'dashboard' | 'jobs' | 'invites' | 'settings'
+export type AppNavId = 'dashboard' | 'jobs' | 'invites' | 'normative-rules' | 'settings'
 
 type AppShellProps = {
   children: React.ReactNode
@@ -34,7 +34,15 @@ export function AppShell({
   const navItems: { id: AppNavId; label: string; icon: string; path: string }[] = [
     { id: 'dashboard', label: 'Proyectos', icon: 'account_tree', path: '/dashboard' },
     ...(role === 'administrator'
-      ? [{ id: 'invites' as const, label: 'Invitaciones', icon: 'mail', path: '/invites' }]
+      ? [
+          { id: 'invites' as const, label: 'Invitaciones', icon: 'mail', path: '/invites' },
+          {
+            id: 'normative-rules' as const,
+            label: 'Reglas normativas',
+            icon: 'rule',
+            path: '/admin/normative-rules',
+          },
+        ]
       : []),
   ]
 
