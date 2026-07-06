@@ -193,6 +193,11 @@ export default function JobDetail({ jobId, onNavigate }: JobDetailProps) {
     }
   }, [session, jobId, role, loadWorkspace, loadRenderData])
 
+  const refreshWorkspace = useCallback(() => {
+    setDxfReloadToken((t) => t + 1)
+    void load({ silent: true })
+  }, [load])
+
   const fetchJobStatus = useCallback(async (): Promise<string | null> => {
     if (!session) return null
     try {
@@ -547,10 +552,7 @@ export default function JobDetail({ jobId, onNavigate }: JobDetailProps) {
                   accessToken={session.access_token}
                   captureView={() => captureViewRef.current?.() ?? null}
                   canSend={canEdit && isReadyForWorkspace(job.status)}
-                  onWorkspaceMutated={() => {
-                    setDxfReloadToken((t) => t + 1)
-                    void load()
-                  }}
+                  onWorkspaceMutated={refreshWorkspace}
                 />
               </div>
             </div>
@@ -580,7 +582,7 @@ export default function JobDetail({ jobId, onNavigate }: JobDetailProps) {
               roomProcessingState={workspace.room_processing_state ?? {}}
               normativeRulesEnabled={workspace.normative_rules_enabled}
               accessToken={session.access_token}
-              onStateChange={() => void load()}
+              onStateChange={refreshWorkspace}
             />
           ) : null}
 
@@ -591,7 +593,7 @@ export default function JobDetail({ jobId, onNavigate }: JobDetailProps) {
               roomProcessingState={workspace.room_processing_state ?? {}}
               preliminaryAnalysisCompletedAt={workspace.preliminary_analysis_completed_at}
               jobError={job.error ?? null}
-              onRefresh={() => void load()}
+              onRefresh={refreshWorkspace}
             />
           ) : null}
 

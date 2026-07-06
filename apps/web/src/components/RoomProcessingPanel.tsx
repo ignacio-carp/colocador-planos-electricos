@@ -147,12 +147,17 @@ export function RoomProcessingPanel({
           room_processing_state?: RoomProcessingState
         }
         const state = body.room_processing_state ?? {}
-        const stillProcessing = roomIds.some((id) => state[id] === 'procesando')
-        const doneCount = roomIds.filter(
-          (id) => state[id] === 'procesada' || state[id] === 'error',
-        ).length
+        const doneCount = roomIds.filter((id) => {
+          const s = state[id]
+          return s === 'procesada' || s === 'error'
+        }).length
         setProcessingProgress(`Procesando habitaciones (${doneCount}/${roomIds.length})…`)
-        if (!stillProcessing) return
+        if (roomIds.every((id) => {
+          const s = state[id]
+          return s === 'procesada' || s === 'error'
+        })) {
+          return
+        }
       }
       await new Promise((r) => setTimeout(r, 2000))
     }
@@ -174,11 +179,14 @@ export function RoomProcessingPanel({
     setProcessingProgress(`Procesando habitaciones (0/${roomIds.length})…`)
 
     try {
-      const res = await fetch(`${apiBase}/api/jobs/${encodeURIComponent(jobId)}/workspace/process-rooms`, {
+      const res = await fetch(
+        `${apiBase}/api/jobs/${encodeURIComponent(jobId)}/workspace/process-rooms?sync=1`,
+        {
         method: 'POST',
         headers: authHeaders(),
         body: JSON.stringify({ room_ids: roomIds, idempotency_key: crypto.randomUUID() }),
-      })
+        },
+      )
       const body = (await res.json().catch(() => ({}))) as {
         rooms?: RoomProcessingResult[]
         error?: string

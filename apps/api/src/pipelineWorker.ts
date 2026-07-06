@@ -1,5 +1,5 @@
 import { logStructured } from './logger'
-import { releaseQueueMessage, claimNextQueueMessage, markQueueMessageDone, markQueueMessageFailed } from './jobQueue'
+import { releaseQueueMessage, claimNextQueueMessage, markQueueMessageDone, markQueueMessageFailed, type QueueMessage } from './jobQueue'
 import { runJobPipeline } from './jobsPipeline'
 import { runPreliminaryAnalysisPipeline } from './preliminaryPipeline'
 import { runRoomProcessingPipeline } from './roomProcessingPipeline'
@@ -21,6 +21,26 @@ export function pipelineWorkerPollMs(): number {
   return Number.isFinite(n) && n >= 100 ? n : 500
 }
 
+/** Skip stale queue items; room_processing must run while job is listo_para_editar. */
+export function shouldSkipQueuedMessage(
+  runType: QueueMessage['run_type'],
+  status: ReturnType<typeof normalizeJobStatus>,
+): boolean {
+  if (runType === 'room_processing') {
+    return (
+      status === 'procesado' ||
+      status === 'error' ||
+      status === 'analizando' ||
+      status === 'procesando' ||
+      (status !== 'listo_para_editar' && status !== 'parcialmente_procesado')
+    )
+  }
+  if (runType === 'preliminary_analysis') {
+    return status === 'procesado' || status === 'listo_para_editar' || status === 'error'
+  }
+  return status === 'procesado' || status === 'listo_para_editar' || status === 'error'
+}
+
 async function processOneMessage(): Promise<void> {
   const msg = claimNextQueueMessage()
   if (!msg) return
@@ -37,11 +57,7 @@ async function processOneMessage(): Promise<void> {
   }
 
   const status = normalizeJobStatus(job.status)
-  if (
-    status === 'procesado' ||
-    status === 'listo_para_editar' ||
-    status === 'error'
-  ) {
+  if (shouldSkipQueuedMessage(msg.run_type, status)) {
     markQueueMessageDone(msg.job_id)
     return
   }
