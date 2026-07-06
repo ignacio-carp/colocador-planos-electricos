@@ -101,7 +101,22 @@ async function runCadWorkerPlanRender(
 ): Promise<{ localPngPath: string; metadata: PlanRenderMetadata } | undefined> {
   const dir = mkdtempSync(join(tmpdir(), 'cambre-render-'))
   const localPngPath = join(dir, 'plan.png')
-  const result = await renderPlanFromDxf(localPath, localPngPath)
+  let result
+  try {
+    result = await renderPlanFromDxf(localPath, localPngPath)
+  } catch (e) {
+    if (e instanceof CadWorkerError) {
+      logStructured('warn', {
+        event: 'cad_worker_render_plan_skipped',
+        job_id: jobId,
+        correlation_id: correlationId,
+        error: e.message,
+        code: e.code,
+      })
+      return undefined
+    }
+    throw e
+  }
   if (!result.ok) {
     logStructured('warn', {
       event: 'cad_worker_render_plan_skipped',

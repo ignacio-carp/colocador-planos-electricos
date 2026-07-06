@@ -16,8 +16,11 @@ from ezdxf.addons.drawing.matplotlib import MatplotlibBackend  # noqa: E402
 
 from cad_worker.dxf_io import open_dxf_file
 from cad_worker.extract_geometry import extract_geometry, geometry_bounding_box
+from cad_worker.font_setup import ensure_drawing_fonts
 
 INVALID_DXF_CODE = "CAD_WORKER_INVALID_DXF"
+
+ensure_drawing_fonts()
 
 
 def _layout_bbox(dxf_path: Path) -> dict[str, float] | None:
