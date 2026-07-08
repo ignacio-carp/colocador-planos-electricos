@@ -7,9 +7,11 @@ from pathlib import Path
 from typing import Any, Literal
 
 import ezdxf
+from ezdxf import bbox as ezdxf_bbox
 
 from cad_worker.constants import OUTPUT_ELECTRICAL_LAYER_NAME
 from cad_worker.dxf_io import open_dxf_file
+from cad_worker.symbol_catalog import read_dxf_insunits
 
 ELECTRICAL_LAYER_NAME = OUTPUT_ELECTRICAL_LAYER_NAME
 
@@ -60,6 +62,26 @@ def _point_xy(value: Any) -> list[float] | None:
     if isinstance(value, (list, tuple)) and len(value) >= 2:
         return [float(value[0]), float(value[1])]
     return None
+
+
+def _insert_footprint(entity: Any) -> dict[str, float] | None:
+    """2D bounding box of a block reference (furniture footprint for placement).
+
+    The deterministic placer anchors furniture-relative outlets (e.g. the bed
+    headboard pair) to this box; the insertion point alone says nothing about size.
+    """
+    try:
+        extents = ezdxf_bbox.extents([entity], fast=True)
+    except Exception:  # noqa: BLE001 - unresolvable blocks simply have no footprint
+        return None
+    if not extents.has_data:
+        return None
+    return {
+        "min_x": float(extents.extmin.x),
+        "min_y": float(extents.extmin.y),
+        "max_x": float(extents.extmax.x),
+        "max_y": float(extents.extmax.y),
+    }
 
 
 def extract_geometry(dxf_path: str | Path) -> dict[str, object]:
@@ -122,7 +144,11 @@ def extract_geometry(dxf_path: str | Path) -> dict[str, object]:
             block_name = str(getattr(entity.dxf, "name", "") or "")
             if pos:
                 capas["muebles"].add(layer or "")
-                muebles.append({"bloque": block_name, "posicion": pos, "capa": layer})
+                item: dict[str, object] = {"bloque": block_name, "posicion": pos, "capa": layer}
+                footprint = _insert_footprint(entity)
+                if footprint:
+                    item["footprint"] = footprint
+                muebles.append(item)
 
     return {
         "paredes": paredes,
@@ -131,6 +157,9 @@ def extract_geometry(dxf_path: str | Path) -> dict[str, object]:
         "capas_clasificadas": {
             key: sorted(value for value in values if value) for key, values in capas.items()
         },
+        # Declared DXF units travel with the geometry so downstream consumers
+        # (deterministic placement, chat snapping) never re-guess them.
+        "insunits": read_dxf_insunits(doc),
     }
 
 

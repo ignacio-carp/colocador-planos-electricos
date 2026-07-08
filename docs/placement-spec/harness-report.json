@@ -1,0 +1,678 @@
+{
+  "mode": "deterministic",
+  "ruleset": "cambre-tomas-2026.07.1",
+  "fixtures": [
+    {
+      "fixture": "dormitorio_basico",
+      "description": "Dormitorio 3x4, puerta sur, cama contra pared norte (caso canonico)",
+      "checks": [
+        {
+          "check": "detect_rooms_count",
+          "ok": true,
+          "detail": "esperadas 1, detectadas 1 (faces=1)"
+        },
+        {
+          "check": "detect_rooms_match",
+          "ok": true,
+          "detail": "area verdad 12.00 m2 matcheada",
+          "room_id": "dorm-01"
+        },
+        {
+          "check": "count_matches_rule",
+          "ok": true,
+          "detail": "esperadas 2, colocadas 2 (required=2)",
+          "room_id": "dorm-01"
+        },
+        {
+          "check": "inside_polygon",
+          "ok": true,
+          "detail": "2/2 dentro del poligono del ambiente",
+          "room_id": "dorm-01"
+        },
+        {
+          "check": "on_wall",
+          "ok": true,
+          "detail": "peor distancia a pared 10.0 du (tolerancia 50.0)",
+          "room_id": "dorm-01"
+        },
+        {
+          "check": "clearance_openings",
+          "ok": true,
+          "detail": "sin tomas a menos de 150 mm de aberturas",
+          "room_id": "dorm-01"
+        },
+        {
+          "check": "no_overlap",
+          "ok": true,
+          "detail": "separacion minima 600 mm respetada",
+          "room_id": "dorm-01"
+        },
+        {
+          "check": "expected_points",
+          "ok": true,
+          "detail": "todas las posiciones esperadas matcheadas",
+          "room_id": "dorm-01"
+        },
+        {
+          "check": "warnings_match",
+          "ok": true,
+          "detail": "warnings=[]",
+          "room_id": "dorm-01"
+        },
+        {
+          "check": "bbox_guard_zero",
+          "ok": true,
+          "detail": "enviadas 2, dibujadas 2, descartadas 0"
+        },
+        {
+          "check": "scale_sane",
+          "ok": true,
+          "detail": "simbolo 3.00 cm reales (objetivo 3 cm ±50%)"
+        },
+        {
+          "check": "determinism",
+          "ok": true,
+          "detail": "dos corridas byte-identicas"
+        }
+      ]
+    },
+    {
+      "fixture": "dormitorio_metros",
+      "description": "Dormitorio 3x4, puerta sur, cama contra pared norte (caso canonico)",
+      "checks": [
+        {
+          "check": "detect_rooms_count",
+          "ok": true,
+          "detail": "esperadas 1, detectadas 1 (faces=1)"
+        },
+        {
+          "check": "detect_rooms_match",
+          "ok": true,
+          "detail": "area verdad 12.00 m2 matcheada",
+          "room_id": "dorm-01"
+        },
+        {
+          "check": "count_matches_rule",
+          "ok": true,
+          "detail": "esperadas 2, colocadas 2 (required=2)",
+          "room_id": "dorm-01"
+        },
+        {
+          "check": "inside_polygon",
+          "ok": true,
+          "detail": "2/2 dentro del poligono del ambiente",
+          "room_id": "dorm-01"
+        },
+        {
+          "check": "on_wall",
+          "ok": true,
+          "detail": "peor distancia a pared 0.0 du (tolerancia 0.1)",
+          "room_id": "dorm-01"
+        },
+        {
+          "check": "clearance_openings",
+          "ok": true,
+          "detail": "sin tomas a menos de 150 mm de aberturas",
+          "room_id": "dorm-01"
+        },
+        {
+          "check": "no_overlap",
+          "ok": true,
+          "detail": "separacion minima 600 mm respetada",
+          "room_id": "dorm-01"
+        },
+        {
+          "check": "expected_points",
+          "ok": true,
+          "detail": "todas las posiciones esperadas matcheadas",
+          "room_id": "dorm-01"
+        },
+        {
+          "check": "warnings_match",
+          "ok": true,
+          "detail": "warnings=[]",
+          "room_id": "dorm-01"
+        },
+        {
+          "check": "bbox_guard_zero",
+          "ok": true,
+          "detail": "enviadas 2, dibujadas 2, descartadas 0"
+        },
+        {
+          "check": "scale_sane",
+          "ok": true,
+          "detail": "simbolo 3.00 cm reales (objetivo 3 cm ±50%)"
+        },
+        {
+          "check": "determinism",
+          "ok": true,
+          "detail": "dos corridas byte-identicas"
+        }
+      ]
+    },
+    {
+      "fixture": "dormitorio_sin_insunits",
+      "description": "Dormitorio 3x4, puerta sur, cama contra pared norte (caso canonico)",
+      "checks": [
+        {
+          "check": "detect_rooms_count",
+          "ok": true,
+          "detail": "esperadas 1, detectadas 1 (faces=1)"
+        },
+        {
+          "check": "detect_rooms_match",
+          "ok": true,
+          "detail": "area verdad 12.00 m2 matcheada",
+          "room_id": "dorm-01"
+        },
+        {
+          "check": "count_matches_rule",
+          "ok": true,
+          "detail": "esperadas 2, colocadas 2 (required=2)",
+          "room_id": "dorm-01"
+        },
+        {
+          "check": "inside_polygon",
+          "ok": true,
+          "detail": "2/2 dentro del poligono del ambiente",
+          "room_id": "dorm-01"
+        },
+        {
+          "check": "on_wall",
+          "ok": true,
+          "detail": "peor distancia a pared 10.0 du (tolerancia 50.0)",
+          "room_id": "dorm-01"
+        },
+        {
+          "check": "clearance_openings",
+          "ok": true,
+          "detail": "sin tomas a menos de 150 mm de aberturas",
+          "room_id": "dorm-01"
+        },
+        {
+          "check": "no_overlap",
+          "ok": true,
+          "detail": "separacion minima 600 mm respetada",
+          "room_id": "dorm-01"
+        },
+        {
+          "check": "expected_points",
+          "ok": true,
+          "detail": "todas las posiciones esperadas matcheadas",
+          "room_id": "dorm-01"
+        },
+        {
+          "check": "warnings_match",
+          "ok": true,
+          "detail": "warnings=[]",
+          "room_id": "dorm-01"
+        },
+        {
+          "check": "bbox_guard_zero",
+          "ok": true,
+          "detail": "enviadas 2, dibujadas 2, descartadas 0"
+        },
+        {
+          "check": "scale_sane",
+          "ok": true,
+          "detail": "simbolo 3.00 cm reales (objetivo 3 cm ±50%)"
+        },
+        {
+          "check": "determinism",
+          "ok": true,
+          "detail": "dos corridas byte-identicas"
+        }
+      ]
+    },
+    {
+      "fixture": "dormitorio_dos_puertas",
+      "description": "Dormitorio con dos puertas, cama contra pared oeste",
+      "checks": [
+        {
+          "check": "detect_rooms_count",
+          "ok": true,
+          "detail": "esperadas 1, detectadas 1 (faces=1)"
+        },
+        {
+          "check": "detect_rooms_match",
+          "ok": true,
+          "detail": "area verdad 12.25 m2 matcheada",
+          "room_id": "dorm-02"
+        },
+        {
+          "check": "count_matches_rule",
+          "ok": true,
+          "detail": "esperadas 2, colocadas 2 (required=2)",
+          "room_id": "dorm-02"
+        },
+        {
+          "check": "inside_polygon",
+          "ok": true,
+          "detail": "2/2 dentro del poligono del ambiente",
+          "room_id": "dorm-02"
+        },
+        {
+          "check": "on_wall",
+          "ok": true,
+          "detail": "peor distancia a pared 10.0 du (tolerancia 50.0)",
+          "room_id": "dorm-02"
+        },
+        {
+          "check": "clearance_openings",
+          "ok": true,
+          "detail": "sin tomas a menos de 150 mm de aberturas",
+          "room_id": "dorm-02"
+        },
+        {
+          "check": "no_overlap",
+          "ok": true,
+          "detail": "separacion minima 600 mm respetada",
+          "room_id": "dorm-02"
+        },
+        {
+          "check": "expected_points",
+          "ok": true,
+          "detail": "todas las posiciones esperadas matcheadas",
+          "room_id": "dorm-02"
+        },
+        {
+          "check": "warnings_match",
+          "ok": true,
+          "detail": "warnings=[]",
+          "room_id": "dorm-02"
+        },
+        {
+          "check": "bbox_guard_zero",
+          "ok": true,
+          "detail": "enviadas 2, dibujadas 2, descartadas 0"
+        },
+        {
+          "check": "scale_sane",
+          "ok": true,
+          "detail": "simbolo 3.00 cm reales (objetivo 3 cm ±50%)"
+        },
+        {
+          "check": "determinism",
+          "ok": true,
+          "detail": "dos corridas byte-identicas"
+        }
+      ]
+    },
+    {
+      "fixture": "ambiente_l",
+      "description": "Estar en L, puerta sur; spacing 6 m exige 4 tomas en paredes distintas",
+      "checks": [
+        {
+          "check": "detect_rooms_count",
+          "ok": true,
+          "detail": "esperadas 1, detectadas 1 (faces=1)"
+        },
+        {
+          "check": "detect_rooms_match",
+          "ok": true,
+          "detail": "area verdad 20.00 m2 matcheada",
+          "room_id": "estar-l"
+        },
+        {
+          "check": "count_matches_rule",
+          "ok": true,
+          "detail": "esperadas 4, colocadas 4 (required=4)",
+          "room_id": "estar-l"
+        },
+        {
+          "check": "inside_polygon",
+          "ok": true,
+          "detail": "4/4 dentro del poligono del ambiente",
+          "room_id": "estar-l"
+        },
+        {
+          "check": "on_wall",
+          "ok": true,
+          "detail": "peor distancia a pared 10.0 du (tolerancia 50.0)",
+          "room_id": "estar-l"
+        },
+        {
+          "check": "clearance_openings",
+          "ok": true,
+          "detail": "sin tomas a menos de 150 mm de aberturas",
+          "room_id": "estar-l"
+        },
+        {
+          "check": "no_overlap",
+          "ok": true,
+          "detail": "separacion minima 600 mm respetada",
+          "room_id": "estar-l"
+        },
+        {
+          "check": "distinct_walls",
+          "ok": true,
+          "detail": "4 paredes distintas usadas (esperadas >= 4)",
+          "room_id": "estar-l"
+        },
+        {
+          "check": "warnings_match",
+          "ok": true,
+          "detail": "warnings=[]",
+          "room_id": "estar-l"
+        },
+        {
+          "check": "bbox_guard_zero",
+          "ok": true,
+          "detail": "enviadas 4, dibujadas 4, descartadas 0"
+        },
+        {
+          "check": "scale_sane",
+          "ok": true,
+          "detail": "simbolo 3.00 cm reales (objetivo 3 cm ±50%)"
+        },
+        {
+          "check": "determinism",
+          "ok": true,
+          "detail": "dos corridas byte-identicas"
+        }
+      ]
+    },
+    {
+      "fixture": "cocina",
+      "description": "Cocina 3x3 con mesada; v1 = algoritmo generico + warning de mesada",
+      "checks": [
+        {
+          "check": "detect_rooms_count",
+          "ok": true,
+          "detail": "esperadas 1, detectadas 1 (faces=1)"
+        },
+        {
+          "check": "detect_rooms_match",
+          "ok": true,
+          "detail": "area verdad 9.00 m2 matcheada",
+          "room_id": "cocina-01"
+        },
+        {
+          "check": "count_matches_rule",
+          "ok": true,
+          "detail": "esperadas 2, colocadas 2 (required=2)",
+          "room_id": "cocina-01"
+        },
+        {
+          "check": "inside_polygon",
+          "ok": true,
+          "detail": "2/2 dentro del poligono del ambiente",
+          "room_id": "cocina-01"
+        },
+        {
+          "check": "on_wall",
+          "ok": true,
+          "detail": "peor distancia a pared 10.0 du (tolerancia 50.0)",
+          "room_id": "cocina-01"
+        },
+        {
+          "check": "clearance_openings",
+          "ok": true,
+          "detail": "sin tomas a menos de 150 mm de aberturas",
+          "room_id": "cocina-01"
+        },
+        {
+          "check": "no_overlap",
+          "ok": true,
+          "detail": "separacion minima 600 mm respetada",
+          "room_id": "cocina-01"
+        },
+        {
+          "check": "distinct_walls",
+          "ok": true,
+          "detail": "2 paredes distintas usadas (esperadas >= 2)",
+          "room_id": "cocina-01"
+        },
+        {
+          "check": "warnings_match",
+          "ok": true,
+          "detail": "warnings=['KITCHEN-COUNTER-UNVERIFIED']",
+          "room_id": "cocina-01"
+        },
+        {
+          "check": "bbox_guard_zero",
+          "ok": true,
+          "detail": "enviadas 2, dibujadas 2, descartadas 0"
+        },
+        {
+          "check": "scale_sane",
+          "ok": true,
+          "detail": "simbolo 3.00 cm reales (objetivo 3 cm ±50%)"
+        },
+        {
+          "check": "determinism",
+          "ok": true,
+          "detail": "dos corridas byte-identicas"
+        }
+      ]
+    },
+    {
+      "fixture": "multi_habitacion",
+      "description": "Dormitorio + estar con pared divisoria y puerta interior",
+      "checks": [
+        {
+          "check": "detect_rooms_count",
+          "ok": true,
+          "detail": "esperadas 2, detectadas 2 (faces=2)"
+        },
+        {
+          "check": "detect_rooms_match",
+          "ok": true,
+          "detail": "area verdad 12.00 m2 matcheada",
+          "room_id": "dorm-m"
+        },
+        {
+          "check": "detect_rooms_match",
+          "ok": true,
+          "detail": "area verdad 20.00 m2 matcheada",
+          "room_id": "estar-m"
+        },
+        {
+          "check": "count_matches_rule",
+          "ok": true,
+          "detail": "esperadas 2, colocadas 2 (required=2)",
+          "room_id": "dorm-m"
+        },
+        {
+          "check": "inside_polygon",
+          "ok": true,
+          "detail": "2/2 dentro del poligono del ambiente",
+          "room_id": "dorm-m"
+        },
+        {
+          "check": "on_wall",
+          "ok": true,
+          "detail": "peor distancia a pared 10.0 du (tolerancia 50.0)",
+          "room_id": "dorm-m"
+        },
+        {
+          "check": "clearance_openings",
+          "ok": true,
+          "detail": "sin tomas a menos de 150 mm de aberturas",
+          "room_id": "dorm-m"
+        },
+        {
+          "check": "no_overlap",
+          "ok": true,
+          "detail": "separacion minima 600 mm respetada",
+          "room_id": "dorm-m"
+        },
+        {
+          "check": "expected_points",
+          "ok": true,
+          "detail": "todas las posiciones esperadas matcheadas",
+          "room_id": "dorm-m"
+        },
+        {
+          "check": "warnings_match",
+          "ok": true,
+          "detail": "warnings=[]",
+          "room_id": "dorm-m"
+        },
+        {
+          "check": "count_matches_rule",
+          "ok": true,
+          "detail": "esperadas 3, colocadas 3 (required=3)",
+          "room_id": "estar-m"
+        },
+        {
+          "check": "inside_polygon",
+          "ok": true,
+          "detail": "3/3 dentro del poligono del ambiente",
+          "room_id": "estar-m"
+        },
+        {
+          "check": "on_wall",
+          "ok": true,
+          "detail": "peor distancia a pared 10.0 du (tolerancia 50.0)",
+          "room_id": "estar-m"
+        },
+        {
+          "check": "clearance_openings",
+          "ok": true,
+          "detail": "sin tomas a menos de 150 mm de aberturas",
+          "room_id": "estar-m"
+        },
+        {
+          "check": "no_overlap",
+          "ok": true,
+          "detail": "separacion minima 600 mm respetada",
+          "room_id": "estar-m"
+        },
+        {
+          "check": "distinct_walls",
+          "ok": true,
+          "detail": "3 paredes distintas usadas (esperadas >= 3)",
+          "room_id": "estar-m"
+        },
+        {
+          "check": "warnings_match",
+          "ok": true,
+          "detail": "warnings=[]",
+          "room_id": "estar-m"
+        },
+        {
+          "check": "bbox_guard_zero",
+          "ok": true,
+          "detail": "enviadas 5, dibujadas 5, descartadas 0"
+        },
+        {
+          "check": "scale_sane",
+          "ok": true,
+          "detail": "simbolo 3.00 cm reales (objetivo 3 cm ±50%)"
+        },
+        {
+          "check": "determinism",
+          "ok": true,
+          "detail": "dos corridas byte-identicas"
+        }
+      ]
+    },
+    {
+      "fixture": "estar_pared_larga",
+      "description": "Estar 8x2, puerta sur central; 4 tomas deben usar 4 paredes distintas",
+      "checks": [
+        {
+          "check": "detect_rooms_count",
+          "ok": true,
+          "detail": "esperadas 1, detectadas 1 (faces=1)"
+        },
+        {
+          "check": "detect_rooms_match",
+          "ok": true,
+          "detail": "area verdad 16.00 m2 matcheada",
+          "room_id": "estar-largo"
+        },
+        {
+          "check": "count_matches_rule",
+          "ok": true,
+          "detail": "esperadas 4, colocadas 4 (required=4)",
+          "room_id": "estar-largo"
+        },
+        {
+          "check": "inside_polygon",
+          "ok": true,
+          "detail": "4/4 dentro del poligono del ambiente",
+          "room_id": "estar-largo"
+        },
+        {
+          "check": "on_wall",
+          "ok": true,
+          "detail": "peor distancia a pared 10.0 du (tolerancia 50.0)",
+          "room_id": "estar-largo"
+        },
+        {
+          "check": "clearance_openings",
+          "ok": true,
+          "detail": "sin tomas a menos de 150 mm de aberturas",
+          "room_id": "estar-largo"
+        },
+        {
+          "check": "no_overlap",
+          "ok": true,
+          "detail": "separacion minima 600 mm respetada",
+          "room_id": "estar-largo"
+        },
+        {
+          "check": "distinct_walls",
+          "ok": true,
+          "detail": "4 paredes distintas usadas (esperadas >= 4)",
+          "room_id": "estar-largo"
+        },
+        {
+          "check": "warnings_match",
+          "ok": true,
+          "detail": "warnings=[]",
+          "room_id": "estar-largo"
+        },
+        {
+          "check": "bbox_guard_zero",
+          "ok": true,
+          "detail": "enviadas 4, dibujadas 4, descartadas 0"
+        },
+        {
+          "check": "scale_sane",
+          "ok": true,
+          "detail": "simbolo 3.00 cm reales (objetivo 3 cm ±50%)"
+        },
+        {
+          "check": "determinism",
+          "ok": true,
+          "detail": "dos corridas byte-identicas"
+        }
+      ]
+    },
+    {
+      "fixture": "sin_paredes",
+      "description": "Sin capa de muros: el colocador debe fallar explicito, nunca inventar",
+      "checks": [
+        {
+          "check": "detect_rooms",
+          "ok": true,
+          "detail": "deteccion debia fallar; ok=False code=NO_WALLS"
+        },
+        {
+          "check": "honest_error",
+          "ok": true,
+          "detail": "esperado NO_WALLS_FOR_ROOM, obtenido NO_WALLS_FOR_ROOM",
+          "room_id": "dorm-x"
+        },
+        {
+          "check": "determinism",
+          "ok": true,
+          "detail": "dos corridas byte-identicas"
+        }
+      ]
+    }
+  ],
+  "summary": {
+    "total_checks": 107,
+    "passed": 107,
+    "failed": 0
+  },
+  "baseline": {
+    "mode": "llm",
+    "status": "not_run",
+    "reason": "requiere la API Node corriendo y OPENAI_API_KEY; el modo deterministico corre offline y sin costo"
+  }
+}

@@ -4,9 +4,11 @@ import os
 import sys
 from datetime import datetime, timezone
 
+from cad_worker.detect_rooms import detect_rooms_cmd
 from cad_worker.electrical_layer import apply_layer_cmd
 from cad_worker.extract_geometry import extract_geometry_cmd
 from cad_worker.inspect_dxf import inspect_cmd
+from cad_worker.placement import place_elements_cmd
 from cad_worker.render_plan import render_plan_cmd
 
 
@@ -100,6 +102,51 @@ def main(argv: list[str] | None = None) -> None:
     p_render_plan.add_argument("--output", required=True)
     p_render_plan.add_argument("--width-px", type=int, default=2048, dest="width_px")
 
+    p_place = subparsers.add_parser(
+        "place-elements",
+        help=(
+            "Deterministic outlet placement: JSON payload "
+            "(room + geometry + rules) in, outlet_placements out."
+        ),
+    )
+    p_place.add_argument(
+        "--payload-json",
+        required=True,
+        dest="payload_json",
+        help="JSON: {room, geometry, rules, insunits?, params?}",
+    )
+
+    p_detect = subparsers.add_parser(
+        "detect-rooms",
+        help="Experimental: detect room polygons from wall segments (polygonize).",
+    )
+    p_detect.add_argument(
+        "--geometry-json",
+        required=True,
+        dest="geometry_json",
+        help="JSON geometry_extract payload (paredes[] required)",
+    )
+    p_detect.add_argument("--insunits", type=int, default=None)
+
+    p_harness = subparsers.add_parser(
+        "harness",
+        help=(
+            "Verification loop: synthetic fixtures -> deterministic pipeline "
+            "-> geometric validators -> pass/fail report."
+        ),
+    )
+    p_harness.add_argument(
+        "--out-dir",
+        default=None,
+        dest="out_dir",
+        help="Keep fixtures and drawn DXFs here (default: temp dir, discarded)",
+    )
+    p_harness.add_argument(
+        "--report",
+        default=None,
+        help="Write the JSON report to this path",
+    )
+
     args = parser.parse_args(argv)
 
     if args.command == "health":
@@ -122,6 +169,14 @@ def main(argv: list[str] | None = None) -> None:
         )
     if args.command == "render-plan":
         raise SystemExit(render_plan_cmd(args.input, args.output, width_px=args.width_px))
+    if args.command == "place-elements":
+        raise SystemExit(place_elements_cmd(args.payload_json))
+    if args.command == "detect-rooms":
+        raise SystemExit(detect_rooms_cmd(args.geometry_json, args.insunits))
+    if args.command == "harness":
+        from cad_worker.harness.runner import harness_cmd
+
+        raise SystemExit(harness_cmd(args.out_dir, args.report))
 
     raise SystemExit(2)
 

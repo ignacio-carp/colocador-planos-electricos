@@ -55,10 +55,12 @@ LEGACY_TO_ELEMENT: dict[str, str] = {
 TARGET_SYMBOL_DIAMETER_M = 0.03
 CROSS_ARM_RATIO = 0.65
 
-# Max symbol radius as fraction of plan span (avoid dominating small details).
-MAX_RADIUS_SPAN_RATIO = 0.0012
-# Min symbol radius as fraction of plan span (stay visible when zoomed to full plan).
-MIN_RADIUS_SPAN_RATIO = 0.00025
+# Span clamps only guard against a wrong units inference (symbol wider than a
+# room); they must not shave legitimate physical sizes. A single-room plan in
+# mm spans ~4000 du with a correct radius of 15 du (0.375% of span), so the
+# ceiling has to sit well above that.
+MAX_RADIUS_SPAN_RATIO = 0.01
+MIN_RADIUS_SPAN_RATIO = 0.0005
 
 # AutoCAD $INSUNITS → drawing units per meter.
 INSUNITS_PER_METER: dict[int, float] = {
@@ -194,9 +196,18 @@ def compute_symbol_radius_drawing_units(
     geometry: dict[str, object] | None = None,
     insunits: int | None = None,
 ) -> float:
-    """Target block radius in DXF drawing units (~1.5 cm real-world diameter ≈ 3 cm)."""
+    """Target block radius in DXF drawing units (~1.5 cm real-world diameter ≈ 3 cm).
+
+    With an explicit $INSUNITS the physical size is authoritative: no bbox
+    clamping, because the plan span is contaminated by title blocks and stray
+    entities far from the floor plan. Span clamps only apply when units had to
+    be inferred (the heuristic itself is span-based, so the guard stays useful).
+    """
     per_meter = drawing_units_per_meter(insunits, bbox, geometry)
     physical_radius = (TARGET_SYMBOL_DIAMETER_M / 2.0) * per_meter
+
+    if insunits and insunits in INSUNITS_PER_METER:
+        return max(physical_radius, 1e-6)
 
     if not bbox:
         return max(physical_radius, 1e-6)

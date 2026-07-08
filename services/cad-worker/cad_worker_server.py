@@ -13,6 +13,7 @@ from fastapi import FastAPI, File, Form, HTTPException, Request, UploadFile
 from fastapi.responses import FileResponse
 from starlette.background import BackgroundTask
 
+from cad_worker.detect_rooms import detect_rooms_from_walls
 from cad_worker.electrical_layer import (
     INVALID_DXF_CODE,
     apply_electrical_layer,
@@ -21,6 +22,7 @@ from cad_worker.electrical_layer import (
 from cad_worker.extract_geometry import extract_geometry
 from cad_worker.http_json import dumps_ascii_safe, encode_result_header
 from cad_worker.inspect_dxf import inspect_dxf_file
+from cad_worker.placement import PlacementError, place_outlets_for_room
 from cad_worker.render_plan import render_plan
 
 if hasattr(sys.stdout, "reconfigure"):
@@ -168,6 +170,51 @@ async def render_plan_endpoint(
 def _cleanup_paths(*paths: Path) -> None:
     for path in paths:
         path.unlink(missing_ok=True)
+
+
+@app.post("/place-elements")
+async def place_elements(request: Request) -> dict[str, object]:
+    """Deterministic outlet placement: JSON {room, geometry, rules, insunits?, params?}."""
+    try:
+        payload = json_loads(await request.body())
+    except JSONDecodeError as exc:
+        raise _http_error(400, "CAD_WORKER_INVALID_JSON", str(exc)) from exc
+    if not isinstance(payload, dict):
+        raise _http_error(400, "CAD_WORKER_INVALID_PAYLOAD", "payload must be a JSON object")
+    try:
+        result = place_outlets_for_room(payload)
+        _log_event(
+            logging.INFO,
+            "cad_worker_place_elements_complete",
+            room_id=result.get("room_id"),
+            outlets=len(result.get("outlet_placements", [])),
+            warnings=result.get("warnings"),
+        )
+        return result
+    except PlacementError as exc:
+        raise _http_error(422, exc.code, str(exc)) from exc
+    except Exception as exc:  # noqa: BLE001
+        raise _http_error(500, "CAD_WORKER_ERROR", str(exc)) from exc
+
+
+@app.post("/detect-rooms")
+async def detect_rooms(request: Request) -> dict[str, object]:
+    """Experimental deterministic room detection from wall segments."""
+    try:
+        payload = json_loads(await request.body())
+    except JSONDecodeError as exc:
+        raise _http_error(400, "CAD_WORKER_INVALID_JSON", str(exc)) from exc
+    if not isinstance(payload, dict):
+        raise _http_error(400, "CAD_WORKER_INVALID_PAYLOAD", "payload must be a JSON object")
+    geometry = payload.get("geometry")
+    insunits = payload.get("insunits")
+    result = detect_rooms_from_walls(
+        geometry if isinstance(geometry, dict) else payload,
+        int(insunits) if isinstance(insunits, (int, float)) and insunits else None,
+    )
+    if not result.get("ok"):
+        raise _http_error(422, str(result.get("code") or "CAD_WORKER_ERROR"), str(result.get("error")))
+    return result
 
 
 @app.post("/apply-electrical-layer")

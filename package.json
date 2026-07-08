@@ -11,6 +11,7 @@
     "dev:setup": "bash scripts/dev.sh --setup-only",
     "supabase:login": "bash scripts/supabase-login.sh",
     "env:sync": "bash scripts/sync-dev-env.sh",
+    "harness": "bash scripts/harness.sh",
     "lint": "npm -ws run lint",
     "format": "npm -ws run format",
     "typecheck": "npm -ws run typecheck",
