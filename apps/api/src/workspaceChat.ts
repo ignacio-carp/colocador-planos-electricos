@@ -36,6 +36,7 @@ import {
 } from './openaiClient'
 import { aiConfigured, getPipelineMode, normativeTimeoutMs, visionModel } from './pipelineMode'
 import { normalizeRenderRoomVertices, resolveLayoutInterpretation } from './renderDataHelpers'
+import { snapPositionsForAdd, type WallSegment } from './wallSnap'
 import {
   runRoomProcessingPipeline,
   type RoomProcessingPipelineResult,
@@ -550,7 +551,7 @@ function chatToolDefinitions(): LlmToolDefinition[] {
     {
       name: 'add_elements',
       description:
-        'Agrega productos del catálogo a la capa eléctrica de una habitación. Preferí posiciones explícitas dentro del polígono (consultá get_room_details primero); si no las das, se usa el centroide.',
+        'Agrega productos del catálogo a la capa eléctrica de una habitación. Las posiciones son orientativas: el sistema ancla cada elemento a la pared más cercana de forma determinística. Si no das positions, ancla a la pared más cercana al centro del ambiente.',
       parameters: {
         type: 'object',
         properties: {
@@ -802,7 +803,7 @@ The architect chats next to a rendered DXF floor plan, in Argentine Spanish (vos
 
 Tool usage rules:
 - Use tools ONLY when the user clearly asks to add, remove, or process. Plain questions and conversation need no tools.
-- Before placing elements at specific coordinates, call get_room_details and choose positions inside the room polygon, preferring perimeter walls and avoiding overlaps with existing elements.
+- To place elements, indicate the approximate zone (a position near the intended wall, from get_room_details context); the system snaps every element to the nearest wall deterministically — you never need exact coordinates. Omitting positions anchors to the wall closest to the room center.
 - catalog_sku must be one of the provided catalog skus; room_id one of the provided room ids. Never invent rooms or products; ask for clarification instead.
 - process_room runs the normative rules engine for one room. Pass an instruction that captures the user's specific request when it goes beyond the default rules.
 - You may chain several tool calls (e.g. inspect, then add, then verify) before answering.
@@ -962,6 +963,11 @@ export async function applyChatMutations(
   const applied: AppliedMutation[] = []
   const affected = new Set<string>()
 
+  const geometryExtract = meta.geometry_extract as
+    | { paredes?: WallSegment[]; insunits?: number | null }
+    | undefined
+  const wallSegments = Array.isArray(geometryExtract?.paredes) ? geometryExtract.paredes : []
+
   for (const mutation of mutations) {
     if (mutation.op === 'add_element') {
       const room = roomsById.get(mutation.room_id)
@@ -970,15 +976,42 @@ export async function applyChatMutations(
       const base = mutation.position ?? room.centroid
       if (!base) continue
       const quantity = mutation.quantity ?? 1
+
+      // Deterministic coherence: wall-mounted elements snap to the nearest
+      // wall (10 mm inward, 600 mm between copies) instead of trusting raw
+      // LLM coordinates or the room centroid. Jobs without extracted walls
+      // keep the legacy behaviour.
+      let targets: { x: number; y: number }[]
+      if (wallSegments.length > 0) {
+        targets = snapPositionsForAdd({
+          base,
+          count: quantity,
+          walls: wallSegments,
+          polygon: polygonVerticesForRoom(
+            meta.vision_layout as Record<string, unknown> | undefined,
+            room.id,
+          ),
+          insunits: geometryExtract?.insunits,
+        })
+        if (targets.length === 0) {
+          logStructured('warn', {
+            event: 'chat_add_element_no_wall_in_reach',
+            job_id: jobId,
+            room_id: room.id,
+            requested: { x: base.x, y: base.y },
+          })
+          continue
+        }
+      } else {
+        targets = Array.from({ length: quantity }, (_, i) => ({
+          x: base.x + i * 0.4,
+          y: base.y,
+        }))
+      }
+
       const ids: string[] = []
-      for (let i = 0; i < quantity; i += 1) {
-        // Slight offset per copy so stacked elements stay distinguishable.
-        const placement = placementFromCatalogItem(
-          item,
-          room,
-          { x: base.x + i * 0.4, y: base.y },
-          i,
-        )
+      for (const [i, target] of targets.entries()) {
+        const placement = placementFromCatalogItem(item, room, target, i)
         placements.push(placement)
         ids.push(placement.id)
       }

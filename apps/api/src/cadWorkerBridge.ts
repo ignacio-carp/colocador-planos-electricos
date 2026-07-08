@@ -28,6 +28,8 @@ export type CadWorkerGeometryExtract = {
   muebles?: { bloque?: string; posicion?: number[]; capa?: string }[]
   /** Layer names classified by heuristic: paredes | aberturas | muebles. */
   capas_clasificadas?: Record<string, string[]>
+  /** Declared DXF $INSUNITS (4=mm, 6=m); null when the header is absent. */
+  insunits?: number | null
   error?: string
   code?: string
 }
@@ -620,6 +622,56 @@ export function extractGeometryFromDxf(inputPath: string): Promise<CadWorkerGeom
     inputPath,
     '/extract-geometry',
   ) as Promise<CadWorkerGeometryExtract>
+}
+
+export type CadWorkerPlaceElementsResult = {
+  ok: boolean
+  room_id?: string
+  rule_id?: string
+  required_outlets?: number
+  outlet_placements?: Record<string, unknown>[]
+  warnings?: string[]
+  drawing_units_per_meter?: number
+  placement_engine?: string
+  error?: string
+  code?: string
+}
+
+/**
+ * Deterministic outlet placement (placement_mode=deterministic): the
+ * cad-worker computes exact coordinates from walls/openings/furniture.
+ * Payload: { room: {id, room_type, polygon}, geometry, rules, insunits? }.
+ */
+export async function placeElementsForRoom(
+  payload: Record<string, unknown>,
+): Promise<CadWorkerPlaceElementsResult> {
+  assertCadWorkerEnabled()
+
+  if (cadWorkerTransport() === 'http') {
+    const response = await fetchCadWorker('/place-elements', {
+      operation: 'place-elements',
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify(payload),
+    })
+    const body = (await response.json().catch(() => ({}))) as CadWorkerPlaceElementsResult & {
+      detail?: { code?: string; error?: string }
+    }
+    if (!response.ok || body.ok === false) {
+      const code = body.detail?.code ?? body.code ?? `CAD_WORKER_HTTP_${response.status}`
+      const message =
+        body.detail?.error ?? body.error ?? `cad-worker /place-elements HTTP ${response.status}`
+      throw new CadWorkerError(code, message)
+    }
+    return body
+  }
+
+  const parsed = await spawnCadWorkerJson([
+    'place-elements',
+    '--payload-json',
+    JSON.stringify(payload),
+  ])
+  return parsed as CadWorkerPlaceElementsResult
 }
 
 /** @deprecated Use inspectDxfFile — platform is DXF-only. */

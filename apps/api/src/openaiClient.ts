@@ -115,6 +115,9 @@ async function chatCompletionsRequest(params: {
       body: JSON.stringify({
         model: params.model,
         temperature: 0.15,
+        // Best-effort determinism (OpenAI honors seed for gpt-4o family):
+        // same plan in, same layout out, run after run.
+        seed: 7,
         messages: params.messages,
         ...(params.tools && params.tools.length > 0
           ? {
@@ -349,6 +352,7 @@ export async function openaiChatJsonObject(params: {
       body: JSON.stringify({
         model: params.model,
         temperature: 0.15,
+        seed: 7,
         response_format: { type: 'json_object' },
         messages: [
           { role: 'system', content: params.system },
