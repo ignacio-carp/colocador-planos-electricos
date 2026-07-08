@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import importlib
-import json
 from json import JSONDecodeError
 from json import loads as json_loads
 from pathlib import Path
