@@ -15,6 +15,27 @@ export function aiBackend(): AiBackend {
   return 'openai'
 }
 
+/**
+ * Who computes outlet coordinates in US-008.
+ *
+ * `deterministic` — the cad-worker placement engine computes x,y from walls,
+ * openings and furniture; the LLM keeps only semantics (room_type → rule).
+ * `llm` — legacy behaviour: the model emits coordinates (kept for rollback
+ * and baseline comparison).
+ */
+export type PlacementMode = 'deterministic' | 'llm'
+
+/**
+ * Explicit PLACEMENT_MODE env always wins. Without it, live pipelines default
+ * to deterministic (the coordinate bug lives in the LLM path) while stub
+ * pipelines keep their stubbed placements untouched.
+ */
+export function resolvePlacementMode(pipelineMode: PipelineMode): PlacementMode {
+  const raw = process.env.PLACEMENT_MODE?.trim().toLowerCase()
+  if (raw === 'deterministic' || raw === 'llm') return raw
+  return pipelineMode === 'live' ? 'deterministic' : 'llm'
+}
+
 /** True when live pipeline can call an LLM (OpenRouter or direct OpenAI). */
 export function aiConfigured(): boolean {
   return Boolean(process.env.OPENROUTER_API_KEY?.trim() || process.env.OPENAI_API_KEY?.trim())

@@ -20,6 +20,7 @@ import {
   applyElectricalLayer,
   CadWorkerError,
   cadWorkerDisabled,
+  placeElementsForRoom,
 } from './cadWorkerBridge'
 import { US009_OUTPUT_LAYER } from './cadGeneration'
 import { DXF_INPUT_BUCKET, DXF_OUTPUT_BUCKET, buildDxfObjectPath } from './dxfStorage'
@@ -43,11 +44,11 @@ import {
   mergeOutletPlacementsForRoom,
   mergePreliminaryRecommendation,
 } from './normativeRoomMerge'
-import { resolveActiveNormativeRulesVersion } from './normativeRules'
+import { loadNormativeRulesBundle, resolveActiveNormativeRulesVersion } from './normativeRules'
 import { recordStepLatency } from './metrics'
 import { PIPELINE_CONTRACT_VERSION } from './pipelineContracts'
 import { buildLiveNormativeInferenceOutput } from './pipelineLive'
-import { getPipelineMode } from './pipelineMode'
+import { getPipelineMode, resolvePlacementMode } from './pipelineMode'
 import { runInferWithRetries } from './pipelineInfer'
 import { registerOutputDxfFromLocalFile } from './pipelineCadOutput'
 import {
@@ -118,6 +119,100 @@ function filterPlacementsForRoom(
   )
 }
 
+function roomTypeFromLayout(
+  visionLayout: Record<string, unknown> | undefined,
+  roomId: string,
+): string {
+  const interpretation = visionLayout?.layout_interpretation as { rooms?: unknown[] } | undefined
+  const rooms =
+    interpretation?.rooms ?? (Array.isArray(visionLayout?.rooms) ? visionLayout.rooms : [])
+  for (const room of rooms) {
+    if (!room || typeof room !== 'object') continue
+    const r = room as { id?: string; room_type?: unknown }
+    if (r.id === roomId && typeof r.room_type === 'string' && r.room_type.trim()) {
+      return r.room_type
+    }
+  }
+  return 'unknown'
+}
+
+/**
+ * placement_mode=deterministic — US-008 without LLM coordinates.
+ *
+ * The LLM's semantic output (room polygon + room_type from vision_layout)
+ * plus the vector geometry go to the cad-worker placement engine, which
+ * computes exact x,y. Failures surface as room errors (honest degradation:
+ * spec §7 — never invent a point).
+ */
+async function runDeterministicPlacementForRoom(params: {
+  jobId: string
+  roomCorrelationId: string
+  roomId: string
+  visionLayout: Record<string, unknown>
+  geometryExtract?: Record<string, unknown>
+  geometryExtractScoped?: Record<string, unknown>
+  roomPolygon: unknown
+  rulesVersion: string
+  processingInstruction?: string
+}): Promise<{ outletPlacements: unknown[]; rulesVersion: string }> {
+  if (!params.roomPolygon) {
+    throw new Error(
+      `No polygon for room ${params.roomId} in vision_layout; cannot place deterministically`,
+    )
+  }
+  const geometry = params.geometryExtractScoped ?? params.geometryExtract
+  if (!geometry) {
+    throw new Error(
+      `No geometry_extract for job ${params.jobId}; run preliminary analysis first`,
+    )
+  }
+
+  if (params.processingInstruction?.trim()) {
+    logStructured('info', {
+      event: 'room_processing_instruction_semantic_only',
+      job_id: params.jobId,
+      correlation_id: params.roomCorrelationId,
+      pipeline_kind: PIPELINE_KIND,
+      room_id: params.roomId,
+      note: 'deterministic mode: instructions never alter computed coordinates',
+    })
+  }
+
+  const insunitsRaw = (params.geometryExtract as { insunits?: unknown } | undefined)?.insunits
+  const payload: Record<string, unknown> = {
+    room: {
+      id: params.roomId,
+      room_type: roomTypeFromLayout(params.visionLayout, params.roomId),
+      polygon: params.roomPolygon,
+    },
+    geometry,
+    rules: loadNormativeRulesBundle(params.rulesVersion) as unknown as Record<string, unknown>,
+  }
+  if (typeof insunitsRaw === 'number' && Number.isFinite(insunitsRaw) && insunitsRaw > 0) {
+    payload.insunits = insunitsRaw
+  }
+
+  const result = await placeElementsForRoom(payload)
+
+  logStructured('info', {
+    event: 'room_processing_placement_deterministic',
+    job_id: params.jobId,
+    correlation_id: params.roomCorrelationId,
+    pipeline_kind: PIPELINE_KIND,
+    room_id: params.roomId,
+    engine: result.placement_engine,
+    rule_id: result.rule_id,
+    outlets: result.outlet_placements?.length ?? 0,
+    required_outlets: result.required_outlets,
+    warnings: result.warnings,
+  })
+
+  return {
+    outletPlacements: result.outlet_placements ?? [],
+    rulesVersion: params.rulesVersion,
+  }
+}
+
 async function runUs008ForRoom(params: {
   jobId: string
   roomCorrelationId: string
@@ -133,6 +228,20 @@ async function runUs008ForRoom(params: {
   const visionDoc = params.visionLayout as VisionLayoutOutputDoc
   const roomPolygon = roomPolygonFromLayout(params.visionLayout, params.roomId)
   const geometryExtractScoped = scopeGeometryForRoom(params.geometryExtract, roomPolygon)
+
+  if (resolvePlacementMode(pipelineMode) === 'deterministic') {
+    return runDeterministicPlacementForRoom({
+      jobId: params.jobId,
+      roomCorrelationId: params.roomCorrelationId,
+      roomId: params.roomId,
+      visionLayout: params.visionLayout,
+      geometryExtract: params.geometryExtract,
+      geometryExtractScoped,
+      roomPolygon,
+      rulesVersion,
+      processingInstruction: params.processingInstruction,
+    })
+  }
 
   let normativeResult: Record<string, unknown> | undefined
 
