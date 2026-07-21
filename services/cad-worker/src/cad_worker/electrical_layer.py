@@ -578,6 +578,7 @@ def apply_electrical_layer(
         "effective_insunits": unit_resolution.effective_insunits,
         "insunits_overridden": unit_resolution.overridden,
         "unit_confidence": unit_resolution.confidence,
+        "drawing_units_per_meter": unit_resolution.drawing_units_per_meter,
         "unit_scores": unit_resolution.scores,
         "unit_evidence": unit_resolution.evidence,
         "unit_resolution_reason": unit_resolution.reason,

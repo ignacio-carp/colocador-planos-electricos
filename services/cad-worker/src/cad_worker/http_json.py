@@ -32,6 +32,7 @@ def apply_layer_header_metadata(result: dict[str, object]) -> dict[str, object]:
         "effective_insunits",
         "insunits_overridden",
         "unit_confidence",
+        "drawing_units_per_meter",
         "nominal_symbol_scale",
         "final_symbol_scale",
         "scale_clamped",
@@ -40,6 +41,8 @@ def apply_layer_header_metadata(result: dict[str, object]) -> dict[str, object]:
         "legacy_entities_removed",
         "legacy_blocks_purged",
         "placements_rejected",
+        "generator_version",
+        "generation_id",
     )
     for field in additive_fields:
         if field in result:
