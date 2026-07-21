@@ -407,6 +407,7 @@ export async function runJobPipeline(jobId: string, correlationId: string): Prom
         ownerUserId: job.owner_user_id,
         objectPath: outputObjectPath,
         localPath: localOut,
+        sourceInputFileId: input.id,
       })
 
       await patchJob(jobId, {

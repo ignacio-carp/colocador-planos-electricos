@@ -39,5 +39,6 @@ export function getCorsOptions(): CorsOptions {
       callback(null, false)
     },
     credentials: true,
+    exposedHeaders: ['X-Dxf-Kind'],
   }
 }

@@ -44,3 +44,7 @@ test('getCorsOptions allows any localhost port in development', async () => {
     })
   })
 })
+
+test('getCorsOptions exposes the viewer DXF kind header', () => {
+  assert.deepEqual(getCorsOptions().exposedHeaders, ['X-Dxf-Kind'])
+})
