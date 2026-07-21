@@ -9,8 +9,18 @@ from __future__ import annotations
 
 import math
 from dataclasses import dataclass
+from pathlib import Path
 from typing import Any
 
+import ezdxf
+from ezdxf import bbox as ezdxf_bbox
+
+from cad_worker.constants import (
+    LEGACY_BLOCK_NAMES,
+    MAX_SYMBOL_ROOM_MINOR_RATIO,
+    OUTPUT_ELECTRICAL_LAYER_NAME,
+)
+from cad_worker.electrical_layer import CAMBRE_APPID, CAMBRE_ROOM_GROUP_CODE
 from cad_worker.geometry import (
     Point,
     point_in_polygon,
@@ -23,8 +33,7 @@ TOL_ON_WALL_MM = 50.0
 CLEARANCE_MM = 150.0
 SEP_MIN_MM = 600.0
 EXPECTED_POINT_TOL_MM = 60.0  # 10 mm inward nudge + rounding headroom
-SYMBOL_DIAMETER_M = 0.03
-SYMBOL_DIAMETER_REL_TOL = 0.5  # scale_sane: within ±50% of 3 cm real
+MIN_SYMBOL_DIAMETER_M = 0.15
 
 
 @dataclass
@@ -105,6 +114,13 @@ def validate_room(
         f"esperadas {truth.expected_outlets}, colocadas {len(points)}"
         f" (required={result.get('required_outlets')})",
     )
+    if fixture.expected_effective_insunits is not None:
+        effective = result.get("effective_insunits")
+        add(
+            "placement_effective_units",
+            effective == fixture.expected_effective_insunits,
+            f"esperadas INSUNITS={fixture.expected_effective_insunits}, obtenidas={effective}",
+        )
 
     inside = [p for p in points if point_in_polygon(p, truth.polygon)]
     add(
@@ -221,6 +237,19 @@ def validate_detection(fixture: Fixture, detection: dict[str, Any]) -> list[Chec
             f" (faces={detection.get('faces_total')})",
         ),
     ]
+    if fixture.expected_effective_insunits is not None:
+        effective = detection.get("effective_insunits")
+        checks.append(
+            Check(
+                fixture=fx,
+                check="detection_effective_units",
+                ok=effective == fixture.expected_effective_insunits,
+                detail=(
+                    f"esperadas INSUNITS={fixture.expected_effective_insunits}, "
+                    f"obtenidas={effective}"
+                ),
+            ),
+        )
     # Every truth room must be matched by a detected polygon of ~equal area
     # that contains the truth centroid.
     for truth in fixture.rooms:
@@ -252,41 +281,226 @@ def validate_drawn_output(
     fixture: Fixture,
     apply_result: dict[str, Any],
     placements_sent: int,
+    *,
+    second_apply_result: dict[str, Any] | None = None,
 ) -> list[Check]:
-    """Checks over the DXF actually drawn: bbox guard silent and sane scale."""
+    """Audit unit lineage, footprint, containment, hygiene and idempotence."""
     fx = fixture.name
     skipped = int(apply_result.get("placements_skipped_out_of_bbox", 0) or 0)
     added = int(apply_result.get("outlets_added", 0) or 0)
+    rejected = apply_result.get("placements_rejected", [])
+    rejected = rejected if isinstance(rejected, list) else []
+    expected_rejected = len(fixture.expected_rejection_reasons)
+    expected_added = placements_sent - expected_rejected
     checks = [
         Check(
             fixture=fx,
             check="bbox_guard_zero",
-            ok=skipped == 0 and added == placements_sent,
-            detail=f"enviadas {placements_sent}, dibujadas {added}, descartadas {skipped}",
+            ok=skipped == 0 and added == expected_added,
+            detail=(
+                f"enviadas {placements_sent}, dibujadas {added}, "
+                f"rechazos esperados {expected_rejected}, fuera bbox {skipped}"
+            ),
         ),
     ]
-    radius_du = apply_result.get("symbol_radius_drawing_units")
-    if isinstance(radius_du, (int, float)):
-        diameter_m = 2.0 * float(radius_du) / fixture.du_per_m
-        rel_err = abs(diameter_m - SYMBOL_DIAMETER_M) / SYMBOL_DIAMETER_M
+
+    if fixture.expected_effective_insunits is not None:
+        effective = apply_result.get("effective_insunits")
+        overridden = bool(apply_result.get("insunits_overridden"))
         checks.append(
             Check(
                 fixture=fx,
-                check="scale_sane",
-                ok=rel_err <= SYMBOL_DIAMETER_REL_TOL,
-                detail=f"simbolo {diameter_m * 100:.2f} cm reales (objetivo 3 cm ±50%)",
+                check="apply_effective_units",
+                ok=(
+                    effective == fixture.expected_effective_insunits
+                    and overridden == fixture.expect_insunits_override
+                ),
+                detail=(
+                    f"effective={effective}, override={overridden}; "
+                    f"esperado={fixture.expected_effective_insunits}/"
+                    f"{fixture.expect_insunits_override}"
+                ),
             ),
         )
-    else:
+
+    reasons = [item.get("reason") for item in rejected if isinstance(item, dict)]
+    checks.append(
+        Check(
+            fixture=fx,
+            check="placement_rejections",
+            ok=all(reason in reasons for reason in fixture.expected_rejection_reasons)
+            and len(reasons) == expected_rejected,
+            detail=f"rechazos={reasons}, esperados={fixture.expected_rejection_reasons}",
+        ),
+    )
+
+    output = apply_result.get("output")
+    output_path = Path(str(output)) if output else None
+    doc = ezdxf.readfile(output_path) if output_path and output_path.is_file() else None
+    inserts = (
+        [
+            entity
+            for entity in doc.modelspace()
+            if entity.dxftype() == "INSERT"
+            and entity.dxf.layer == OUTPUT_ELECTRICAL_LAYER_NAME
+        ]
+        if doc
+        else []
+    )
+
+    room_by_id = {truth.id: truth.polygon for truth in fixture.rooms}
+    contained = 0
+    versioned_xdata = 0
+    for insert in inserts:
+        try:
+            xdata = insert.get_xdata(CAMBRE_APPID)
+        except Exception:  # noqa: BLE001
+            continue
+        strings = [str(item.value) for item in xdata if item.code == CAMBRE_ROOM_GROUP_CODE]
+        if len(strings) >= 3:
+            versioned_xdata += 1
+        room_polygon = room_by_id.get(strings[0]) if strings else None
+        point = (float(insert.dxf.insert.x), float(insert.dxf.insert.y))
+        if room_polygon and point_in_polygon(point, room_polygon):
+            contained += 1
+    checks.append(
+        Check(
+            fixture=fx,
+            check="xdata_containment",
+            ok=contained == len(inserts) and versioned_xdata == len(inserts),
+            detail=(
+                f"{contained}/{len(inserts)} contenidos; "
+                f"{versioned_xdata}/{len(inserts)} con XDATA versionado"
+            ),
+        ),
+    )
+
+    minor_dimensions_m = [
+        min(
+            max(point[0] for point in truth.polygon) - min(point[0] for point in truth.polygon),
+            max(point[1] for point in truth.polygon) - min(point[1] for point in truth.polygon),
+        )
+        / fixture.du_per_m
+        for truth in fixture.rooms
+    ]
+    minor_dimensions_m.sort()
+    median_minor_m = minor_dimensions_m[len(minor_dimensions_m) // 2]
+    max_footprint_m = max(
+        MIN_SYMBOL_DIAMETER_M,
+        MAX_SYMBOL_ROOM_MINOR_RATIO * median_minor_m,
+    )
+    actual_footprints_m: list[float] = []
+    for insert in inserts:
+        extents = ezdxf_bbox.extents([insert], fast=True)
+        if extents.has_data:
+            actual_footprints_m.append(
+                max(
+                    float(extents.extmax.x - extents.extmin.x),
+                    float(extents.extmax.y - extents.extmin.y),
+                )
+                / fixture.du_per_m,
+            )
+    scale_ok = bool(actual_footprints_m) and all(
+        MIN_SYMBOL_DIAMETER_M - 1e-6 <= value <= max_footprint_m + 1e-6
+        for value in actual_footprints_m
+    )
+    checks.append(
+        Check(
+            fixture=fx,
+            check="footprint_relative",
+            ok=scale_ok,
+            detail=(
+                f"footprints_m={[round(value, 4) for value in actual_footprints_m]}, "
+                f"rango=[{MIN_SYMBOL_DIAMETER_M:.2f}, {max_footprint_m:.3f}]"
+            ),
+        ),
+    )
+
+    origin_radius = max(0.5, 10.0 * 0.45)
+    room_intersects_origin_disk = any(
+        point_in_polygon((0.0, 0.0), truth.polygon)
+        or any(
+            point_seg_distance((0.0, 0.0), start, end) <= origin_radius * fixture.du_per_m
+            for start, end in _polygon_edges(truth.polygon)
+        )
+        for truth in fixture.rooms
+    )
+    origin_violations = [
+        insert
+        for insert in inserts
+        if math.hypot(float(insert.dxf.insert.x), float(insert.dxf.insert.y))
+        <= origin_radius * fixture.du_per_m
+        and not room_intersects_origin_disk
+    ]
+    checks.append(
+        Check(
+            fixture=fx,
+            check="origin_guard",
+            ok=not origin_violations,
+            detail=f"inserts prohibidos cerca del origen={len(origin_violations)}",
+        ),
+    )
+
+    legacy_inserts = [
+        insert.dxf.name for insert in inserts if insert.dxf.name in LEGACY_BLOCK_NAMES
+    ]
+    remaining_legacy_blocks = [name for name in LEGACY_BLOCK_NAMES if doc and name in doc.blocks]
+    removed = int(apply_result.get("legacy_entities_removed", 0) or 0)
+    checks.append(
+        Check(
+            fixture=fx,
+            check="legacy_cleanup",
+            ok=(
+                not legacy_inserts
+                and not remaining_legacy_blocks
+                and removed >= fixture.expected_legacy_entities_removed
+            ),
+            detail=(
+                f"removed={removed}, inserts={legacy_inserts}, "
+                f"defs={remaining_legacy_blocks}"
+            ),
+        ),
+    )
+
+    blocks_used = apply_result.get("blocks_used", [])
+    poison_ok = not fixture.expect_poison_versioned or "SYM_TOMA__V2" in blocks_used
+    checks.append(
+        Check(
+            fixture=fx,
+            check="poisoned_block_defense",
+            ok=poison_ok,
+            detail=f"blocks_used={blocks_used}",
+        ),
+    )
+
+    if second_apply_result is not None:
+        second_output = Path(str(second_apply_result.get("output")))
+        second_doc = ezdxf.readfile(second_output)
+        second_inserts = [
+            entity
+            for entity in second_doc.modelspace()
+            if entity.dxftype() == "INSERT"
+            and entity.dxf.layer == OUTPUT_ELECTRICAL_LAYER_NAME
+        ]
         checks.append(
             Check(
                 fixture=fx,
-                check="scale_sane",
-                ok=False,
-                detail="apply_electrical_layer no reporto symbol_radius_drawing_units",
+                check="idempotent_reprocess",
+                ok=len(second_inserts) == len(inserts) == expected_added,
+                detail=(
+                    f"primera={len(inserts)}, segunda={len(second_inserts)}, "
+                    f"esperada={expected_added}"
+                ),
             ),
         )
     return checks
+
+
+def _polygon_edges(vertices: list[Point]) -> list[tuple[Point, Point]]:
+    return [
+        (vertices[index], vertices[(index + 1) % len(vertices)])
+        for index in range(len(vertices))
+    ]
 
 
 def _polygon_area(vertices: list[Point]) -> float:
