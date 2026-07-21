@@ -109,10 +109,20 @@ def run_harness(work_dir: Path, report_path: Path | None = None) -> dict[str, An
             if result
             for placement in result.get("outlet_placements", [])
         ]
+        placements.extend(fixture.adversarial_placements)
         if placements:
             drawn_path = work_dir / "run1" / f"{fixture.name}__electrical.dxf"
             apply_result = apply_electrical_layer(fixture.dxf_path, drawn_path, placements)
-            checks.extend(validate_drawn_output(fixture, apply_result, len(placements)))
+            redrawn_path = work_dir / "run1" / f"{fixture.name}__electrical_twice.dxf"
+            second_apply_result = apply_electrical_layer(drawn_path, redrawn_path, placements)
+            checks.extend(
+                validate_drawn_output(
+                    fixture,
+                    apply_result,
+                    len(placements),
+                    second_apply_result=second_apply_result,
+                ),
+            )
 
         # Determinism: a second full pass from a freshly generated DXF must be
         # byte-identical at the placements JSON level.

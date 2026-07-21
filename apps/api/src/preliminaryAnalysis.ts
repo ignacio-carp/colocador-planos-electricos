@@ -3,6 +3,7 @@
 import type { JobRow } from './jobsStore'
 
 export const PRELIMINARY_WARNING_NO_ROOMS = 'NO_ROOMS_DETECTED'
+export const PRELIMINARY_WARNING_ANALYSIS_DEGRADED = 'ANALYSIS_DEGRADED'
 
 export function countRoomsInVisionLayout(meta: JobRow['pipeline_metadata']): number {
   const visionLayout = meta?.vision_layout as

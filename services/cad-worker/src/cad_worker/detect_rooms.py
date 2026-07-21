@@ -17,7 +17,7 @@ from __future__ import annotations
 import json
 from typing import Any
 
-from cad_worker.symbol_catalog import drawing_units_per_meter
+from cad_worker.unit_resolution import UnitResolution, resolve_drawing_units
 
 # Faces smaller than this are noise or wall cavities; larger than max are the
 # building outline. Both in real m², converted through drawing units.
@@ -32,6 +32,8 @@ SHAPELY_MISSING_CODE = "SHAPELY_MISSING"
 def detect_rooms_from_walls(
     geometry: dict[str, Any],
     insunits: int | None = None,
+    *,
+    unit_resolution: UnitResolution | None = None,
 ) -> dict[str, Any]:
     """Detect closed room polygons from extracted wall segments."""
     try:
@@ -66,7 +68,8 @@ def detect_rooms_from_walls(
     if not lines:
         return {"ok": False, "code": "NO_WALLS", "error": "no valid wall segments"}
 
-    du_per_m = drawing_units_per_meter(insunits, None, geometry)
+    resolution = unit_resolution or resolve_drawing_units(insunits, geometry, [])
+    du_per_m = resolution.drawing_units_per_meter
     merged = unary_union(lines)
     faces = list(polygonize(merged))
 
@@ -114,6 +117,10 @@ def detect_rooms_from_walls(
         "faces_total": len(faces),
         "faces_discarded": discarded,
         "drawing_units_per_meter": du_per_m,
+        "header_insunits": resolution.header_insunits,
+        "effective_insunits": resolution.effective_insunits,
+        "insunits_overridden": resolution.overridden,
+        "unit_confidence": resolution.confidence,
         "detector": "polygonize-v0 (experimental)",
     }
 

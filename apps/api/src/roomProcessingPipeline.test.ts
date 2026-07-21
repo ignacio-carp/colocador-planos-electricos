@@ -14,7 +14,13 @@
 import assert from 'node:assert/strict'
 import { describe, it, beforeEach } from 'node:test'
 import { clearJobsForTests, createJob, findJob, patchJob } from './jobsStore'
-import { runRoomProcessingPipeline, omitRooms, markJobProcessed, reopenJobWorkspace } from './roomProcessingPipeline'
+import {
+  runRoomProcessingPipeline,
+  omitRooms,
+  markJobProcessed,
+  reopenJobWorkspace,
+  roomRunMetadataFromWorkerResult,
+} from './roomProcessingPipeline'
 import { runPreliminaryAnalysisPipeline } from './preliminaryPipeline'
 
 function stubEnv() {
@@ -234,6 +240,40 @@ describe('roomProcessingPipeline (stub mode)', { concurrency: false }, () => {
     const run = (runs as Array<{ room_id: string; correlation_id: string }>)[0]!
     assert.equal(run.room_id, roomId)
     assert.ok(run.correlation_id.includes('corr-runs-test'))
+  })
+
+  it('maps worker unit, scale, cleanup and rejection metadata into a persisted run shape', () => {
+    const metadata = roomRunMetadataFromWorkerResult({
+      ok: true,
+      header_insunits: 4,
+      effective_insunits: 6,
+      insunits_overridden: true,
+      unit_confidence: 0.94,
+      drawing_units_per_meter: 1,
+      nominal_symbol_scale: 0.225,
+      final_symbol_scale: 0.18,
+      scale_clamped: true,
+      clamp_reason: 'room_relative_max',
+      legacy_entities_removed: 7,
+      legacy_blocks_purged: 2,
+      placements_rejected: [
+        { index: 0, reason: 'outside_room_polygon' },
+        { index: 1, reason: 'outside_room_polygon' },
+        { index: 2, reason: 'origin_guard' },
+      ],
+      generation_id: 'generation-123',
+    })
+
+    assert.equal(metadata.header_insunits, 4)
+    assert.equal(metadata.effective_insunits, 6)
+    assert.equal(metadata.final_symbol_scale, 0.18)
+    assert.equal(metadata.scale_clamped, true)
+    assert.equal(metadata.legacy_entities_removed, 7)
+    assert.deepEqual(metadata.placements_rejected, {
+      total: 3,
+      by_reason: { outside_room_polygon: 2, origin_guard: 1 },
+    })
+    assert.equal(metadata.generation_id, 'generation-123')
   })
 
   it('throws for invalid job status (pendiente not allowed)', async () => {

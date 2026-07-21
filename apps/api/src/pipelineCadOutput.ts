@@ -17,6 +17,7 @@ export async function registerOutputDxfFromLocalFile(
     ownerUserId: string
     objectPath: string
     localPath: string
+    sourceInputFileId: string
   },
 ): Promise<RegisterOutputDxfResult> {
   const buf = readFileSync(ctx.localPath)
@@ -39,6 +40,7 @@ export async function registerOutputDxfFromLocalFile(
     kind: 'output_dxf',
     content_type: 'application/dxf',
     size_bytes: size,
+    source_input_file_id: ctx.sourceInputFileId,
   })
   return { checksum_sha256, size_bytes: size }
 }

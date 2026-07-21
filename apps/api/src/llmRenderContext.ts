@@ -104,9 +104,16 @@ export function scopeGeometryForRoom(
   geometryExtract: Record<string, unknown> | undefined,
   roomPolygon: unknown,
   marginMm = 500,
+  drawingUnitsPerMeter?: number | null,
 ): Record<string, unknown> | undefined {
   if (!geometryExtract) return undefined
-  const bbox = polygonBbox(polygonVertices(roomPolygon), marginMm)
+  const resolvedMargin =
+    typeof drawingUnitsPerMeter === 'number' &&
+    Number.isFinite(drawingUnitsPerMeter) &&
+    drawingUnitsPerMeter > 0
+      ? (marginMm / 1000) * drawingUnitsPerMeter
+      : marginMm // FALLBACK legacy: first-run flow has no worker unit resolution yet.
+  const bbox = polygonBbox(polygonVertices(roomPolygon), resolvedMargin)
   if (!bbox) return undefined
 
   const scoped: Record<string, unknown> = {}

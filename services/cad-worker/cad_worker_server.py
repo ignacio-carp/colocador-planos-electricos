@@ -90,7 +90,7 @@ def _http_error(status: int, code: str, error: str) -> HTTPException:
 
 
 @app.get("/healthz")
-def healthz() -> dict[str, object]:
+async def healthz() -> dict[str, object]:
     return {"status": "ok", "service": "cad-worker"}
 
 
@@ -213,7 +213,11 @@ async def detect_rooms(request: Request) -> dict[str, object]:
         int(insunits) if isinstance(insunits, (int, float)) and insunits else None,
     )
     if not result.get("ok"):
-        raise _http_error(422, str(result.get("code") or "CAD_WORKER_ERROR"), str(result.get("error")))
+        raise _http_error(
+            422,
+            str(result.get("code") or "CAD_WORKER_ERROR"),
+            str(result.get("error")),
+        )
     return result
 
 

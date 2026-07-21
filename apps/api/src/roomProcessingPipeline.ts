@@ -21,6 +21,7 @@ import {
   CadWorkerError,
   cadWorkerDisabled,
   placeElementsForRoom,
+  type CadWorkerApplyLayerResult,
 } from './cadWorkerBridge'
 import { US009_OUTPUT_LAYER } from './cadGeneration'
 import { DXF_INPUT_BUCKET, DXF_OUTPUT_BUCKET, buildDxfObjectPath } from './dxfStorage'
@@ -32,6 +33,7 @@ import {
   type JobRow,
   type DxfCheckpoint,
   type RoomProcessingRun,
+  type PlacementsRejectedSummary,
   type PreliminaryRecommendation,
 } from './jobsStore'
 import { isRoomProcessingAllowed } from './jobStatus'
@@ -56,6 +58,7 @@ import {
   type VisionLayoutOutputDoc,
 } from './pipelineStubs'
 import { getSupabaseServiceRole, isStorageConfigured } from './supabaseService'
+import { resolveDrawingUnitsPerMeter } from './symbolScale'
 
 const PIPELINE_KIND = 'room_processing'
 
@@ -68,7 +71,15 @@ export type RoomProcessingResult = {
   room_id: string
   status: 'procesada' | 'error'
   outlets_added?: number
+  warnings?: RoomProcessingWarning[]
   error?: { code: string; message: string }
+}
+
+export type RoomProcessingWarning = {
+  code: 'PLACEMENT_REJECTED'
+  room_id: string
+  reason: string
+  count: number
 }
 
 export type RoomProcessingPipelineResult = {
@@ -76,6 +87,7 @@ export type RoomProcessingPipelineResult = {
   job_status: string
   rooms: RoomProcessingResult[]
   normative_rules_blocked: boolean
+  warnings: RoomProcessingWarning[]
 }
 
 export type RoomProcessingOptions = {
@@ -97,6 +109,54 @@ export type RoomProcessingOptions = {
 
 function sleep(ms: number): Promise<void> {
   return new Promise((r) => setTimeout(r, ms))
+}
+
+export function summarizePlacementsRejected(
+  rejected: CadWorkerApplyLayerResult['placements_rejected'],
+): PlacementsRejectedSummary {
+  const byReason: Record<string, number> = {}
+  for (const placement of rejected ?? []) {
+    const reason = placement.reason?.trim() || 'unknown'
+    byReason[reason] = (byReason[reason] ?? 0) + 1
+  }
+  return { total: rejected?.length ?? 0, by_reason: byReason }
+}
+
+export function roomRunMetadataFromWorkerResult(
+  result: CadWorkerApplyLayerResult | undefined,
+): Partial<RoomProcessingRun> {
+  if (!result) return {}
+  const metadata: Partial<RoomProcessingRun> = {
+    header_insunits: result.header_insunits,
+    effective_insunits: result.effective_insunits,
+    insunits_overridden: result.insunits_overridden,
+    unit_confidence: result.unit_confidence,
+    drawing_units_per_meter: result.drawing_units_per_meter,
+    nominal_symbol_scale: result.nominal_symbol_scale,
+    final_symbol_scale: result.final_symbol_scale,
+    scale_clamped: result.scale_clamped,
+    clamp_reason: result.clamp_reason,
+    legacy_entities_removed: result.legacy_entities_removed,
+    legacy_blocks_purged: result.legacy_blocks_purged,
+    placements_rejected: summarizePlacementsRejected(result.placements_rejected),
+    generation_id: result.generation_id,
+  }
+  return Object.fromEntries(
+    Object.entries(metadata).filter(([, value]) => value !== undefined),
+  ) as Partial<RoomProcessingRun>
+}
+
+function warningsFromRejectedPlacements(
+  roomId: string,
+  rejected: CadWorkerApplyLayerResult['placements_rejected'],
+): RoomProcessingWarning[] {
+  const summary = summarizePlacementsRejected(rejected)
+  return Object.entries(summary.by_reason).map(([reason, count]) => ({
+    code: 'PLACEMENT_REJECTED',
+    room_id: roomId,
+    reason,
+    count,
+  }))
 }
 
 function cadWorkerFixturePath(): string | undefined {
@@ -154,7 +214,11 @@ async function runDeterministicPlacementForRoom(params: {
   roomPolygon: unknown
   rulesVersion: string
   processingInstruction?: string
-}): Promise<{ outletPlacements: unknown[]; rulesVersion: string }> {
+}): Promise<{
+  outletPlacements: unknown[]
+  rulesVersion: string
+  drawingUnitsPerMeter?: number
+}> {
   if (!params.roomPolygon) {
     throw new Error(
       `No polygon for room ${params.roomId} in vision_layout; cannot place deterministically`,
@@ -210,6 +274,7 @@ async function runDeterministicPlacementForRoom(params: {
   return {
     outletPlacements: result.outlet_placements ?? [],
     rulesVersion: params.rulesVersion,
+    drawingUnitsPerMeter: result.drawing_units_per_meter,
   }
 }
 
@@ -222,12 +287,22 @@ async function runUs008ForRoom(params: {
   inputDxfPath?: string
   processingInstruction?: string
   viewportImageDataUrl?: string
-}): Promise<{ outletPlacements: unknown[]; rulesVersion: string }> {
+  drawingUnitsPerMeter?: number | null
+}): Promise<{
+  outletPlacements: unknown[]
+  rulesVersion: string
+  drawingUnitsPerMeter?: number
+}> {
   const pipelineMode = getPipelineMode()
   const rulesVersion = resolveActiveNormativeRulesVersion()
   const visionDoc = params.visionLayout as VisionLayoutOutputDoc
   const roomPolygon = roomPolygonFromLayout(params.visionLayout, params.roomId)
-  const geometryExtractScoped = scopeGeometryForRoom(params.geometryExtract, roomPolygon)
+  const geometryExtractScoped = scopeGeometryForRoom(
+    params.geometryExtract,
+    roomPolygon,
+    500,
+    params.drawingUnitsPerMeter,
+  )
 
   if (resolvePlacementMode(pipelineMode) === 'deterministic') {
     return runDeterministicPlacementForRoom({
@@ -367,6 +442,7 @@ export async function runRoomProcessingPipeline(
       job_status: job.status,
       rooms: [],
       normative_rules_blocked: true,
+      warnings: [],
     }
   }
 
@@ -377,6 +453,7 @@ export async function runRoomProcessingPipeline(
   }
 
   const results: RoomProcessingResult[] = []
+  const warnings: RoomProcessingWarning[] = []
 
   for (const roomId of roomIds) {
     const roomCorrelationId = `${correlationId}-${roomId}`
@@ -446,6 +523,7 @@ export async function runRoomProcessingPipeline(
             inputDxfPath,
             processingInstruction: options?.processingInstruction,
             viewportImageDataUrl: options?.viewportImageDataUrl,
+            drawingUnitsPerMeter: resolveDrawingUnitsPerMeter(currentMeta),
           })
 
       const mergedPlacements = options?.skipUs008
@@ -489,6 +567,8 @@ export async function runRoomProcessingPipeline(
       }
 
       let outletCount = 0
+      let workerApplyResult: CadWorkerApplyLayerResult | undefined
+      let roomWarnings: RoomProcessingWarning[] = []
 
       if ((!isStorageConfigured() || cadWorkerDisabled()) && !cadWorkerFixturePath()) {
         // Stub path: no storage/fixture or CAD worker disabled — simulate US-009 for unit tests
@@ -578,7 +658,10 @@ export async function runRoomProcessingPipeline(
           )
         }
 
+        workerApplyResult = workerResult
         outletCount = workerResult.outlets_added ?? 0
+        roomWarnings = warningsFromRejectedPlacements(roomId, workerResult.placements_rejected)
+        warnings.push(...roomWarnings)
 
         // Upload new output_dxf (overwrites current)
         const outputObjectPath = buildDxfObjectPath(
@@ -591,6 +674,7 @@ export async function runRoomProcessingPipeline(
           ownerUserId: currentJob.owner_user_id,
           objectPath: outputObjectPath,
           localPath: localOut,
+          sourceInputFileId: inputFile.id,
         })
 
         logStructured('info', {
@@ -619,6 +703,10 @@ export async function runRoomProcessingPipeline(
         started_at: roomRunStart,
         completed_at: new Date().toISOString(),
         outlet_count: outletCount,
+        ...(us008.drawingUnitsPerMeter
+          ? { drawing_units_per_meter: us008.drawingUnitsPerMeter }
+          : {}),
+        ...roomRunMetadataFromWorkerResult(workerApplyResult),
       }
       const existingRuns: RoomProcessingRun[] =
         (afterMeta.room_processing_runs as RoomProcessingRun[] | undefined) ?? []
@@ -648,7 +736,12 @@ export async function runRoomProcessingPipeline(
         duration_ms: Date.now() - t0,
       })
 
-      results.push({ room_id: roomId, status: 'procesada', outlets_added: outletCount })
+      results.push({
+        room_id: roomId,
+        status: 'procesada',
+        outlets_added: outletCount,
+        ...(roomWarnings.length > 0 ? { warnings: roomWarnings } : {}),
+      })
     } catch (e) {
       const message = e instanceof Error ? e.message : 'Unknown room processing error'
       const code =
@@ -715,6 +808,7 @@ export async function runRoomProcessingPipeline(
     job_status: finalJob?.status ?? job.status,
     rooms: results,
     normative_rules_blocked: false,
+    warnings,
   }
 }
 

@@ -64,6 +64,37 @@ function loadNormativeRulesForPrompt(): Record<string, unknown> {
   }
 }
 
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value)
+}
+
+/** Reject semantic parse failures before permissive normalization can hide them. */
+export function assertVisionClassificationParseable(
+  raw: unknown,
+  normalized: Record<string, unknown>,
+): void {
+  if (!isRecord(raw) || !Array.isArray(raw.rooms)) {
+    throw new Error('Vision layout is inparseable: rooms must be an array')
+  }
+  const normalizedRooms = Array.isArray(normalized.rooms) ? normalized.rooms : []
+  if (normalizedRooms.length !== raw.rooms.length) {
+    throw new Error('Vision layout is inparseable: one or more room polygons were discarded')
+  }
+  for (const [index, room] of raw.rooms.entries()) {
+    if (!isRecord(room)) {
+      throw new Error(`Vision layout is inparseable: room ${index + 1} is not an object`)
+    }
+    const label = room.label ?? room.name
+    if (typeof label !== 'string' || !label.trim()) {
+      throw new Error(`Vision layout is inparseable: room ${index + 1} has no name`)
+    }
+    const roomType = room.room_type ?? room.category ?? room.type
+    if (typeof roomType !== 'string' || !roomType.trim()) {
+      throw new Error(`Vision layout is inparseable: room ${index + 1} has no classification`)
+    }
+  }
+}
+
 /**
  * US-007 live: CAD inspect + geometry extract + plan PNG (multimodal).
  */
@@ -119,6 +150,8 @@ ${visionLayoutInterpretationPromptSpec()}`
 
   const layoutRaw =
     raw.layout_interpretation !== undefined ? raw.layout_interpretation : raw
+  const normalizedLayout = normalizeLayoutInterpretation(layoutRaw)
+  assertVisionClassificationParseable(layoutRaw, normalizedLayout)
 
   const doc: VisionLayoutOutputDoc = {
     contract_version: PIPELINE_CONTRACT_VERSION,
@@ -130,7 +163,7 @@ ${visionLayoutInterpretationPromptSpec()}`
       model,
       request_id: `live-vision-${correlationId.slice(0, 8)}`,
     },
-    layout_interpretation: normalizeLayoutInterpretation(layoutRaw),
+    layout_interpretation: normalizedLayout,
     completed_at: deterministicCompletedAt(jobId, correlationId, 'us007'),
   }
 
@@ -152,7 +185,7 @@ ${visionLayoutInterpretationPromptSpec()}`
       correlation_id: correlationId,
       error: message.slice(0, 500),
     })
-    return buildLiveVisionFallback(jobId, correlationId)
+    throw new Error(`Vision layout validation failed: ${message}`)
   }
 }
 

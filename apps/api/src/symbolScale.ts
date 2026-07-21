@@ -1,6 +1,4 @@
-/**
- * Electrical symbol sizing in DXF drawing units — mirrors cad_worker.symbol_catalog.
- */
+/** Electrical symbol sizing resolved by the CAD worker. */
 
 const TARGET_SYMBOL_DIAMETER_M = 0.03
 
@@ -16,6 +14,11 @@ const MAX_RADIUS_SPAN_RATIO = 0.0012
 const MIN_RADIUS_SPAN_RATIO = 0.00025
 
 export type Bbox = { min_x: number; min_y: number; max_x: number; max_y: number }
+
+type WorkerScaleRun = {
+  final_symbol_scale?: unknown
+  drawing_units_per_meter?: unknown
+}
 
 function medianWallLength(
   geometry: { paredes?: Array<{ inicio: unknown; fin: unknown }> } | undefined,
@@ -55,6 +58,7 @@ export function inferInsunits(
   bbox: Bbox | null,
   geometry?: { paredes?: Array<{ inicio: unknown; fin: unknown }> },
 ): number {
+  // FALLBACK legacy: only used when no persisted worker resolution exists.
   const span = bbox ? Math.max(bbox.max_x - bbox.min_x, bbox.max_y - bbox.min_y) : 0
   const medianWall = medianWallLength(geometry)
   if (span > 800 || (medianWall !== null && medianWall > 80)) return 4
@@ -68,6 +72,7 @@ function drawingUnitsPerMeter(
   bbox: Bbox | null,
   geometry?: { paredes?: Array<{ inicio: unknown; fin: unknown }> },
 ): number {
+  // FALLBACK legacy: only used when no persisted worker resolution exists.
   if (insunits && INSUNITS_PER_METER[insunits]) return INSUNITS_PER_METER[insunits]
   return INSUNITS_PER_METER[inferInsunits(bbox, geometry)] ?? 1000
 }
@@ -77,6 +82,7 @@ export function computeSymbolRadiusDrawingUnits(params: {
   geometry?: { paredes?: Array<{ inicio: unknown; fin: unknown }> }
   insunits?: number | null
 }): number {
+  // FALLBACK legacy: retained for jobs created before worker scale metadata was persisted.
   const perMeter = drawingUnitsPerMeter(params.insunits, params.bbox, params.geometry)
   const physicalRadius = (TARGET_SYMBOL_DIAMETER_M / 2) * perMeter
 
@@ -97,15 +103,41 @@ export function computeSymbolRadiusDrawingUnits(params: {
 export function resolveElectricalSymbolRadius(
   meta: {
     cad_worker_apply?: Record<string, unknown>
+    room_processing_runs?: WorkerScaleRun[]
     geometry_extract?: { paredes?: Array<{ inicio: unknown; fin: unknown }> }
   },
   paredes: Array<{ inicio: { x: number; y: number }; fin: { x: number; y: number } }>,
   geometryExtract?: { paredes?: Array<{ inicio: unknown; fin: unknown }> } | null,
 ): number {
-  const fromApply = meta.cad_worker_apply?.symbol_radius_drawing_units
-  if (typeof fromApply === 'number' && Number.isFinite(fromApply) && fromApply > 0) {
-    return fromApply
+  const runs = Array.isArray(meta.room_processing_runs) ? meta.room_processing_runs : []
+  for (let index = runs.length - 1; index >= 0; index -= 1) {
+    const finalScale = runs[index]?.final_symbol_scale
+    if (typeof finalScale === 'number' && Number.isFinite(finalScale) && finalScale > 0) {
+      return finalScale
+    }
   }
+
+  const finalScale = meta.cad_worker_apply?.final_symbol_scale
+  if (typeof finalScale === 'number' && Number.isFinite(finalScale) && finalScale > 0) {
+    return finalScale
+  }
+
+  const legacyWorkerRadius = meta.cad_worker_apply?.symbol_radius_drawing_units
+  if (
+    typeof legacyWorkerRadius === 'number' &&
+    Number.isFinite(legacyWorkerRadius) &&
+    legacyWorkerRadius > 0
+  ) {
+    return legacyWorkerRadius
+  }
+
+  const resolvedPerMeter = resolveDrawingUnitsPerMeter(meta)
+  if (resolvedPerMeter !== null) {
+    // Worker nominal diameter is 0.45 m; OUTLET_BLOCK_RADIUS is 1, so radius is 0.225 m.
+    return 0.225 * resolvedPerMeter
+  }
+
+  // FALLBACK legacy: no worker result is available for this historical flow.
   const bbox = bboxFromWalls(paredes)
   const insunits =
     typeof meta.cad_worker_apply?.drawing_insunits === 'number'
@@ -116,6 +148,19 @@ export function resolveElectricalSymbolRadius(
     geometry: geometryExtract ?? meta.geometry_extract,
     insunits,
   })
+}
+
+export function resolveDrawingUnitsPerMeter(meta: {
+  cad_worker_apply?: Record<string, unknown>
+  room_processing_runs?: WorkerScaleRun[]
+}): number | null {
+  const runs = Array.isArray(meta.room_processing_runs) ? meta.room_processing_runs : []
+  for (let index = runs.length - 1; index >= 0; index -= 1) {
+    const value = runs[index]?.drawing_units_per_meter
+    if (typeof value === 'number' && Number.isFinite(value) && value > 0) return value
+  }
+  const value = meta.cad_worker_apply?.drawing_units_per_meter
+  return typeof value === 'number' && Number.isFinite(value) && value > 0 ? value : null
 }
 
 export function bboxFromWalls(

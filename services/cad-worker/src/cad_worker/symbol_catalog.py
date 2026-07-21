@@ -6,7 +6,21 @@ import math
 from dataclasses import dataclass
 from typing import Any, Literal
 
-from cad_worker.constants import OUTLET_BLOCK_RADIUS
+from cad_worker.constants import (
+    ASSUMED_PLOT_SCALE,
+    CONFIDENT_UNITS_THRESHOLD,
+    MAX_SYMBOL_CLASSIFIED_SPAN_RATIO,
+    MAX_SYMBOL_ROOM_MINOR_RATIO,
+    MIN_SYMBOL_DIAMETER_M,
+    OUTLET_BLOCK_RADIUS,
+    SYMBOL_PAPER_MM,
+)
+from cad_worker.unit_resolution import (
+    INSUNITS_DRAWING_UNITS_PER_METER,
+    UnitResolution,
+    resolve_drawing_units,
+    room_median_minor_dimension_m,
+)
 
 GeometryType = Literal[
     "circle_cross",
@@ -51,29 +65,13 @@ LEGACY_TO_ELEMENT: dict[str, str] = {
     "emergency": "toma_especial",
 }
 
-# Physical target: ~3 cm symbol diameter on the plan (architectural convention).
-TARGET_SYMBOL_DIAMETER_M = 0.03
+# 4.5 mm on paper at 1:100 -> 0.45 m model-space nominal diameter.
+TARGET_SYMBOL_DIAMETER_M = SYMBOL_PAPER_MM / 1000.0 * ASSUMED_PLOT_SCALE
 CROSS_ARM_RATIO = 0.65
 
-# Span clamps only guard against a wrong units inference (symbol wider than a
-# room); they must not shave legitimate physical sizes. A single-room plan in
-# mm spans ~4000 du with a correct radius of 15 du (0.375% of span), so the
-# ceiling has to sit well above that.
-MAX_RADIUS_SPAN_RATIO = 0.01
-MIN_RADIUS_SPAN_RATIO = 0.0005
-
-# AutoCAD $INSUNITS → drawing units per meter.
-INSUNITS_PER_METER: dict[int, float] = {
-    1: 39.3700787402,  # inches
-    2: 3.280839895,  # feet
-    3: 1.0936132983,  # miles → use with care
-    4: 1000.0,  # millimeters
-    5: 100.0,  # centimeters
-    6: 1.0,  # meters
-    8: 1000000.0,  # micrometers
-    9: 1000000000.0,  # nanometers
-    10: 1_000_000_000_000.0,  # kilometers — unlikely in floor plans
-}
+# Backwards-compatible alias. Unit resolution intentionally only considers the
+# three architectural candidates required by the worker contract.
+INSUNITS_PER_METER = INSUNITS_DRAWING_UNITS_PER_METER
 
 
 @dataclass(frozen=True)
@@ -82,6 +80,21 @@ class SymbolDef:
     geometry: GeometryType
     color_aci: int
     element: str | None = None
+
+
+@dataclass(frozen=True)
+class SymbolScaleResolution:
+    nominal_scale: float
+    final_scale: float
+    scale_clamped: bool
+    clamp_reason: str | None
+    room_median_minor_dimension_m: float | None
+    nominal_footprint_m: float
+    final_footprint_m: float
+
+
+class UnknownPlacementKindError(ValueError):
+    """Raised when a placement does not identify a supported symbol kind."""
 
 
 CATALOG: dict[str, SymbolDef] = {
@@ -106,16 +119,18 @@ CATALOG: dict[str, SymbolDef] = {
 
 def resolve_placement_kind(item: dict[str, object]) -> str:
     """Resolve symbol key from element (vivienda) or outlet_type (legacy)."""
-    element = item.get("element")
-    if isinstance(element, str) and element in CATALOG:
-        return element
+    for key in ("element", "tipo_componente"):
+        element = item.get(key)
+        if isinstance(element, str) and element in CATALOG:
+            return element
     raw = item.get("outlet_type")
     if isinstance(raw, str):
         if raw in LEGACY_TO_ELEMENT:
             return LEGACY_TO_ELEMENT[raw]
         if raw in CATALOG:
             return raw
-    return "standard"
+    supplied = item.get("element") or item.get("tipo_componente") or item.get("outlet_type")
+    raise UnknownPlacementKindError(f"unsupported placement kind: {supplied!r}")
 
 
 def resolve_outlet_type(item: dict[str, object]) -> str:
@@ -165,19 +180,12 @@ def infer_insunits(
     bbox: dict[str, float] | None,
     geometry: dict[str, object] | None = None,
 ) -> int:
-    """Guess drawing units when $INSUNITS is missing (4 = mm, 6 = m)."""
-    span = 0.0
-    if bbox:
+    """Compatibility helper routed through the shared unit resolver."""
+    resolved_geometry = dict(geometry or {})
+    if not resolved_geometry.get("paredes") and bbox:
         span = max(bbox["max_x"] - bbox["min_x"], bbox["max_y"] - bbox["min_y"])
-    median_wall = _median_wall_length(geometry)
-
-    if span > 800 or (median_wall is not None and median_wall > 80):
-        return 4  # millimeters (typical architectural DXF)
-    if span > 0 and span < 80:
-        return 6  # meters
-    if median_wall is not None and median_wall < 2:
-        return 6
-    return 4
+        resolved_geometry["paredes"] = [{"inicio": [0.0, 0.0], "fin": [span, 0.0]}]
+    return resolve_drawing_units(None, resolved_geometry, []).effective_insunits
 
 
 def drawing_units_per_meter(
@@ -185,10 +193,62 @@ def drawing_units_per_meter(
     bbox: dict[str, float] | None,
     geometry: dict[str, object] | None,
 ) -> float:
-    if insunits and insunits in INSUNITS_PER_METER:
-        return INSUNITS_PER_METER[insunits]
-    inferred = infer_insunits(bbox, geometry)
-    return INSUNITS_PER_METER.get(inferred, 1000.0)
+    resolved_geometry = dict(geometry or {})
+    if not resolved_geometry.get("paredes") and bbox:
+        span = max(bbox["max_x"] - bbox["min_x"], bbox["max_y"] - bbox["min_y"])
+        resolved_geometry["paredes"] = [{"inicio": [0.0, 0.0], "fin": [span, 0.0]}]
+    return resolve_drawing_units(insunits, resolved_geometry, []).drawing_units_per_meter
+
+
+def compute_symbol_scale_resolution(
+    resolution: UnitResolution,
+    room_polygons: list[object] | None,
+    bbox: dict[str, float] | None,
+    *,
+    base_footprint: float,
+) -> SymbolScaleResolution:
+    """Resolve a shared INSERT scale using the measured unscaled block footprint."""
+    per_meter = resolution.drawing_units_per_meter
+    nominal_scale = TARGET_SYMBOL_DIAMETER_M / 2.0 * per_meter / OUTLET_BLOCK_RADIUS
+    measured_base = max(float(base_footprint), 1e-9)
+    nominal_footprint_m = measured_base * nominal_scale / per_meter
+    median_minor_m = room_median_minor_dimension_m(room_polygons, resolution)
+
+    if median_minor_m is not None:
+        room_cap_m = MAX_SYMBOL_ROOM_MINOR_RATIO * median_minor_m
+        if resolution.confidence >= CONFIDENT_UNITS_THRESHOLD:
+            max_footprint_m = max(MIN_SYMBOL_DIAMETER_M, room_cap_m)
+            reason = "room_relative_footprint"
+        else:
+            # The 0.15 m floor is metre-denominated: under a wrong unit
+            # resolution it inflates instead of protecting (0.15 m read as
+            # mm becomes 150 real metres). The room-relative cap is a pure
+            # ratio in drawing units, so with untrusted units it rules alone.
+            max_footprint_m = max(room_cap_m, 1e-9)
+            reason = "room_relative_footprint_low_confidence"
+    else:
+        max_footprint_m = TARGET_SYMBOL_DIAMETER_M
+        reason = "no_rooms_fallback"
+        if bbox:
+            span_du = max(bbox["max_x"] - bbox["min_x"], bbox["max_y"] - bbox["min_y"])
+            if span_du > 0:
+                span_guard_m = span_du / per_meter * MAX_SYMBOL_CLASSIFIED_SPAN_RATIO
+                if span_guard_m < max_footprint_m:
+                    max_footprint_m = span_guard_m
+                    reason = "classified_bbox_span"
+
+    max_scale = max_footprint_m * per_meter / measured_base
+    final_scale = max(min(nominal_scale, max_scale), 1e-9)
+    clamped = final_scale < nominal_scale * (1.0 - 1e-9)
+    return SymbolScaleResolution(
+        nominal_scale=nominal_scale,
+        final_scale=final_scale,
+        scale_clamped=clamped,
+        clamp_reason=reason if clamped else None,
+        room_median_minor_dimension_m=median_minor_m,
+        nominal_footprint_m=nominal_footprint_m,
+        final_footprint_m=measured_base * final_scale / per_meter,
+    )
 
 
 def compute_symbol_radius_drawing_units(
@@ -196,31 +256,14 @@ def compute_symbol_radius_drawing_units(
     geometry: dict[str, object] | None = None,
     insunits: int | None = None,
 ) -> float:
-    """Target block radius in DXF drawing units (~1.5 cm real-world diameter ≈ 3 cm).
-
-    With an explicit $INSUNITS the physical size is authoritative: no bbox
-    clamping, because the plan span is contaminated by title blocks and stray
-    entities far from the floor plan. Span clamps only apply when units had to
-    be inferred (the heuristic itself is span-based, so the guard stays useful).
-    """
-    per_meter = drawing_units_per_meter(insunits, bbox, geometry)
-    physical_radius = (TARGET_SYMBOL_DIAMETER_M / 2.0) * per_meter
-
-    if insunits and insunits in INSUNITS_PER_METER:
-        return max(physical_radius, 1e-6)
-
-    if not bbox:
-        return max(physical_radius, 1e-6)
-
-    span = max(bbox["max_x"] - bbox["min_x"], bbox["max_y"] - bbox["min_y"])
-    if span <= 0:
-        return max(physical_radius, 1e-6)
-
-    max_radius = span * MAX_RADIUS_SPAN_RATIO
-    min_radius = span * MIN_RADIUS_SPAN_RATIO
-    radius = min(physical_radius, max_radius)
-    radius = max(radius, min_radius)
-    return max(radius, 1e-6)
+    """Compatibility helper for the final scale of a circle-only unit block."""
+    resolution = resolve_drawing_units(insunits, geometry, [])
+    return compute_symbol_scale_resolution(
+        resolution,
+        [],
+        bbox,
+        base_footprint=2.0,
+    ).final_scale
 
 
 def read_dxf_insunits(doc: Any) -> int | None:
@@ -238,5 +281,4 @@ def compute_symbol_scale(
     insunits: int | None = None,
 ) -> float:
     """Scale factor for block INSERT (block geometry uses OUTLET_BLOCK_RADIUS as base)."""
-    target = compute_symbol_radius_drawing_units(bbox, geometry, insunits)
-    return target / OUTLET_BLOCK_RADIUS
+    return compute_symbol_radius_drawing_units(bbox, geometry, insunits) / OUTLET_BLOCK_RADIUS
