@@ -6,9 +6,9 @@ room type, computes exact outlet coordinates. The LLM keeps the semantic step
 (room_type classification / rule choice) and never emits x,y.
 
 Behaviour spec: docs/placement-spec/reglas-dormitorio-tomas-v1.md. Every mm
-threshold below is converted to drawing units through $INSUNITS (heuristic
-inference only as fallback). Output is stable and reproducible: same input →
-byte-identical placements.
+threshold below is converted through the shared trust-but-verify unit
+resolution. Output is stable and reproducible: same input → byte-identical
+placements.
 """
 
 from __future__ import annotations
@@ -32,7 +32,7 @@ from cad_worker.geometry import (
     segments_collinear,
     subtract_intervals,
 )
-from cad_worker.symbol_catalog import drawing_units_per_meter
+from cad_worker.unit_resolution import UnitResolution, resolve_drawing_units
 
 # --- Spec parameters (mm; converted per plan units). See placement spec §3. ---
 DEFAULT_PARAMS_MM: dict[str, float] = {
@@ -381,7 +381,11 @@ def _required_outlets(rule: dict[str, Any], usable_perimeter: float, du_per_m: f
     return required
 
 
-def place_outlets_for_room(payload: dict[str, Any]) -> dict[str, Any]:
+def place_outlets_for_room(
+    payload: dict[str, Any],
+    *,
+    unit_resolution: UnitResolution | None = None,
+) -> dict[str, Any]:
     """Compute deterministic outlet placements for a single room.
 
     Payload:
@@ -394,7 +398,7 @@ def place_outlets_for_room(payload: dict[str, Any]) -> dict[str, Any]:
     room = payload.get("room") if isinstance(payload.get("room"), dict) else {}
     geometry = payload.get("geometry") if isinstance(payload.get("geometry"), dict) else {}
     rules_bundle = payload.get("rules") if isinstance(payload.get("rules"), dict) else {}
-    insunits = payload.get("insunits")
+    insunits = payload.get("insunits", geometry.get("insunits"))
     insunits_int = int(insunits) if isinstance(insunits, (int, float)) and insunits else None
 
     room_id = str(room.get("id") or "room")
@@ -419,7 +423,12 @@ def place_outlets_for_room(payload: dict[str, Any]) -> dict[str, Any]:
         )
 
     params_mm = _resolve_params(rules_bundle, payload.get("params"))
-    du_per_m = drawing_units_per_meter(insunits_int, None, geometry)
+    resolution = unit_resolution or resolve_drawing_units(
+        insunits_int,
+        geometry,
+        [room.get("polygon")],
+    )
+    du_per_m = resolution.drawing_units_per_meter
     du_per_mm = du_per_m / 1000.0
 
     tol_wall = params_mm["tol_pared_ambiente_mm"] * du_per_mm
@@ -506,6 +515,9 @@ def place_outlets_for_room(payload: dict[str, Any]) -> dict[str, Any]:
             {
                 "id": f"outlet-{room_id.lower()}-{seq:02d}",
                 "room_id": room_id,
+                "room_polygon": {
+                    "vertices": [{"x": vertex[0], "y": vertex[1]} for vertex in vertices],
+                },
                 "position": {
                     "x": round(point[0], 3),
                     "y": round(point[1], 3),
@@ -527,6 +539,10 @@ def place_outlets_for_room(payload: dict[str, Any]) -> dict[str, Any]:
         "outlet_placements": outlet_placements,
         "warnings": warnings,
         "drawing_units_per_meter": du_per_m,
+        "header_insunits": resolution.header_insunits,
+        "effective_insunits": resolution.effective_insunits,
+        "insunits_overridden": resolution.overridden,
+        "unit_confidence": resolution.confidence,
         "placement_engine": "deterministic-v1",
     }
 
