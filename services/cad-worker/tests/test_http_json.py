@@ -38,3 +38,23 @@ def test_encode_result_header_handles_non_json_values() -> None:
     decoded = json.loads(base64.b64decode(token).decode("ascii"))
     assert decoded["layer"] == "INSTALACIÓN_ELÉCTRICA"
     assert decoded["outlets_added"] == 1
+
+
+def test_apply_header_metadata_includes_additive_observability() -> None:
+    result = {
+        "ok": True,
+        "header_insunits": 4,
+        "effective_insunits": 6,
+        "insunits_overridden": True,
+        "unit_confidence": 0.94,
+        "nominal_symbol_scale": 0.225,
+        "final_symbol_scale": 0.195,
+        "scale_clamped": True,
+        "clamp_reason": "room_relative_footprint",
+        "legacy_entities_removed": 6,
+        "placements_rejected": [{"index": 0, "reason": "origin_guard"}],
+    }
+    metadata = apply_layer_header_metadata(result)
+    for field, value in result.items():
+        if field != "ok":
+            assert metadata[field] == value

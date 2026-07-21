@@ -8,14 +8,41 @@ from json import loads as json_loads
 from pathlib import Path
 
 import ezdxf
+import httpx
 import pytest
-from fastapi.testclient import TestClient
+from starlette.responses import Response
 
 
 @pytest.fixture
-def client() -> TestClient:
+async def client(monkeypatch: pytest.MonkeyPatch):  # type: ignore[no-untyped-def]
     server = importlib.import_module("cad_worker_server")
-    return TestClient(server.app)
+
+    def inline_file_response(
+        path: str | Path,
+        *,
+        media_type: str,
+        filename: str,
+        headers: dict[str, str],
+        background: object,
+    ) -> Response:
+        content = Path(path).read_bytes()
+        cleanup = getattr(background, "func", None)
+        if callable(cleanup):
+            cleanup(
+                *getattr(background, "args", ()),
+                **getattr(background, "kwargs", {}),
+            )
+        return Response(content=content, media_type=media_type, headers=headers)
+
+    monkeypatch.setattr(server, "FileResponse", inline_file_response)
+    transport = httpx.ASGITransport(app=server.app)
+    async with httpx.AsyncClient(transport=transport, base_url="http://testserver") as client:
+        yield client
+
+
+@pytest.fixture
+def anyio_backend() -> str:
+    return "asyncio"
 
 
 @pytest.fixture
@@ -37,15 +64,17 @@ def test_cad_worker_server_json_helpers_for_apply_layer() -> None:
         server.json_loads("not-json")
 
 
-def test_healthz(client: TestClient) -> None:
-    response = client.get("/healthz")
+@pytest.mark.anyio
+async def test_healthz(client: httpx.AsyncClient) -> None:
+    response = await client.get("/healthz")
     assert response.status_code == 200
     assert response.json() == {"status": "ok", "service": "cad-worker"}
 
 
-def test_inspect(client: TestClient, sample_dxf: Path) -> None:
+@pytest.mark.anyio
+async def test_inspect(client: httpx.AsyncClient, sample_dxf: Path) -> None:
     with sample_dxf.open("rb") as handle:
-        response = client.post(
+        response = await client.post(
             "/inspect",
             files={"file": ("sample.dxf", handle, "application/octet-stream")},
         )
@@ -55,9 +84,10 @@ def test_inspect(client: TestClient, sample_dxf: Path) -> None:
     assert body.get("entity_count", 0) >= 1
 
 
-def test_extract_geometry(client: TestClient, sample_dxf: Path) -> None:
+@pytest.mark.anyio
+async def test_extract_geometry(client: httpx.AsyncClient, sample_dxf: Path) -> None:
     with sample_dxf.open("rb") as handle:
-        response = client.post(
+        response = await client.post(
             "/extract-geometry",
             files={"file": ("sample.dxf", handle, "application/octet-stream")},
         )
@@ -67,9 +97,10 @@ def test_extract_geometry(client: TestClient, sample_dxf: Path) -> None:
     assert "paredes" in body
 
 
-def test_apply_electrical_layer(client: TestClient, sample_dxf: Path) -> None:
+@pytest.mark.anyio
+async def test_apply_electrical_layer(client: httpx.AsyncClient, sample_dxf: Path) -> None:
     with sample_dxf.open("rb") as handle:
-        response = client.post(
+        response = await client.post(
             "/apply-electrical-layer",
             files={"file": ("sample.dxf", handle, "application/octet-stream")},
             data={"placements_json": "[]"},
@@ -79,9 +110,10 @@ def test_apply_electrical_layer(client: TestClient, sample_dxf: Path) -> None:
     assert response.headers.get("x-cad-worker-result")
 
 
-def test_render_plan(client: TestClient, sample_dxf: Path) -> None:
+@pytest.mark.anyio
+async def test_render_plan(client: httpx.AsyncClient, sample_dxf: Path) -> None:
     with sample_dxf.open("rb") as handle:
-        response = client.post(
+        response = await client.post(
             "/render-plan",
             files={"file": ("sample.dxf", handle, "application/octet-stream")},
             data={"width_px": "640"},
@@ -92,8 +124,9 @@ def test_render_plan(client: TestClient, sample_dxf: Path) -> None:
     assert response.headers.get("x-cad-worker-result")
 
 
-def test_apply_electrical_layer_header_serialization_does_not_500(
-    client: TestClient,
+@pytest.mark.anyio
+async def test_apply_electrical_layer_header_serialization_does_not_500(
+    client: httpx.AsyncClient,
     sample_dxf: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -109,7 +142,7 @@ def test_apply_electrical_layer_header_serialization_does_not_500(
     monkeypatch.setattr(server, "apply_electrical_layer", fake_apply)
 
     with sample_dxf.open("rb") as handle:
-        response = client.post(
+        response = await client.post(
             "/apply-electrical-layer",
             files={"file": ("sample.dxf", handle, "application/octet-stream")},
             data={"placements_json": "[]"},
@@ -119,8 +152,9 @@ def test_apply_electrical_layer_header_serialization_does_not_500(
     assert response.headers.get("x-cad-worker-result")
 
 
-def test_apply_electrical_layer_header_encode_failure_is_non_fatal(
-    client: TestClient,
+@pytest.mark.anyio
+async def test_apply_electrical_layer_header_encode_failure_is_non_fatal(
+    client: httpx.AsyncClient,
     sample_dxf: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -132,7 +166,7 @@ def test_apply_electrical_layer_header_encode_failure_is_non_fatal(
     monkeypatch.setattr(server, "encode_result_header", boom)
 
     with sample_dxf.open("rb") as handle:
-        response = client.post(
+        response = await client.post(
             "/apply-electrical-layer",
             files={"file": ("sample.dxf", handle, "application/octet-stream")},
             data={"placements_json": "[]"},

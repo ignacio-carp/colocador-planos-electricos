@@ -22,7 +22,15 @@ def test_apply_electrical_layer_preserves_spanish_layer_names(tmp_path: Path) ->
     result = apply_electrical_layer(
         src,
         out,
-        [{"position": {"x": 1000, "y": 0}}],
+        [
+            {
+                "position": {"x": 1000, "y": 0},
+                "element": "toma",
+                "room_polygon": {
+                    "vertices": [[0, 0], [4000, 0], [4000, 3000], [0, 3000]],
+                },
+            },
+        ],
     )
     assert result["ok"] is True
     assert result["outlets_added"] == 1

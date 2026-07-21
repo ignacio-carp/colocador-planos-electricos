@@ -9,6 +9,23 @@ import ezdxf
 from cad_worker.constants import DEFAULT_OUTLET_BLOCK_NAME, OUTPUT_ELECTRICAL_LAYER_NAME
 from cad_worker.electrical_layer import apply_electrical_layer
 
+ROOM_POLYGON = {
+    "vertices": [
+        {"x": 0, "y": 0},
+        {"x": 5000, "y": 0},
+        {"x": 5000, "y": 4000},
+        {"x": 0, "y": 4000},
+    ],
+}
+
+
+def _placement(x: float, y: float, *, element: str = "toma") -> dict[str, object]:
+    return {
+        "position": {"x": x, "y": y, "unit": "drawing_units"},
+        "element": element,
+        "room_polygon": ROOM_POLYGON,
+    }
+
 
 def test_apply_electrical_layer_adds_block_inserts(tmp_path: Path) -> None:
     src = tmp_path / "in.dxf"
@@ -18,12 +35,7 @@ def test_apply_electrical_layer_adds_block_inserts(tmp_path: Path) -> None:
     msp.add_line((0, 0), (5000, 0))
     doc.saveas(str(src))
 
-    placements = [
-        {
-            "id": "outlet-test-01",
-            "position": {"x": 1000, "y": 0, "unit": "drawing_units"},
-        }
-    ]
+    placements = [{"id": "outlet-test-01", **_placement(1000, 0)}]
     result = apply_electrical_layer(src, out, placements)
     assert result["ok"] is True
     assert result["outlets_added"] == 1
@@ -56,6 +68,7 @@ def test_apply_electrical_layer_uses_outlet_type_block(tmp_path: Path) -> None:
         {
             "position": {"x": 1000, "y": 0},
             "outlet_type": "switch",
+            "room_polygon": ROOM_POLYGON,
         }
     ]
     result = apply_electrical_layer(src, out, placements)
@@ -82,6 +95,7 @@ def test_apply_electrical_layer_nuevas_tomas_format(tmp_path: Path) -> None:
             "coordenadas": [500, 100],
             "tipo_componente": "toma",
             "descripcion": "test",
+            "room_polygon": ROOM_POLYGON,
         }
     ]
     result = apply_electrical_layer(src, out, placements)
@@ -96,7 +110,7 @@ def test_apply_skips_out_of_bbox(tmp_path: Path) -> None:
     doc.modelspace().add_line((0, 0), (100, 0), dxfattribs={"layer": "MUROS"})
     doc.saveas(str(src))
 
-    placements = [{"position": {"x": 99999, "y": 99999}}]
+    placements = [_placement(99999, 99999)]
     result = apply_electrical_layer(src, out, placements)
     assert result["outlets_added"] == 0
     assert result.get("placements_skipped_out_of_bbox", 0) >= 1
@@ -114,7 +128,7 @@ def test_apply_with_room_id_tags_entities(tmp_path: Path) -> None:
     doc.modelspace().add_line((0, 0), (5000, 0))
     doc.saveas(str(src))
 
-    placements = [{"position": {"x": 1000, "y": 0}}]
+    placements = [_placement(1000, 0)]
     result = apply_electrical_layer(src, out, placements, room_id="room-kitchen")
     assert result["ok"] is True
     assert result["outlets_added"] == 1
@@ -130,6 +144,7 @@ def test_apply_with_room_id_tags_entities(tmp_path: Path) -> None:
     room_tag = next((item for item in xdata if item.code == CAMBRE_ROOM_GROUP_CODE), None)
     assert room_tag is not None
     assert room_tag.value == "room-kitchen"
+    assert len([item for item in xdata if item.code == CAMBRE_ROOM_GROUP_CODE]) == 3
 
 
 def test_reprocesar_room_replaces_only_that_rooms_entities(tmp_path: Path) -> None:
@@ -143,14 +158,14 @@ def test_reprocesar_room_replaces_only_that_rooms_entities(tmp_path: Path) -> No
 
     # First run: add 2 outlets for room-kitchen
     placements_kitchen = [
-        {"position": {"x": 500, "y": 0}},
-        {"position": {"x": 1500, "y": 0}},
+        _placement(500, 0),
+        _placement(1500, 0),
     ]
     result1 = apply_electrical_layer(src, out1, placements_kitchen, room_id="room-kitchen")
     assert result1["outlets_added"] == 2
 
     # Second run on out1 as input: add 1 outlet for room-living
-    placements_living = [{"position": {"x": 2500, "y": 0}}]
+    placements_living = [_placement(2500, 0)]
     result2 = apply_electrical_layer(out1, out2, placements_living, room_id="room-living")
     assert result2["outlets_added"] == 1
     # No kitchen entities removed
@@ -166,7 +181,7 @@ def test_reprocesar_room_replaces_only_that_rooms_entities(tmp_path: Path) -> No
     result3 = apply_electrical_layer(
         out2,
         out3,
-        [{"position": {"x": 600, "y": 0}}],
+        [_placement(600, 0)],
         room_id="room-kitchen",
     )
     assert result3["outlets_added"] == 1
@@ -188,21 +203,106 @@ def test_incremental_preserves_source_non_electrical_layers(tmp_path: Path) -> N
     msp.add_line((0, 100), (5000, 100))
     doc.saveas(str(src))
 
-    placements = [{"position": {"x": 1000, "y": 0}}]
+    placements = [_placement(1000, 0)]
     result = apply_electrical_layer(src, out, placements, room_id="room-bath")
     assert result["ok"] is True
     assert result.get("source_layers_preserved") is True
 
 
-def test_batch_mode_no_room_id_unchanged(tmp_path: Path) -> None:
-    """Without room_id (batch mode), entities are NOT tagged and not removed on re-run."""
+def test_batch_mode_tags_entities_for_future_hygiene(tmp_path: Path) -> None:
+    """Batch entities receive a sentinel room tag and generator lineage."""
     src = tmp_path / "in.dxf"
     out = tmp_path / "out.dxf"
     doc = ezdxf.new()
     doc.modelspace().add_line((0, 0), (5000, 0))
     doc.saveas(str(src))
 
-    placements = [{"position": {"x": 1000, "y": 0}}]
+    placements = [_placement(1000, 0)]
     result = apply_electrical_layer(src, out, placements)  # no room_id
     assert result["ok"] is True
-    assert result.get("room_id") is None  # not tagged
+    assert result.get("room_id") is None
+    saved = ezdxf.readfile(out)
+    insert = next(entity for entity in saved.modelspace() if entity.dxftype() == "INSERT")
+    assert insert.has_xdata("CAMBRE_ROOM")
+
+
+def test_apply_removes_legacy_entities_and_purges_blocks(tmp_path: Path) -> None:
+    from cad_worker.constants import LEGACY_BLOCK_NAMES
+
+    src = tmp_path / "legacy.dxf"
+    out = tmp_path / "clean.dxf"
+    doc = ezdxf.new()
+    doc.layers.new(OUTPUT_ELECTRICAL_LAYER_NAME)
+    msp = doc.modelspace()
+    msp.add_line((0, 0), (5000, 0))
+    for index, block_name in enumerate(sorted(LEGACY_BLOCK_NAMES)):
+        block = doc.blocks.new(block_name)
+        block.add_circle((0, 0), 40 if "SWITCH" in block_name else 100)
+        msp.add_blockref(
+            block_name,
+            (500 + index * 500, 0),
+            dxfattribs={"layer": OUTPUT_ELECTRICAL_LAYER_NAME},
+        )
+    msp.add_line(
+        (0, 0),
+        (1, 1),
+        dxfattribs={"layer": OUTPUT_ELECTRICAL_LAYER_NAME},
+    )
+    doc.saveas(src)
+
+    result = apply_electrical_layer(src, out, [_placement(1000, 0)])
+    assert result["legacy_entities_removed"] == 6
+    assert set(result["legacy_blocks_purged"]) == set(LEGACY_BLOCK_NAMES)
+    saved = ezdxf.readfile(out)
+    assert not [
+        entity
+        for entity in saved.modelspace()
+        if entity.dxftype() == "INSERT" and entity.dxf.name in LEGACY_BLOCK_NAMES
+    ]
+
+
+def test_apply_versions_poisoned_symbol_block(tmp_path: Path) -> None:
+    src = tmp_path / "poison.dxf"
+    out = tmp_path / "safe.dxf"
+    doc = ezdxf.new()
+    doc.modelspace().add_line((0, 0), (5000, 0))
+    poisoned = doc.blocks.new("SYM_TOMA")
+    poisoned.add_circle((0, 0), 100)
+    doc.saveas(src)
+
+    result = apply_electrical_layer(src, out, [_placement(1000, 0)])
+    assert result["blocks_used"] == ["SYM_TOMA__V2"]
+    saved = ezdxf.readfile(out)
+    insert = next(entity for entity in saved.modelspace() if entity.dxftype() == "INSERT")
+    assert insert.dxf.name == "SYM_TOMA__V2"
+
+
+def test_apply_reports_degenerate_unknown_and_outside_placements(tmp_path: Path) -> None:
+    src = tmp_path / "guard.dxf"
+    out = tmp_path / "guarded.dxf"
+    doc = ezdxf.new()
+    doc.layers.new("MUROS")
+    msp = doc.modelspace()
+    for start, end in (
+        ((0, 0), (5000, 0)),
+        ((5000, 0), (5000, 4000)),
+        ((5000, 4000), (0, 4000)),
+        ((0, 4000), (0, 0)),
+    ):
+        msp.add_line(start, end, dxfattribs={"layer": "MUROS"})
+    doc.saveas(src)
+    placements = [
+        {"element": "toma"},
+        {"position": {"x": float("nan"), "y": 0}, "element": "toma"},
+        {"position": {"x": 1000, "y": 1000}, "element": "unknown"},
+        _placement(5200, 2000),
+    ]
+    result = apply_electrical_layer(src, out, placements)
+    reasons = [item["reason"] for item in result["placements_rejected"]]
+    assert reasons == [
+        "missing_or_invalid_position",
+        "non_finite_position",
+        "unknown_placement_kind",
+        "outside_room_polygon",
+    ]
+    assert result["outlets_added"] == 0

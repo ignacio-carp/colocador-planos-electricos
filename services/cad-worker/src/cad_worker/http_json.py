@@ -27,6 +27,23 @@ def apply_layer_header_metadata(result: dict[str, object]) -> dict[str, object]:
     bbox = result.get("bounding_box")
     if isinstance(bbox, dict):
         meta["bounding_box"] = bbox
+    additive_fields = (
+        "header_insunits",
+        "effective_insunits",
+        "insunits_overridden",
+        "unit_confidence",
+        "nominal_symbol_scale",
+        "final_symbol_scale",
+        "scale_clamped",
+        "clamp_reason",
+        "room_median_minor_dimension_m",
+        "legacy_entities_removed",
+        "legacy_blocks_purged",
+        "placements_rejected",
+    )
+    for field in additive_fields:
+        if field in result:
+            meta[field] = result[field]
     return meta
 
 
