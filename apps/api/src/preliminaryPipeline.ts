@@ -25,12 +25,43 @@ import {
   type JobRow,
   type RoomProcessingStatus,
 } from './jobsStore'
-import { incrementPipelineError, recordStepLatency } from './metrics'
+import { incrementPipelineError, recordIaRetry, recordStepLatency } from './metrics'
 import { PIPELINE_CONTRACT_VERSION } from './pipelineContracts'
 import { buildStubVisionLayoutOutput } from './pipelineStubs'
 import { getSupabaseServiceRole, isStorageConfigured } from './supabaseService'
 import { buildPlanRenderMetadata, type PlanRenderMetadata } from './llmRenderContext'
-import { PRELIMINARY_WARNING_NO_ROOMS } from './preliminaryAnalysis'
+import {
+  PRELIMINARY_WARNING_ANALYSIS_DEGRADED,
+  PRELIMINARY_WARNING_NO_ROOMS,
+} from './preliminaryAnalysis'
+
+export type RetriedAnalysisResult<T> = {
+  value: T
+  degraded: boolean
+  reason?: string
+}
+
+/** LLM classification/name step: one initial attempt plus exactly one retry. */
+export async function runAnalysisWithSingleRetry<T>(
+  work: (attempt: 1 | 2) => Promise<T>,
+  fallback: () => T,
+  onRetry?: (reason: string) => void,
+): Promise<RetriedAnalysisResult<T>> {
+  let lastReason = 'analysis failed'
+  for (const attempt of [1, 2] as const) {
+    try {
+      return { value: await work(attempt), degraded: false }
+    } catch (e) {
+      lastReason = e instanceof Error ? e.message : String(e)
+      if (attempt === 1) onRetry?.(lastReason)
+    }
+  }
+  return {
+    value: fallback(),
+    degraded: true,
+    reason: lastReason.slice(0, 500),
+  }
+}
 
 function cadWorkerFixturePath(): string | undefined {
   return (
@@ -252,38 +283,66 @@ export async function runPreliminaryAnalysisPipeline(
 
     lastExecutedStep = 'vision_layout'
     let visionResult: Record<string, unknown> | undefined
+    let analysisDegradedReason: string | undefined
     await runTimedStep(jobId, correlationId, 'vision_layout', async () => {
-      const hasCadContext = Boolean(cadInspect || geometryExtract || planRender)
-      if (pipelineMode === 'live' && hasCadContext) {
-        visionResult = await buildLiveVisionLayoutOutput(jobId, correlationId, {
-          cadInspect,
-          geometryExtract,
-          planRender,
-        })
-        logStructured('info', {
-          event: 'preliminary_us007_live',
-          job_id: jobId,
-          correlation_id: correlationId,
-          contract_version: PIPELINE_CONTRACT_VERSION,
-          has_plan_image: Boolean(planRender),
-        })
-      } else if (pipelineMode === 'live') {
-        visionResult = buildLiveVisionFallback(jobId, correlationId) as Record<string, unknown>
+      const outcome = await runAnalysisWithSingleRetry(
+        async (attempt) => {
+          if (process.env.CAD_IA_SIMULATE_FAILURE === 'true' && pipelineMode === 'stub') {
+            throw new Error(`Vision classification failure (simulated), attempt ${attempt}`)
+          }
+
+          const hasCadContext = Boolean(cadInspect || geometryExtract || planRender)
+          if (pipelineMode === 'live' && hasCadContext) {
+            const result = await buildLiveVisionLayoutOutput(jobId, correlationId, {
+              cadInspect,
+              geometryExtract,
+              planRender,
+            })
+            logStructured('info', {
+              event: 'preliminary_us007_live',
+              job_id: jobId,
+              correlation_id: correlationId,
+              contract_version: PIPELINE_CONTRACT_VERSION,
+              attempt,
+              has_plan_image: Boolean(planRender),
+            })
+            return result as Record<string, unknown>
+          }
+          if (pipelineMode === 'live') {
+            throw new Error('Vision classification unavailable: CAD context missing')
+          }
+
+          const result = buildStubVisionLayoutOutput(jobId, correlationId) as Record<string, unknown>
+          const rooms =
+            (result.layout_interpretation as { rooms?: unknown[] } | undefined)?.rooms ?? []
+          logStructured('info', {
+            event: 'preliminary_us007_stub',
+            job_id: jobId,
+            correlation_id: correlationId,
+            contract_version: PIPELINE_CONTRACT_VERSION,
+            rooms: rooms.length,
+          })
+          return result
+        },
+        () => buildLiveVisionFallback(jobId, correlationId) as Record<string, unknown>,
+        (reason) => {
+          recordIaRetry(jobId)
+          logStructured('warn', {
+            event: 'preliminary_analysis_retry',
+            job_id: jobId,
+            correlation_id: correlationId,
+            reason: reason.slice(0, 500),
+          })
+        },
+      )
+      visionResult = outcome.value
+      analysisDegradedReason = outcome.reason
+      if (outcome.degraded) {
         logStructured('warn', {
-          event: 'preliminary_us007_live_fallback_stub',
+          event: 'preliminary_analysis_degraded',
           job_id: jobId,
           correlation_id: correlationId,
-        })
-      } else {
-        visionResult = buildStubVisionLayoutOutput(jobId, correlationId) as Record<string, unknown>
-        const rooms =
-          (visionResult.layout_interpretation as { rooms?: unknown[] } | undefined)?.rooms ?? []
-        logStructured('info', {
-          event: 'preliminary_us007_stub',
-          job_id: jobId,
-          correlation_id: correlationId,
-          contract_version: PIPELINE_CONTRACT_VERSION,
-          rooms: rooms.length,
+          reason: outcome.reason,
         })
       }
     })
@@ -296,6 +355,9 @@ export async function runPreliminaryAnalysisPipeline(
     const rooms: Room[] = visionLayout?.rooms ?? []
 
     const preliminaryWarnings: string[] = []
+    if (analysisDegradedReason) {
+      preliminaryWarnings.push(PRELIMINARY_WARNING_ANALYSIS_DEGRADED)
+    }
     if (rooms.length === 0) {
       preliminaryWarnings.push(PRELIMINARY_WARNING_NO_ROOMS)
       logStructured('warn', {
@@ -315,6 +377,7 @@ export async function runPreliminaryAnalysisPipeline(
     const existingMeta = { ...((await findJob(jobId))?.pipeline_metadata ?? {}) }
     delete existingMeta.outlet_placements
     delete existingMeta.normative_rules_version
+    delete existingMeta.analysis_degraded_reason
 
     const done = await patchJob(jobId, {
       status: 'listo_para_editar',
@@ -326,6 +389,10 @@ export async function runPreliminaryAnalysisPipeline(
         room_processing_state: roomProcessingState,
         preliminary_analysis_completed_at: completedAt,
         preliminary_analysis_warnings: preliminaryWarnings,
+        analysis_degraded: Boolean(analysisDegradedReason),
+        ...(analysisDegradedReason
+          ? { analysis_degraded_reason: analysisDegradedReason }
+          : {}),
         normative_rules_enabled: normativeRulesEnabled,
       },
     })

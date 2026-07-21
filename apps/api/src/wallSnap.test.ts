@@ -17,11 +17,11 @@ const POLYGON = [
   { x: 0, y: 4000 },
 ]
 
-test('duPerMm maps mm/m and defaults to mm', () => {
-  assert.equal(duPerMm(4), 1)
-  assert.equal(duPerMm(6), 0.001)
+test('duPerMm consumes worker drawing_units_per_meter and has an explicit legacy fallback', () => {
+  assert.equal(duPerMm(1000), 1)
+  assert.equal(duPerMm(1), 0.001)
   assert.equal(duPerMm(null), 1)
-  assert.equal(duPerMm(99), 1)
+  assert.equal(duPerMm(null, 6), 0.001)
 })
 
 test('snaps an interior point to the nearest wall, nudged 10 mm inward', () => {
@@ -30,7 +30,7 @@ test('snaps an interior point to the nearest wall, nudged 10 mm inward', () => {
     count: 1,
     walls: WALLS,
     polygon: POLYGON,
-    insunits: 4,
+    drawingUnitsPerMeter: 1000,
   })
   assert.equal(points.length, 1)
   assert.ok(Math.abs(points[0]!.x - 1500) < 1e-6)
@@ -44,7 +44,7 @@ test('snaps from the room center but rejects positions with no wall in reach', (
     count: 1,
     walls: WALLS,
     polygon: POLYGON,
-    insunits: 4,
+    drawingUnitsPerMeter: 1000,
   })
   assert.equal(center.length, 1)
 
@@ -53,7 +53,7 @@ test('snaps from the room center but rejects positions with no wall in reach', (
     count: 1,
     walls: WALLS,
     polygon: POLYGON,
-    insunits: 4,
+    drawingUnitsPerMeter: 1000,
   })
   assert.equal(farAway.length, 0)
 })
@@ -64,7 +64,7 @@ test('spaces multiple copies 600 mm apart along the same wall', () => {
     count: 3,
     walls: WALLS,
     polygon: POLYGON,
-    insunits: 4,
+    drawingUnitsPerMeter: 1000,
   })
   assert.equal(points.length, 3)
   for (const p of points) {
@@ -95,7 +95,7 @@ test('scales tolerances with meter units', () => {
       { x: 3, y: 4 },
       { x: 0, y: 4 },
     ],
-    insunits: 6,
+    drawingUnitsPerMeter: 1,
   })
   assert.equal(points.length, 1)
   assert.ok(Math.abs(points[0]!.y - 0.01) < 1e-9) // 10 mm in metres

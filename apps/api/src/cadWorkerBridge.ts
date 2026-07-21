@@ -45,6 +45,26 @@ export type CadWorkerApplyLayerResult = {
   bounding_box?: { min_x: number; max_x: number; min_y: number; max_y: number }
   source_layers_preserved?: boolean
   output_checksum_sha256?: string
+  symbol_scale?: number
+  symbol_radius_drawing_units?: number
+  drawing_insunits?: number | null
+  header_insunits?: number | null
+  effective_insunits?: number | null
+  insunits_overridden?: boolean
+  unit_confidence?: number
+  drawing_units_per_meter?: number
+  nominal_symbol_scale?: number
+  final_symbol_scale?: number
+  scale_clamped?: boolean
+  clamp_reason?: string | null
+  legacy_entities_removed?: number
+  legacy_blocks_purged?: number
+  placements_rejected?: Array<{
+    index?: number
+    reason?: string
+    position?: number[]
+  }>
+  generation_id?: string
   error?: string
   code?: string
 }

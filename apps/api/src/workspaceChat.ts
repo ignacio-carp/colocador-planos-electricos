@@ -37,6 +37,7 @@ import {
 import { aiConfigured, getPipelineMode, normativeTimeoutMs, visionModel } from './pipelineMode'
 import { normalizeRenderRoomVertices, resolveLayoutInterpretation } from './renderDataHelpers'
 import { snapPositionsForAdd, type WallSegment } from './wallSnap'
+import { resolveDrawingUnitsPerMeter } from './symbolScale'
 import {
   runRoomProcessingPipeline,
   type RoomProcessingPipelineResult,
@@ -883,6 +884,7 @@ Tool usage rules:
           job_status: state.lastJobStatus,
           rooms: state.processedResults,
           normative_rules_blocked: false,
+          warnings: state.processedResults.flatMap((room) => room.warnings ?? []),
         }
       : undefined
 
@@ -991,7 +993,8 @@ export async function applyChatMutations(
             meta.vision_layout as Record<string, unknown> | undefined,
             room.id,
           ),
-          insunits: geometryExtract?.insunits,
+          drawingUnitsPerMeter: resolveDrawingUnitsPerMeter(meta),
+          legacyInsunits: geometryExtract?.insunits,
         })
         if (targets.length === 0) {
           logStructured('warn', {

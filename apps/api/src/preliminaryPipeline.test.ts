@@ -2,7 +2,7 @@ import assert from 'node:assert/strict'
 import { describe, it, beforeEach } from 'node:test'
 import { clearJobsForTests, createJob, patchJob } from './jobsStore'
 import { clearJobQueueForTests, enqueuePreliminaryAnalysis } from './jobQueue'
-import { runPreliminaryAnalysisPipeline } from './preliminaryPipeline'
+import { runAnalysisWithSingleRetry, runPreliminaryAnalysisPipeline } from './preliminaryPipeline'
 
 describe('runPreliminaryAnalysisPipeline (stub mode)', { concurrency: false }, () => {
   beforeEach(() => {
@@ -112,6 +112,35 @@ describe('runPreliminaryAnalysisPipeline (stub mode)', { concurrency: false }, (
     assert.deepEqual(result!.pipeline_metadata?.preliminary_analysis_warnings, ['NO_ROOMS_DETECTED'])
     assert.deepEqual(result!.pipeline_metadata?.room_processing_state, {})
     delete process.env.CAD_STUB_EMPTY_ROOMS
+  })
+
+  it('retries classification once, then persists an explicit degraded analysis warning', async () => {
+    let attempts = 0
+    const retried = await runAnalysisWithSingleRetry(
+      async () => {
+        attempts += 1
+        throw new Error('inparseable room classification')
+      },
+      () => ({ fallback: true }),
+    )
+    assert.equal(attempts, 2)
+    assert.equal(retried.degraded, true)
+    assert.match(retried.reason ?? '', /inparseable room classification/)
+
+    process.env.CAD_IA_SIMULATE_FAILURE = 'true'
+    const job = await createJob('user-1', 'Degraded Vision')
+    const result = await runPreliminaryAnalysisPipeline(job.id, 'corr-degraded')
+    assert.ok(result)
+    assert.equal(result!.status, 'listo_para_editar')
+    assert.equal(result!.pipeline_metadata?.analysis_degraded, true)
+    assert.match(
+      result!.pipeline_metadata?.analysis_degraded_reason ?? '',
+      /attempt 2/,
+    )
+    assert.ok(
+      result!.pipeline_metadata?.preliminary_analysis_warnings?.includes('ANALYSIS_DEGRADED'),
+    )
+    delete process.env.CAD_IA_SIMULATE_FAILURE
   })
 })
 

@@ -11,7 +11,7 @@
 export type SnapPoint = { x: number; y: number }
 export type WallSegment = { inicio?: number[]; fin?: number[] }
 
-/** $INSUNITS → drawing units per millimetre (subset used by architectural DXFs). */
+/** FALLBACK legacy: header conversion for jobs without worker unit metadata. */
 const INSUNITS_DU_PER_MM: Record<number, number> = {
   1: 1 / 25.4, // inches
   2: 1 / 304.8, // feet
@@ -20,9 +20,20 @@ const INSUNITS_DU_PER_MM: Record<number, number> = {
   6: 0.001, // metres
 }
 
-export function duPerMm(insunits: number | null | undefined): number {
-  if (typeof insunits === 'number' && INSUNITS_DU_PER_MM[insunits]) {
-    return INSUNITS_DU_PER_MM[insunits]
+export function duPerMm(
+  drawingUnitsPerMeter: number | null | undefined,
+  legacyInsunits?: number | null,
+): number {
+  if (
+    typeof drawingUnitsPerMeter === 'number' &&
+    Number.isFinite(drawingUnitsPerMeter) &&
+    drawingUnitsPerMeter > 0
+  ) {
+    return drawingUnitsPerMeter / 1000
+  }
+  // FALLBACK legacy: the worker result was not persisted in this flow.
+  if (typeof legacyInsunits === 'number' && INSUNITS_DU_PER_MM[legacyInsunits]) {
+    return INSUNITS_DU_PER_MM[legacyInsunits]
   }
   return 1 // regional default: architectural DXFs in millimetres
 }
@@ -122,9 +133,10 @@ export function snapPositionsForAdd(params: {
   count: number
   walls: WallSegment[]
   polygon: SnapPoint[]
-  insunits?: number | null
+  drawingUnitsPerMeter?: number | null
+  legacyInsunits?: number | null
 }): SnapPoint[] {
-  const scale = duPerMm(params.insunits)
+  const scale = duPerMm(params.drawingUnitsPerMeter, params.legacyInsunits)
   const maxSnap = MAX_SNAP_MM * scale
   const nudge = NUDGE_MM * scale
   const spacing = COPY_SPACING_MM * scale

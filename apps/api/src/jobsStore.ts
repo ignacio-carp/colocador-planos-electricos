@@ -34,6 +34,11 @@ export type RoomProcessingError = {
   correlation_id: string
 }
 
+export type PlacementsRejectedSummary = {
+  total: number
+  by_reason: Record<string, number>
+}
+
 export type RoomProcessingRun = {
   room_id: string
   correlation_id: string
@@ -41,6 +46,19 @@ export type RoomProcessingRun = {
   started_at: string
   completed_at?: string
   outlet_count?: number
+  header_insunits?: number | null
+  effective_insunits?: number | null
+  insunits_overridden?: boolean
+  unit_confidence?: number
+  drawing_units_per_meter?: number
+  nominal_symbol_scale?: number
+  final_symbol_scale?: number
+  scale_clamped?: boolean
+  clamp_reason?: string | null
+  legacy_entities_removed?: number
+  legacy_blocks_purged?: number
+  placements_rejected?: PlacementsRejectedSummary
+  generation_id?: string
   error?: RoomProcessingError
 }
 
@@ -67,6 +85,8 @@ export type JobPipelineMetadata = {
   dxf_checkpoints?: DxfCheckpoint[]
   preliminary_analysis_completed_at?: string
   preliminary_analysis_warnings?: string[]
+  analysis_degraded?: boolean
+  analysis_degraded_reason?: string
 }
 
 export type JobRow = {
