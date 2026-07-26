@@ -463,7 +463,7 @@ def validate_drawn_output(
     )
 
     blocks_used = apply_result.get("blocks_used", [])
-    poison_ok = not fixture.expect_poison_versioned or "SYM_TOMA__V2" in blocks_used
+    poison_ok = not fixture.expect_poison_versioned or "CBR_TOMA__V2" in blocks_used
     checks.append(
         Check(
             fixture=fx,

@@ -1,17 +1,20 @@
-"""Tests for symbol catalog helpers."""
+"""Tests for the paper-millimetre symbol catalog and its scale resolution."""
 
 import pytest
 
+from cad_worker.constants import MAX_SYMBOL_PAPER_MM, MIN_SYMBOL_PAPER_MM
 from cad_worker.symbol_catalog import (
     CATALOG,
     UnknownPlacementKindError,
-    compute_symbol_radius_drawing_units,
-    compute_symbol_scale,
     compute_symbol_scale_resolution,
     infer_insunits,
+    paper_mm_of,
+    paper_size_is_legible,
     resolve_placement_kind,
+    resolve_plot_scale,
     resolve_symbol,
 )
+from cad_worker.symbol_geometry import symbol_paper_extent, wall_rotation_degrees
 from cad_worker.unit_resolution import resolve_drawing_units
 
 
@@ -22,30 +25,59 @@ def test_resolve_symbol_rejects_missing_kind() -> None:
 
 def test_resolve_symbol_switch() -> None:
     sym = resolve_symbol({"outlet_type": "switch"})
-    assert sym.block_name == "SYM_LLAVE"
+    assert sym.block_name == "CBR_LLAVE_1"
     assert sym.geometry == "llave"
 
 
-def test_resolve_symbol_vivienda_element_centro() -> None:
+def test_resolve_symbol_centro_does_not_rotate() -> None:
     sym = resolve_symbol({"element": "centro"})
-    assert sym.block_name == "SYM_CENTRO"
-    assert sym.geometry == "filled_circle"
+    assert sym.geometry == "centro_luz"
+    assert sym.rotates_with_wall is False
 
 
-def test_resolve_symbol_vivienda_toma() -> None:
+def test_resolve_symbol_toma() -> None:
     sym = resolve_symbol({"element": "toma"})
-    assert sym.block_name == "SYM_TOMA"
+    assert sym.block_name == "CBR_TOMA"
     assert sym.geometry == "toma"
 
 
 def test_resolve_placement_kind_legacy_alias() -> None:
     assert resolve_placement_kind({"outlet_type": "dedicated_appliance"}) == "toma_especial"
+    assert resolve_placement_kind({"outlet_type": "double"}) == "toma_doble"
 
 
-def test_vivienda_element_types_in_catalog() -> None:
-    elements = ("centro", "brazo", "toma", "toma_especial", "llave", "tablero", "puesta_tierra")
+def test_catalog_covers_the_full_component_set() -> None:
+    elements = (
+        "toma",
+        "toma_doble",
+        "toma_especial",
+        "centro",
+        "brazo",
+        "llave",
+        "llave_2_puntos",
+        "llave_3_puntos",
+        "llave_combinacion",
+        "tablero",
+        "puesta_tierra",
+    )
     for element in elements:
         assert element in CATALOG
+
+
+def test_every_symbol_is_drawn_at_its_declared_paper_size() -> None:
+    """The block definition is the specification: no symbol may drift from it."""
+    for element, symbol in CATALOG.items():
+        measured = symbol_paper_extent(symbol)
+        assert measured == pytest.approx(symbol.paper_mm, abs=1e-6), element
+        assert paper_size_is_legible(measured), element
+
+
+def test_wall_rotation_points_symbol_into_the_room() -> None:
+    # Local +Y must end up along the inward normal.
+    assert wall_rotation_degrees((0.0, 1.0)) == pytest.approx(0.0)
+    assert wall_rotation_degrees((1.0, 0.0)) == pytest.approx(-90.0)
+    assert wall_rotation_degrees((-1.0, 0.0)) == pytest.approx(90.0)
+    assert wall_rotation_degrees((0.0, 0.0)) == 0.0
 
 
 def test_infer_insunits_mm_for_large_span() -> None:
@@ -53,69 +85,76 @@ def test_infer_insunits_mm_for_large_span() -> None:
     assert infer_insunits(bbox) == 4
 
 
-def test_symbol_radius_without_rooms_uses_bbox_safety_guard() -> None:
-    bbox = {"min_x": 0, "min_y": 0, "max_x": 8000, "max_y": 6000}
-    radius = compute_symbol_radius_drawing_units(bbox, insunits=4)
-    assert radius == 40.0
-
-
-def test_plot_scale_clamps_measured_toma_footprint_to_room_limit() -> None:
+def test_plot_scale_read_from_dimension_layer_name() -> None:
     geometry = {
-        "paredes": [
-            {"inicio": [0, 0], "fin": [3000, 0]},
-            {"inicio": [3000, 0], "fin": [3000, 4000]},
+        "dimensiones": [
+            {"medida_du": 4.3, "capa": "_NOM - COTAS 1.100"},
+            {"medida_du": 2.0, "capa": "_NOM - COTAS 1.100"},
+            {"medida_du": 1.5, "capa": "_AR - COTAS TERRENO"},
         ],
-        "aberturas": [{"inicio": [1000, 0], "fin": [1900, 0]}],
     }
-    room = {"vertices": [[0, 0], [3000, 0], [3000, 4000], [0, 4000]]}
-    resolution = resolve_drawing_units(4, geometry, [room])
-    scale = compute_symbol_scale_resolution(
-        resolution,
-        [room],
-        {"min_x": 0, "min_y": 0, "max_x": 3000, "max_y": 4000},
-        base_footprint=2.3,
+    assert resolve_plot_scale(geometry) == 100.0
+
+
+def test_plot_scale_defaults_when_the_drawing_does_not_state_it() -> None:
+    assert resolve_plot_scale({"dimensiones": [{"medida_du": 4.3, "capa": "COTAS"}]}) == 100.0
+    assert resolve_plot_scale(None) == 100.0
+
+
+def test_scale_converts_paper_millimetres_to_drawing_units() -> None:
+    """4.5 mm at 1:100 is 0.45 m, in whatever unit the drawing happens to use."""
+    metres = compute_symbol_scale_resolution(
+        resolve_drawing_units(6, {"paredes": [{"inicio": [0, 0], "fin": [4.0, 0]}]}, []),
+        [],
+        plot_scale=100.0,
+        paper_mm=4.5,
     )
-    assert scale.nominal_scale == pytest.approx(225.0)
+    millimetres = compute_symbol_scale_resolution(
+        resolve_drawing_units(4, {"paredes": [{"inicio": [0, 0], "fin": [4000, 0]}]}, []),
+        [],
+        plot_scale=100.0,
+        paper_mm=4.5,
+    )
+    assert 4.5 * metres.final_scale == pytest.approx(0.45)
+    assert 4.5 * millimetres.final_scale == pytest.approx(450.0)
+
+
+def test_room_relative_cap_reduces_the_symbol_in_a_tiny_room() -> None:
+    geometry = {"paredes": [{"inicio": [0, 0], "fin": [3000, 0]}]}
+    room = {"vertices": [[0, 0], [1500, 0], [1500, 2000], [0, 2000]]}
+    scale = compute_symbol_scale_resolution(
+        resolve_drawing_units(4, geometry, [room]),
+        [room],
+        plot_scale=200.0,
+        paper_mm=4.5,
+    )
     assert scale.scale_clamped is True
     assert scale.clamp_reason == "room_relative_footprint"
-    assert abs(scale.final_footprint_m - 0.45) < 1e-9
+    # The cap is a pure ratio: 15% of the 1.5 m minor dimension.
+    assert 4.5 * scale.final_scale <= 0.15 * 1500 + 1e-9
 
 
-def test_low_confidence_units_disable_metric_floor() -> None:
-    """Header mentiroso + evidencia débil: el piso de 0.15 m no debe inflarse.
+def test_room_relative_cap_still_bounds_the_symbol_under_wrong_units() -> None:
+    """The cap is dimensionless, so a 1000x unit error cannot inflate the symbol.
 
-    Caso real Cambre: plano en metros con paredes fragmentadas (~0.15 du) y
-    $INSUNITS=4. La resolución queda en confianza baja sin override; si el piso
-    métrico se aplicara con per_meter=1000, el símbolo saldría de 150 m reales.
-    El tope relativo a habitación es adimensional y debe mandar solo.
+    Real Cambre case: a plan in metres whose header claimed millimetres. A
+    metre-denominated floor turned that into 150 m symbols; a ratio cannot.
     """
-    fragmented_walls = [
-        {"inicio": [x * 0.15, 0], "fin": [(x + 1) * 0.15, 0]} for x in range(40)
-    ]
-    geometry = {"paredes": fragmented_walls, "aberturas": []}
-    # Polígono fuera de banda en ambas interpretaciones (132 m² bajo metros,
-    # absurdo bajo mm): el área no aporta evidencia y la confianza queda baja.
+    fragmented = [{"inicio": [x * 0.15, 0], "fin": [(x + 1) * 0.15, 0]} for x in range(40)]
+    geometry = {"paredes": fragmented, "aberturas": []}
     room = {"vertices": [[100, 100], [103.3, 100], [103.3, 140], [100, 140]]}
     resolution = resolve_drawing_units(4, geometry, [room])
-    assert resolution.confidence < 0.5, "el caso debe quedar en confianza baja"
+    assert resolution.confidence < 0.5, "sin cotas la resolución debe quedar en baja confianza"
 
-    scale = compute_symbol_scale_resolution(
-        resolution,
-        [room],
-        {"min_x": 0, "min_y": 0, "max_x": 9232, "max_y": 9264},
-        base_footprint=2.3,
-    )
+    scale = compute_symbol_scale_resolution(resolution, [room], plot_scale=100.0, paper_mm=4.5)
+    footprint_du = 4.5 * scale.final_scale
     assert scale.scale_clamped is True
-    assert scale.clamp_reason == "room_relative_footprint_low_confidence"
-    # Tope adimensional: footprint final <= 15% del lado menor (3.3 du) en du.
-    final_footprint_du = 2.3 * scale.final_scale
-    assert final_footprint_du <= 0.15 * 3.3 + 1e-9
-    # Y jamás el piso métrico envenenado (0.15 m x 1000 du/m = 150 du).
-    assert final_footprint_du < 1.0
+    assert footprint_du <= 0.15 * 3.3 + 1e-9
+    assert footprint_du < 1.0
 
 
-def test_compute_symbol_scale_uses_unit_block_radius() -> None:
-    bbox = {"min_x": 0, "min_y": 0, "max_x": 8000, "max_y": 6000}
-    scale = compute_symbol_scale(bbox, insunits=4)
-    radius = compute_symbol_radius_drawing_units(bbox, insunits=4)
-    assert abs(scale - radius) < 1e-9
+def test_paper_mm_of_inverts_the_scale() -> None:
+    assert paper_mm_of(0.45, 0.1) == pytest.approx(4.5)
+    assert paper_size_is_legible(paper_mm_of(0.45, 0.1))
+    assert not paper_size_is_legible(MIN_SYMBOL_PAPER_MM - 0.5)
+    assert not paper_size_is_legible(MAX_SYMBOL_PAPER_MM + 0.5)

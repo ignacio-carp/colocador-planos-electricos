@@ -464,13 +464,13 @@ def _poisoned_symbol_fixture(out_dir: Path) -> Fixture:
     msp = doc.modelspace()
     _add_walls(msp, _rect_walls(10.0, 8.0, 13.0, 12.0))
     _add_openings(msp, [((11.0, 8.0), (11.9, 8.0))])
-    poisoned = doc.blocks.new(name="SYM_TOMA")
+    poisoned = doc.blocks.new(name="CBR_TOMA")
     poisoned.add_circle((0.0, 0.0), 100.0)
     path = out_dir / "simbolo_envenenado.dxf"
     doc.saveas(path)
     return Fixture(
         name="simbolo_envenenado",
-        description="Definicion SYM_TOMA preexistente con footprint gigante",
+        description="Definicion CBR_TOMA preexistente con footprint gigante",
         insunits=6,
         du_per_m=1.0,
         rooms=[
