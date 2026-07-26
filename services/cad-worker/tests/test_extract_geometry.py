@@ -27,7 +27,10 @@ def test_extract_geometry_structure(tmp_path: Path) -> None:
     _write_sample_dxf(src)
     result = extract_geometry(src)
     assert len(result["paredes"]) >= 1
-    assert "etiquetas_texto" not in result
+    # Room-name labels seed deterministic room detection, so they travel with
+    # the geometry instead of being discarded.
+    assert [label["texto"] for label in result["etiquetas_texto"]] == ["SALA"]
+    assert result["etiquetas_texto"][0]["posicion"] == [10.0, 10.0]
     assert result["aberturas"] == []
     bbox = geometry_bounding_box(result)
     assert bbox is not None

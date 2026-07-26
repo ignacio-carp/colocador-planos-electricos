@@ -1,13 +1,31 @@
-"""Extract walls, openings and furniture from a DXF modelspace (other entities discarded)."""
+"""Extract walls, openings, furniture, text labels and dimensions from a DXF modelspace.
+
+Real architectural DXFs are not the tidy LINE/LWPOLYLINE files the synthetic
+fixtures pretend they are. In the Cambre corpus a single plan carries ARCs (door
+swings), POLYLINEs, CIRCLEs and 341 block references whose geometry only exists
+inside the block definition. Reading just top-level LINE/LWPOLYLINE threw away
+most of the drawing, which starved unit resolution and room detection alike.
+
+Two families are new and matter downstream:
+
+- ``etiquetas_texto`` — the architect already wrote the name of every room in the
+  drawing (``_NOM - LOCALES``: COCINA, DORMITORIO, BAÑO SUITE...). Those labels
+  are the seeds for deterministic room detection, so no model has to guess them.
+- ``dimensiones`` — dimension entities state a real-world measurement against a
+  geometric length. That pair *measures* drawing units per metre instead of
+  inferring them from wall-length heuristics.
+"""
 
 from __future__ import annotations
 
 import json
+import math
 from pathlib import Path
 from typing import Any, Literal
 
 import ezdxf
 from ezdxf import bbox as ezdxf_bbox
+from ezdxf import path as ezdxf_path
 
 from cad_worker.constants import OUTPUT_ELECTRICAL_LAYER_NAME
 from cad_worker.dxf_io import open_dxf_file
@@ -18,7 +36,20 @@ ELECTRICAL_LAYER_NAME = OUTPUT_ELECTRICAL_LAYER_NAME
 LayerKind = Literal["pared", "mueble", "abertura"]
 
 # Layer-name tokens used to classify entities for the electrical analysis.
-WALL_LAYER_TOKENS = ("wall", "pared", "muro", "a-wall", "partition", "tabique")
+# Order of evaluation is furniture -> opening -> wall (see classify_layer): a
+# layer named "CARPINTERIAS" is joinery (an opening), not a wall, even though
+# some studios file it under the wall group.
+WALL_LAYER_TOKENS = (
+    "wall",
+    "pared",
+    "muro",
+    "a-wall",
+    "partition",
+    "tabique",
+    "mampost",
+    "ladrillo",
+    "divisori",
+)
 OPENING_LAYER_TOKENS = (
     "door",
     "puerta",
@@ -29,6 +60,8 @@ OPENING_LAYER_TOKENS = (
     "a-door",
     "a-glaz",
     "glazing",
+    "carpinteria",
+    "cortina",
 )
 FURNITURE_LAYER_TOKENS = (
     "mobili",
@@ -37,7 +70,15 @@ FURNITURE_LAYER_TOKENS = (
     "equip",
     "a-furn",
     "sanitari",
+    "artefacto",
+    "electrodomest",
 )
+
+# Curves are flattened to polylines. The sagitta budget is a fraction of the
+# entity's own size so the tolerance is unit-agnostic: a 0.9 m door arc in a
+# metre drawing and a 900 mm arc in a millimetre drawing flatten identically.
+CURVE_FLATTENING_RATIO = 1.0 / 64.0
+MAX_INSERT_DEPTH = 3
 
 
 def classify_layer(name: str | None) -> LayerKind | None:
@@ -64,6 +105,43 @@ def _point_xy(value: Any) -> list[float] | None:
     return None
 
 
+def _flattening_distance(vertices: list[Any]) -> float:
+    """Sagitta budget proportional to the entity's own extent."""
+    xs = [float(v.x) for v in vertices]
+    ys = [float(v.y) for v in vertices]
+    if not xs:
+        return 1e-6
+    extent = max(max(xs) - min(xs), max(ys) - min(ys))
+    return max(extent * CURVE_FLATTENING_RATIO, 1e-9)
+
+
+def entity_segments(entity: Any) -> list[tuple[list[float], list[float]]]:
+    """Flatten any drawable entity to 2D segments; empty when not drawable.
+
+    ``ezdxf.path`` normalizes LINE, LWPOLYLINE (bulges included), POLYLINE, ARC,
+    CIRCLE, ELLIPSE and SPLINE into one representation, so curved walls and door
+    swings survive instead of being silently dropped.
+    """
+    try:
+        converted = ezdxf_path.make_path(entity)
+    except (TypeError, ValueError, AttributeError):
+        return []
+    control_points = list(converted.control_vertices())
+    if len(control_points) < 2:
+        return []
+    try:
+        vertices = list(converted.flattening(distance=_flattening_distance(control_points)))
+    except (ValueError, ZeroDivisionError):
+        return []
+    segments: list[tuple[list[float], list[float]]] = []
+    for index in range(len(vertices) - 1):
+        start = [float(vertices[index].x), float(vertices[index].y)]
+        end = [float(vertices[index + 1].x), float(vertices[index + 1].y)]
+        if start != end:
+            segments.append((start, end))
+    return segments
+
+
 def _insert_footprint(entity: Any) -> dict[str, float] | None:
     """2D bounding box of a block reference (furniture footprint for placement).
 
@@ -84,76 +162,152 @@ def _insert_footprint(entity: Any) -> dict[str, float] | None:
     }
 
 
+def _text_of(entity: Any) -> str:
+    dxftype = entity.dxftype()
+    try:
+        if dxftype == "MTEXT":
+            return str(entity.plain_text()).strip()
+        if dxftype in ("TEXT", "ATTRIB"):
+            return str(entity.dxf.text).strip()
+    except Exception:  # noqa: BLE001 - malformed text entities are simply skipped
+        return ""
+    return ""
+
+
+def _dimension_record(entity: Any, layer: str | None) -> dict[str, object] | None:
+    """Measured length in drawing units paired with the drawn scale factor.
+
+    ``measurement`` is the geometric distance the dimension spans; the value the
+    architect reads on paper is ``measurement * dimlfac``. Knowing both anchors
+    drawing units to metres by measurement instead of by heuristic.
+    """
+    try:
+        measurement = float(entity.get_measurement())
+    except Exception:  # noqa: BLE001 - angular/ordinate dims have no linear measure
+        return None
+    if not math.isfinite(measurement) or measurement <= 1e-9:
+        return None
+    try:
+        dimlfac = float(entity.dxf.get("dimlfac", 1.0) or 1.0)
+    except Exception:  # noqa: BLE001
+        dimlfac = 1.0
+    if not math.isfinite(dimlfac) or dimlfac <= 1e-9:
+        dimlfac = 1.0
+    record: dict[str, object] = {
+        "medida_du": measurement,
+        "dimlfac": dimlfac,
+        "valor_mostrado": measurement * dimlfac,
+    }
+    override = ""
+    try:
+        override = str(entity.dxf.get("text", "") or "").strip()
+    except Exception:  # noqa: BLE001
+        override = ""
+    # "<>" is AutoCAD's placeholder for "use the measured value".
+    if override and override not in ("<>", " "):
+        record["texto"] = override
+    if layer:
+        record["capa"] = layer
+    return record
+
+
 def extract_geometry(dxf_path: str | Path) -> dict[str, object]:
     doc = open_dxf_file(dxf_path)
     msp = doc.modelspace()
     paredes: list[dict[str, object]] = []
     aberturas: list[dict[str, object]] = []
     muebles: list[dict[str, object]] = []
+    etiquetas: list[dict[str, object]] = []
+    dimensiones: list[dict[str, object]] = []
     capas: dict[str, set[str]] = {"paredes": set(), "aberturas": set(), "muebles": set()}
 
-    def _entity_layer(entity: Any) -> str | None:
-        layer = getattr(entity.dxf, "layer", None)
-        return str(layer) if layer else None
+    target_by_kind = {"pared": paredes, "abertura": aberturas, "mueble": muebles}
+    capa_key_by_kind = {"pared": "paredes", "abertura": "aberturas", "mueble": "muebles"}
 
-    def _add_segments(
-        entity: Any,
-        segments: list[tuple[list[float], list[float]]],
-        kind: LayerKind,
-    ) -> None:
-        layer = _entity_layer(entity)
-        if classify_layer(layer) != kind:
+    def _add_segments(layer: str | None, kind: LayerKind, entity: Any) -> None:
+        segments = entity_segments(entity)
+        if not segments:
             return
-        capa_key = {"pared": "paredes", "abertura": "aberturas", "mueble": "muebles"}[kind]
-        capas[capa_key].add(layer or "")
-        target = {"pared": paredes, "abertura": aberturas, "mueble": muebles}[kind]
+        capas[capa_key_by_kind[kind]].add(layer or "")
+        target = target_by_kind[kind]
         for start, end in segments:
             item: dict[str, object] = {"inicio": start, "fin": end}
             if layer:
                 item["capa"] = layer
             target.append(item)
 
-    for entity in msp:
+    def _add_label(entity: Any, layer: str | None) -> None:
+        text = _text_of(entity)
+        if not text:
+            return
+        position = _point_xy(getattr(entity.dxf, "insert", None))
+        if position is None:
+            position = _point_xy(getattr(entity.dxf, "align_point", None))
+        if position is None:
+            return
+        label: dict[str, object] = {"texto": text, "posicion": position}
+        if layer:
+            label["capa"] = layer
+        etiquetas.append(label)
+
+    def _walk(entity: Any, layer_override: str | None, depth: int) -> None:
         dxftype = entity.dxftype()
-        if dxftype == "LINE":
-            start = _point_xy(entity.dxf.start)
-            end = _point_xy(entity.dxf.end)
-            if start and end:
-                layer = _entity_layer(entity)
-                kind = classify_layer(layer)
-                if kind in ("pared", "abertura"):
-                    _add_segments(entity, [(start, end)], kind)
-        elif dxftype == "LWPOLYLINE":
-            points = [_point_xy(p) for p in entity.get_points(format="xy")]
-            valid = [p for p in points if p is not None]
-            segments: list[tuple[list[float], list[float]]] = []
-            for i in range(len(valid) - 1):
-                segments.append((valid[i], valid[i + 1]))
-            if entity.closed and len(valid) > 2:
-                segments.append((valid[-1], valid[0]))
-            if segments:
-                layer = _entity_layer(entity)
-                kind = classify_layer(layer)
-                if kind in ("pared", "abertura"):
-                    _add_segments(entity, segments, kind)
-        elif dxftype == "INSERT":
-            layer = _entity_layer(entity)
-            if classify_layer(layer) != "mueble":
-                continue
-            pos = _point_xy(entity.dxf.insert)
-            block_name = str(getattr(entity.dxf, "name", "") or "")
-            if pos:
-                capas["muebles"].add(layer or "")
-                item: dict[str, object] = {"bloque": block_name, "posicion": pos, "capa": layer}
-                footprint = _insert_footprint(entity)
-                if footprint:
-                    item["footprint"] = footprint
-                muebles.append(item)
+        layer = layer_override or (
+            str(entity.dxf.layer) if getattr(entity.dxf, "layer", None) else None
+        )
+
+        if dxftype in ("TEXT", "MTEXT"):
+            _add_label(entity, layer)
+            return
+        if dxftype == "DIMENSION":
+            record = _dimension_record(entity, layer)
+            if record:
+                dimensiones.append(record)
+            return
+
+        if dxftype == "INSERT":
+            kind = classify_layer(layer)
+            if kind == "mueble" and depth == 0:
+                position = _point_xy(entity.dxf.insert)
+                if position:
+                    capas["muebles"].add(layer or "")
+                    item: dict[str, object] = {
+                        "bloque": str(getattr(entity.dxf, "name", "") or ""),
+                        "posicion": position,
+                        "capa": layer,
+                    }
+                    footprint = _insert_footprint(entity)
+                    if footprint:
+                        item["footprint"] = footprint
+                    muebles.append(item)
+            # Walls and openings routinely live inside block definitions (door
+            # and window families), so the reference itself carries no geometry.
+            # Resolve it, keeping the reference's layer for nested entities drawn
+            # on layer "0" — the CAD convention for "inherit from the insert".
+            if depth < MAX_INSERT_DEPTH and kind in ("pared", "abertura"):
+                try:
+                    children = list(entity.virtual_entities())
+                except Exception:  # noqa: BLE001 - unresolvable xrefs/blocks
+                    return
+                for child in children:
+                    child_layer = str(getattr(child.dxf, "layer", "") or "")
+                    inherited = layer if child_layer in ("", "0") else child_layer
+                    _walk(child, inherited, depth + 1)
+            return
+
+        kind = classify_layer(layer)
+        if kind in ("pared", "abertura"):
+            _add_segments(layer, kind, entity)
+
+    for entity in msp:
+        _walk(entity, None, 0)
 
     return {
         "paredes": paredes,
         "aberturas": aberturas,
         "muebles": muebles,
+        "etiquetas_texto": etiquetas,
+        "dimensiones": dimensiones,
         "capas_clasificadas": {
             key: sorted(value for value in values if value) for key, values in capas.items()
         },
