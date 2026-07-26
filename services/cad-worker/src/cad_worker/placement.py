@@ -43,6 +43,9 @@ DEFAULT_PARAMS_MM: dict[str, float] = {
     "tol_pared_ambiente_mm": 100.0,
     "min_span_mm": 300.0,
     "inward_nudge_mm": 10.0,
+    # An unbacked stretch of room boundary between these widths is a doorway.
+    "door_min_mm": 600.0,
+    "door_max_mm": 2600.0,
 }
 
 BED_BLOCK_TOKENS = ("cama", "bed", "matrim", "single", "queen", "king")
@@ -52,6 +55,7 @@ WARN_BED_NOT_AGAINST_WALL = "BED_NOT_AGAINST_WALL"
 WARN_INSUFFICIENT_WALL_SPACE = "INSUFFICIENT_WALL_SPACE"
 WARN_WALLS_UNMATCHED = "WALLS_UNMATCHED"
 WARN_KITCHEN_COUNTER = "KITCHEN-COUNTER-UNVERIFIED"
+WARN_NO_DOOR_FOR_SWITCH = "NO_DOOR_FOR_SWITCH"
 
 KITCHEN_ROOM_TYPES = ("cocina", "kitchen", "cocina_comedor")
 ERROR_NO_WALLS = "NO_WALLS_FOR_ROOM"
@@ -75,6 +79,9 @@ class EdgeSpans:
     length: float
     spans: list[tuple[float, float]] = field(default_factory=list)
     wall_supported: bool = False
+    # Stretches of this edge with no wall behind them. On a real plan that is
+    # what a doorway is: the room boundary continues, the wall does not.
+    door_intervals: list[tuple[float, float]] = field(default_factory=list)
 
     def segment(self) -> Segment:
         return (self.a, self.b)
@@ -175,6 +182,8 @@ def _build_edge_spans(
     tol_wall: float,
     clearance: float,
     min_span: float,
+    door_min: float,
+    door_max: float,
 ) -> tuple[list[EdgeSpans], bool]:
     """Usable intervals per polygon edge; walls act as supporting evidence."""
     edges: list[EdgeSpans] = []
@@ -186,15 +195,18 @@ def _build_edge_spans(
             edges.append(edge)
             continue
 
-        covered = 0.0
+        wall_intervals: list[tuple[float, float]] = []
         for wall in walls:
             interval = project_segment_onto_edge(wall, (a, b), max_distance=tol_wall)
             if interval:
-                covered += interval[1] - interval[0]
+                wall_intervals.append(interval)
+        covered = sum(
+            interval[1] - interval[0] for interval in _merge_intervals(wall_intervals)
+        )
         edge.wall_supported = covered >= length * 0.5
         any_supported = any_supported or edge.wall_supported
 
-        cuts: list[tuple[float, float]] = []
+        opening_intervals: list[tuple[float, float]] = []
         for opening in openings:
             interval = project_segment_onto_edge(
                 opening,
@@ -202,11 +214,42 @@ def _build_edge_spans(
                 max_distance=tol_wall + clearance,
             )
             if interval:
-                cuts.append((interval[0] - clearance, interval[1] + clearance))
+                opening_intervals.append(interval)
+
+        # A doorway shows up two ways depending on how the plan was drawn: as an
+        # opening entity laid over a continuous wall, or as a plain gap in the
+        # wall bodies. Real studio files use the second, the tidy fixtures the
+        # first, so both count.
+        unbacked = subtract_intervals((0.0, length), _merge_intervals(wall_intervals))
+        edge.door_intervals = [
+            interval
+            for interval in _merge_intervals(opening_intervals + unbacked)
+            if door_min <= interval[1] - interval[0] <= door_max
+        ]
+
+        # Nothing may sit in a doorway, however the drawing marks it.
+        cuts = [
+            (interval[0] - clearance, interval[1] + clearance)
+            for interval in _merge_intervals(opening_intervals + edge.door_intervals)
+        ]
         spans = subtract_intervals((0.0, length), cuts)
         edge.spans = [s for s in spans if s[1] - s[0] >= min_span]
         edges.append(edge)
     return edges, any_supported
+
+
+def _merge_intervals(intervals: list[tuple[float, float]]) -> list[tuple[float, float]]:
+    if not intervals:
+        return []
+    ordered = sorted(intervals)
+    merged = [ordered[0]]
+    for start, end in ordered[1:]:
+        last_start, last_end = merged[-1]
+        if start <= last_end:
+            merged[-1] = (last_start, max(last_end, end))
+        else:
+            merged.append((start, end))
+    return merged
 
 
 def _detect_bed(
@@ -286,12 +329,22 @@ def _span_containing(edge: EdgeSpans, offset: float) -> tuple[float, float] | No
     return None
 
 
-def _place_on_edge(edge: EdgeSpans, offset: float, vertices: list[Point], nudge: float) -> Point:
-    """Point at edge offset, nudged toward the room interior (spec §2.4)."""
+def _place_on_edge(
+    edge: EdgeSpans,
+    offset: float,
+    vertices: list[Point],
+    nudge: float,
+) -> tuple[Point, Point]:
+    """Point at edge offset nudged into the room, plus the wall's inward normal.
+
+    The normal is what lets the drawing step rotate the symbol so its leads face
+    the wall it belongs to. Computing it here and discarding it was why every
+    symbol came out axis-aligned regardless of its wall.
+    """
     t = offset / edge.length if edge.length > 0 else 0.0
     base = point_at(edge.a, edge.b, min(1.0, max(0.0, t)))
     nx, ny = inward_normal(edge.a, edge.b, vertices)
-    return (base[0] + nx * nudge, base[1] + ny * nudge)
+    return (base[0] + nx * nudge, base[1] + ny * nudge), (nx, ny)
 
 
 @dataclass
@@ -371,6 +424,196 @@ def _generic_candidates(
     return candidates
 
 
+def _polygon_area(vertices: list[Point]) -> float:
+    total = 0.0
+    for index, (x1, y1) in enumerate(vertices):
+        x2, y2 = vertices[(index + 1) % len(vertices)]
+        total += x1 * y2 - x2 * y1
+    return abs(total) / 2.0
+
+
+def _interior_point(vertices: list[Point]) -> Point:
+    """A point guaranteed inside the polygon, even when it is L-shaped."""
+    try:
+        from shapely.geometry import Polygon
+
+        polygon = Polygon(vertices)
+        if not polygon.is_valid:
+            polygon = polygon.buffer(0)
+        if not polygon.is_empty:
+            point = polygon.representative_point()
+            return (float(point.x), float(point.y))
+    except Exception:  # noqa: BLE001 - fall back to the centroid
+        pass
+    return (
+        sum(v[0] for v in vertices) / len(vertices),
+        sum(v[1] for v in vertices) / len(vertices),
+    )
+
+
+def _lighting_points(
+    vertices: list[Point],
+    rule: dict[str, Any],
+    du_per_m: float,
+) -> list[Point]:
+    """Ceiling outlets: one per room, more as the room grows.
+
+    Large rooms get a row along their long axis, which is what an installer
+    draws before the reflected ceiling plan exists. Points that fall outside an
+    L-shaped room are dropped rather than nudged, so nothing lands in a wall.
+    """
+    lighting = rule.get("lighting")
+    lighting = lighting if isinstance(lighting, dict) else {}
+    if lighting.get("enabled") is False:
+        return []
+
+    minimum = lighting.get("min_points")
+    count = int(minimum) if isinstance(minimum, (int, float)) and minimum > 0 else 1
+    area_per_point = lighting.get("area_per_point_m2")
+    area_m2 = _polygon_area(vertices) / (du_per_m * du_per_m)
+    if isinstance(area_per_point, (int, float)) and area_per_point > 0:
+        count = max(count, math.ceil(area_m2 / float(area_per_point)))
+    max_points = lighting.get("max_points")
+    count = min(count, int(max_points) if isinstance(max_points, (int, float)) else 4)
+    if count <= 0:
+        return []
+
+    centre = _interior_point(vertices)
+    if count == 1:
+        return [centre]
+
+    xs = [v[0] for v in vertices]
+    ys = [v[1] for v in vertices]
+    width, height = max(xs) - min(xs), max(ys) - min(ys)
+    horizontal = width >= height
+    span = (width if horizontal else height) * 0.6
+    points: list[Point] = []
+    for index in range(count):
+        offset = span * ((index + 0.5) / count - 0.5)
+        candidate = (
+            (centre[0] + offset, centre[1]) if horizontal else (centre[0], centre[1] + offset)
+        )
+        if point_in_polygon(candidate, vertices):
+            points.append(candidate)
+    return points or [centre]
+
+
+def _switch_height_mm(rule: dict[str, Any]) -> int:
+    switches = rule.get("switches")
+    if isinstance(switches, dict):
+        height = switches.get("height_mm")
+        if isinstance(height, (int, float)) and height > 0:
+            return int(height)
+    return 1200
+
+
+def _perimeter_offsets(edges: list[EdgeSpans]) -> list[float]:
+    """Cumulative distance to the start of each edge, plus the total perimeter."""
+    offsets = [0.0]
+    for edge in edges:
+        offsets.append(offsets[-1] + edge.length)
+    return offsets
+
+
+def _locate_on_perimeter(
+    edges: list[EdgeSpans],
+    offsets: list[float],
+    position: float,
+) -> tuple[EdgeSpans, float] | None:
+    perimeter = offsets[-1]
+    if perimeter <= 0:
+        return None
+    position %= perimeter
+    for index, edge in enumerate(edges):
+        if edge.length <= 1e-9:
+            continue
+        if offsets[index] <= position <= offsets[index + 1]:
+            return edge, position - offsets[index]
+    return None
+
+
+def _door_runs(
+    edges: list[EdgeSpans],
+    *,
+    door_min: float,
+    door_max: float,
+) -> list[tuple[float, float]]:
+    """Unbacked runs of the room boundary, measured around the whole perimeter.
+
+    Measuring per edge missed almost every real doorway: a door drawn open leaves
+    the boundary following the leaf and its swing arc, which simplifies into
+    several short edges. Individually none is a door's width; together they are
+    exactly one.
+    """
+    offsets = _perimeter_offsets(edges)
+    perimeter = offsets[-1]
+    if perimeter <= 0:
+        return []
+    backed: list[tuple[float, float]] = []
+    for index, edge in enumerate(edges):
+        base = offsets[index]
+        for span in edge.spans:
+            backed.append((base + span[0], base + span[1]))
+    gaps = subtract_intervals((0.0, perimeter), _merge_intervals(backed))
+    # The boundary is cyclic: a gap touching both ends is one run across zero.
+    if len(gaps) >= 2 and gaps[0][0] <= 1e-9 and abs(gaps[-1][1] - perimeter) <= 1e-9:
+        merged_first = (gaps[-1][0] - perimeter, gaps[0][1])
+        gaps = [merged_first, *gaps[1:-1]]
+    return [gap for gap in gaps if door_min <= gap[1] - gap[0] <= door_max]
+
+
+def _switch_points(
+    edges: list[EdgeSpans],
+    vertices: list[Point],
+    rule: dict[str, Any],
+    *,
+    gangs: int,
+    clearance: float,
+    nudge: float,
+    min_span: float,
+    door_min: float,
+    door_max: float,
+) -> list[tuple[Point, Point, str, str]]:
+    """One switch beside the room's main door, sized to the lights it commands.
+
+    Which side of the door the switch goes on depends on which way the leaf
+    swings, and a DXF rarely says. The wider free stretch of wall is the side an
+    installer uses, so that is the rule, stated rather than hidden.
+    """
+    if gangs <= 0:
+        return []
+    switches = rule.get("switches")
+    if isinstance(switches, dict) and switches.get("enabled") is False:
+        return []
+
+    runs = _door_runs(edges, door_min=door_min, door_max=door_max)
+    if not runs:
+        return []
+    # The main door is the widest gap on the room's perimeter.
+    run = max(runs, key=lambda item: item[1] - item[0])
+    offsets = _perimeter_offsets(edges)
+
+    element = {1: "llave", 2: "llave_2_puntos"}.get(gangs, "llave_3_puntos")
+    scored: list[tuple[float, EdgeSpans, float, str]] = []
+    for position, reason in (
+        (run[0] - clearance, "junto a la puerta, lado izquierdo"),
+        (run[1] + clearance, "junto a la puerta, lado derecho"),
+    ):
+        located = _locate_on_perimeter(edges, offsets, position)
+        if located is None:
+            continue
+        edge, offset = located
+        span = _span_containing(edge, offset)
+        if span is None or span[1] - span[0] < min_span:
+            continue
+        scored.append((span[1] - span[0], edge, offset, reason))
+    if not scored:
+        return []
+    _span_length, edge, offset, reason = max(scored, key=lambda item: (item[0], -item[2]))
+    point, normal = _place_on_edge(edge, offset, vertices, nudge)
+    return [(point, normal, element, reason)]
+
+
 def _required_outlets(rule: dict[str, Any], usable_perimeter: float, du_per_m: float) -> int:
     minimum = rule.get("min_outlets")
     required = int(minimum) if isinstance(minimum, (int, float)) and minimum > 0 else 1
@@ -437,6 +680,8 @@ def place_outlets_for_room(
     sep_min = params_mm["sep_min_tomas_mm"] * du_per_mm
     offset_cama = params_mm["offset_cama_mm"] * du_per_mm
     nudge = params_mm["inward_nudge_mm"] * du_per_mm
+    door_min = params_mm["door_min_mm"] * du_per_mm
+    door_max = params_mm["door_max_mm"] * du_per_mm
 
     warnings: list[str] = []
     edges, any_supported = _build_edge_spans(
@@ -446,6 +691,8 @@ def place_outlets_for_room(
         tol_wall=tol_wall,
         clearance=clearance,
         min_span=min_span,
+        door_min=door_min,
+        door_max=door_max,
     )
     if not any_supported:
         warnings.append(WARN_WALLS_UNMATCHED)
@@ -489,16 +736,16 @@ def place_outlets_for_room(
 
     # Enforce minimum separation (headboard pair naturally exceeds sep_min: bed
     # width + 2×offset ≫ 600 mm). Deterministic order: keep earlier candidates.
-    placed: list[tuple[Point, _Candidate]] = []
+    placed: list[tuple[Point, Point, _Candidate]] = []
     for cand in candidates:
-        point = _place_on_edge(cand.edge, cand.offset, vertices, nudge)
+        point, normal = _place_on_edge(cand.edge, cand.offset, vertices, nudge)
         too_close = any(
             math.hypot(point[0] - other[0][0], point[1] - other[0][1]) < sep_min
             for other in placed
         )
         if too_close:
             continue
-        placed.append((point, cand))
+        placed.append((point, normal, cand))
 
     if len(placed) < required:
         warnings.append(
@@ -508,28 +755,91 @@ def place_outlets_for_room(
     height_mm = rule.get("height_mm")
     height = int(height_mm) if isinstance(height_mm, (int, float)) else 300
     rule_id = str(rule.get("id") or "RULE-GENERICO")
+    room_polygon = {"vertices": [{"x": vertex[0], "y": vertex[1]} for vertex in vertices]}
+
+    def record(
+        seq_id: str,
+        point: Point,
+        element: str,
+        *,
+        normal: Point | None,
+        mounting: str,
+        height_mm_value: int,
+        rationale: str,
+    ) -> dict[str, Any]:
+        item: dict[str, Any] = {
+            "id": seq_id,
+            "room_id": room_id,
+            "room_polygon": room_polygon,
+            "position": {
+                "x": round(point[0], 3),
+                "y": round(point[1], 3),
+                "unit": "drawing_units",
+            },
+            "element": element,
+            "mounting": mounting,
+            "height_mm": height_mm_value,
+            "rationale": f"{rationale} ({rule_id}, motor determinístico)",
+            "rule_ids": [rule_id],
+        }
+        if normal is not None:
+            item["wall_normal"] = [round(normal[0], 6), round(normal[1], 6)]
+        return item
 
     outlet_placements: list[dict[str, Any]] = []
-    for seq, (point, cand) in enumerate(placed, start=1):
-        outlet_placements.append(
-            {
-                "id": f"outlet-{room_id.lower()}-{seq:02d}",
-                "room_id": room_id,
-                "room_polygon": {
-                    "vertices": [{"x": vertex[0], "y": vertex[1]} for vertex in vertices],
-                },
-                "position": {
-                    "x": round(point[0], 3),
-                    "y": round(point[1], 3),
-                    "unit": "drawing_units",
-                },
-                "outlet_type": "standard",
-                "mounting": "wall",
-                "height_mm": height,
-                "rationale": f"{cand.reason} ({rule_id}, motor determinístico)",
-                "rule_ids": [rule_id],
-            },
+    for seq, (point, normal, cand) in enumerate(placed, start=1):
+        entry = record(
+            f"outlet-{room_id.lower()}-{seq:02d}",
+            point,
+            "toma",
+            normal=normal,
+            mounting="wall",
+            height_mm_value=height,
+            rationale=cand.reason,
         )
+        # Legacy consumers still read outlet_type; element is authoritative.
+        entry["outlet_type"] = "standard"
+        outlet_placements.append(entry)
+
+    lighting_points = _lighting_points(vertices, rule, du_per_m)
+    for seq, point in enumerate(lighting_points, start=1):
+        outlet_placements.append(
+            record(
+                f"luz-{room_id.lower()}-{seq:02d}",
+                point,
+                "centro",
+                normal=None,
+                mounting="ceiling",
+                height_mm_value=0,
+                rationale="centro de luz del ambiente",
+            ),
+        )
+
+    switch_points = _switch_points(
+        edges,
+        vertices,
+        rule,
+        gangs=len(lighting_points),
+        clearance=clearance,
+        nudge=nudge,
+        min_span=min_span,
+        door_min=door_min,
+        door_max=door_max,
+    )
+    for seq, (point, normal, element, reason) in enumerate(switch_points, start=1):
+        outlet_placements.append(
+            record(
+                f"llave-{room_id.lower()}-{seq:02d}",
+                point,
+                element,
+                normal=normal,
+                mounting="wall",
+                height_mm_value=_switch_height_mm(rule),
+                rationale=reason,
+            ),
+        )
+    if lighting_points and not switch_points:
+        warnings.append(WARN_NO_DOOR_FOR_SWITCH)
 
     return {
         "ok": True,
@@ -537,6 +847,8 @@ def place_outlets_for_room(
         "rule_id": rule_id,
         "required_outlets": required,
         "outlet_placements": outlet_placements,
+        "lighting_points": len(lighting_points),
+        "switch_points": len(switch_points),
         "warnings": warnings,
         "drawing_units_per_meter": du_per_m,
         "header_insunits": resolution.header_insunits,

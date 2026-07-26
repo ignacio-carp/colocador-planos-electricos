@@ -34,6 +34,9 @@ class RoomTruth:
     room_type: str
     polygon: list[Point]
     expected_outlets: int
+    # Lights and switches are placed by the same run; a room with a door and a
+    # lighting rule gets exactly one switch.
+    expected_switches: int = 1
     # Exact expected placement points (du) when computable by hand (spec §4.5).
     expected_points: list[Point] = field(default_factory=list)
     # Minimum number of pairwise non-collinear walls the placements must use.
@@ -221,7 +224,9 @@ def _cocina(out_dir: Path) -> Fixture:
                 id="cocina-01",
                 room_type="cocina",
                 polygon=_rect_polygon(0, 0, 3000, 3000),
-                expected_outlets=2,
+                # cambre-completo-2026.07.2 spaces kitchen outlets every 4 m of
+                # usable perimeter, so a 3x3 kitchen takes three.
+                expected_outlets=3,
                 expected_distinct_walls=2,
                 expected_warnings=["KITCHEN-COUNTER-UNVERIFIED"],
             ),

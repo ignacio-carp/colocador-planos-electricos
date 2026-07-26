@@ -1,0 +1,166 @@
+{
+  "version": "cambre-completo-2026.07.2",
+  "title": "Cambre — Componentes eléctricos por ambiente",
+  "description": "Amplía el alcance de tomacorrientes a tomas, centros de luz y llaves. Sigue sin cubrir circuitos, tablero, cómputo ni canalización.",
+  "replaces": "cambre-tomas-2026.07.1",
+  "estrategia_procesamiento": {
+    "scope": "tomas_luces_llaves",
+    "summary": "Por cada ambiente detectado en el plano: identificar el tipo, aplicar la regla correspondiente y ubicar tomas en el perímetro interior, centros de luz en el techo y una llave junto a la puerta principal.",
+    "excluded": [
+      "circuitos",
+      "tablero",
+      "computo",
+      "bom",
+      "canalizacion",
+      "cableado"
+    ],
+    "steps": [
+      {
+        "id": "match_room_type",
+        "summary": "Mapear room_type del ambiente a una regla en reglas_por_habitacion (sinónimos en room_types)."
+      },
+      {
+        "id": "apply_room_rule",
+        "summary": "Calcular cantidad de tomas, centros de luz y puntos de llave según la regla que aplique."
+      },
+      {
+        "id": "place_components",
+        "summary": "Tomas en muros lejos de aberturas; centros de luz en el interior del polígono; llave junto a la puerta principal."
+      }
+    ],
+    "defaults": {
+      "outlet_type": "standard",
+      "mounting": "wall",
+      "height_mm": 300,
+      "clearance_from_opening_mm": 150,
+      "position_unit": "drawing_units"
+    },
+    "notes": "El motor determinístico calcula todas las coordenadas. El LLM no emite posiciones."
+  },
+  "apliques_y_simbologia": {
+    "scope": "tomas_luces_llaves",
+    "cad_layer": {
+      "name": "Cambre_Electrical",
+      "block_name": "CBR_TOMA",
+      "color_aci": 3
+    },
+    "simbolos": {
+      "toma": "Círculo con dos patas hacia la pared. 4,5 mm de papel.",
+      "toma_doble": "Igual al simple, partido por un diámetro.",
+      "toma_especial": "Cuerpo de toma sobre una barra. Consumos dedicados y 220 V.",
+      "centro": "Círculo con cruz en diagonal. Va en el techo, no rota.",
+      "brazo": "Media circunferencia apoyada sobre la línea de pared.",
+      "llave": "Punto sobre la pared con palanca; una marca por punto.",
+      "llave_combinacion": "Palanca con retorno.",
+      "tablero": "Caja sobre la pared con diagonal.",
+      "puesta_tierra": "Vástago con tres barras decrecientes."
+    },
+    "placement": {
+      "prefer": "wall_perimeter",
+      "avoid_openings": true,
+      "clearance_from_opening_mm": 150,
+      "distribute": "along_walls",
+      "notes": "No colocar tomas en vanos de puerta o ventana. Distribuir en paredes distintas cuando la regla lo pida. La llave va junto a la puerta principal del ambiente, del lado con más pared libre."
+    },
+    "notes": "Este alcance no dibuja canalización ni cableado."
+  },
+  "reglas_por_habitacion": [
+    {
+      "id": "RULE-ESTAR",
+      "summary": "Estar/comedor: mínimo 2 tomas; una adicional cada ~6 m de perímetro útil. Un centro de luz cada ~14 m².",
+      "room_types": ["estar_comedor", "living", "office", "escritorio"],
+      "min_outlets": 2,
+      "spacing_along_wall_m": 6,
+      "height_mm": 300,
+      "lighting": { "min_points": 1, "area_per_point_m2": 14, "max_points": 4 },
+      "switches": { "enabled": true, "height_mm": 1200 }
+    },
+    {
+      "id": "RULE-DORMITORIO",
+      "summary": "Dormitorio: mínimo 2 tomas en paredes distintas cuando el polígono lo permita, y un centro de luz.",
+      "room_types": ["dormitorio", "bedroom"],
+      "min_outlets": 2,
+      "height_mm": 300,
+      "lighting": { "min_points": 1, "area_per_point_m2": 18, "max_points": 2 },
+      "switches": { "enabled": true, "height_mm": 1200 }
+    },
+    {
+      "id": "RULE-COCINA",
+      "summary": "Cocina: mínimo 2 tomas sobre mesada (1100 mm); toma dedicada cerca de heladera si el layout lo sugiere.",
+      "room_types": ["cocina", "kitchen", "cocina_comedor"],
+      "min_outlets": 2,
+      "spacing_along_wall_m": 4,
+      "height_mm": 1100,
+      "lighting": { "min_points": 1, "area_per_point_m2": 10, "max_points": 4 },
+      "switches": { "enabled": true, "height_mm": 1200 },
+      "notes": "300 mm en muro sin mesada."
+    },
+    {
+      "id": "RULE-BANO",
+      "summary": "Baño: mínimo 1 toma lejos de ducha y bañera, y un centro de luz.",
+      "room_types": ["bano", "toilette", "bathroom"],
+      "min_outlets": 1,
+      "height_mm": 1100,
+      "lighting": { "min_points": 1, "area_per_point_m2": 12, "max_points": 2 },
+      "switches": { "enabled": true, "height_mm": 1200 },
+      "notes": "Emitir warning WET-ZONE-UNVERIFIED si no hay datos de zona húmeda."
+    },
+    {
+      "id": "RULE-PASILLO",
+      "summary": "Pasillo/circulación: 1 toma cada ~5 m de recorrido y un centro de luz cada ~8 m².",
+      "room_types": ["paso_circulacion", "hallway", "vestibulo_hall", "escalera"],
+      "min_outlets": 1,
+      "spacing_along_wall_m": 5,
+      "height_mm": 300,
+      "lighting": { "min_points": 1, "area_per_point_m2": 8, "max_points": 3 },
+      "switches": { "enabled": true, "height_mm": 1200 }
+    },
+    {
+      "id": "RULE-LAVADERO",
+      "summary": "Lavadero: mínimo 2 tomas a 300 mm y un centro de luz.",
+      "room_types": ["lavadero"],
+      "min_outlets": 2,
+      "height_mm": 300,
+      "lighting": { "min_points": 1, "area_per_point_m2": 12, "max_points": 3 },
+      "switches": { "enabled": true, "height_mm": 1200 }
+    },
+    {
+      "id": "RULE-VESTIDOR",
+      "summary": "Vestidor: 1 toma y un centro de luz.",
+      "room_types": ["vestidor"],
+      "min_outlets": 1,
+      "height_mm": 300,
+      "lighting": { "min_points": 1, "area_per_point_m2": 12, "max_points": 2 },
+      "switches": { "enabled": true, "height_mm": 1200 }
+    },
+    {
+      "id": "RULE-GALERIA",
+      "summary": "Galería semicubierta: 1 toma cada ~6 m y centros de luz cada ~16 m².",
+      "room_types": ["galeria", "quincho"],
+      "min_outlets": 1,
+      "spacing_along_wall_m": 6,
+      "height_mm": 300,
+      "lighting": { "min_points": 1, "area_per_point_m2": 16, "max_points": 4 },
+      "switches": { "enabled": true, "height_mm": 1200 }
+    },
+    {
+      "id": "RULE-GENERICO",
+      "summary": "Ambiente no clasificado: 1 toma estándar en pared y un centro de luz.",
+      "room_types": ["generico", "deposito", "garaje", "storage", "other"],
+      "min_outlets": 1,
+      "height_mm": 300,
+      "lighting": { "min_points": 1, "area_per_point_m2": 20, "max_points": 3 },
+      "switches": { "enabled": true, "height_mm": 1200 }
+    },
+    {
+      "id": "RULE-EXTERIOR",
+      "summary": "Exterior (terraza, patio, pérgola): se detecta y se reporta, no se cablea en este alcance.",
+      "room_types": ["exterior", "terraza", "patio", "jardin"],
+      "min_outlets": 0,
+      "height_mm": 300,
+      "lighting": { "enabled": false },
+      "switches": { "enabled": false },
+      "notes": "Requiere grado de protección IP y criterio de intemperie que este ruleset no cubre."
+    }
+  ]
+}
