@@ -87,6 +87,19 @@ export type JobPipelineMetadata = {
   preliminary_analysis_warnings?: string[]
   analysis_degraded?: boolean
   analysis_degraded_reason?: string
+  /**
+   * Room segmentation computed from the drawing's own geometry and room-name
+   * labels. Present only when the deterministic detector answered; absent means
+   * the plan fell back to the vision model.
+   */
+  detected_rooms?: {
+    detector: string
+    labels_total: number
+    labels_resolved: number
+    unresolved_labels: { label?: string; reason?: string }[]
+    room_types: Record<string, string>
+    room_warnings: Record<string, string[]>
+  }
 }
 
 export type JobRow = {

@@ -694,6 +694,74 @@ export async function placeElementsForRoom(
   return parsed as CadWorkerPlaceElementsResult
 }
 
+export type CadWorkerDetectedRoom = {
+  id: string
+  polygon: { vertices: { x: number; y: number }[] }
+  area_m2: number
+  source?: string
+  label?: string
+  room_type?: string
+  merged_labels?: string[]
+  warnings?: string[]
+}
+
+export type CadWorkerDetectRoomsResult = {
+  ok: boolean
+  rooms?: CadWorkerDetectedRoom[]
+  detector?: string
+  labels_total?: number
+  labels_resolved?: number
+  unresolved_labels?: { label?: string; reason?: string }[]
+  drawing_units_per_meter?: number
+  effective_insunits?: number
+  unit_confidence?: number
+  error?: string
+  code?: string
+}
+
+/**
+ * Deterministic room detection from the drawing itself.
+ *
+ * The plan already names every room; the worker flood-fills each name's own
+ * space instead of asking a model to draw polygons over a raster. Callers must
+ * treat a failure as "this plan cannot be segmented honestly", not as a reason
+ * to fall back to invented geometry.
+ */
+export async function detectRoomsFromGeometry(
+  geometry: Record<string, unknown>,
+  insunits?: number | null,
+): Promise<CadWorkerDetectRoomsResult> {
+  assertCadWorkerEnabled()
+  const payload = { geometry, ...(insunits ? { insunits } : {}) }
+
+  if (cadWorkerTransport() === 'http') {
+    const response = await fetchCadWorker('/detect-rooms', {
+      operation: 'detect-rooms',
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify(payload),
+    })
+    const body = (await response.json().catch(() => ({}))) as CadWorkerDetectRoomsResult & {
+      detail?: { code?: string; error?: string }
+    }
+    if (!response.ok || body.ok === false) {
+      const code = body.detail?.code ?? body.code ?? `CAD_WORKER_HTTP_${response.status}`
+      const message =
+        body.detail?.error ?? body.error ?? `cad-worker /detect-rooms HTTP ${response.status}`
+      throw new CadWorkerError(code, message)
+    }
+    return body
+  }
+
+  const parsed = await spawnCadWorkerJson([
+    'detect-rooms',
+    '--geometry-json',
+    JSON.stringify(geometry),
+    ...(insunits ? ['--insunits', String(insunits)] : []),
+  ])
+  return parsed as CadWorkerDetectRoomsResult
+}
+
 /** @deprecated Use inspectDxfFile — platform is DXF-only. */
 export const inspectDwgFile = inspectDxfFile
 

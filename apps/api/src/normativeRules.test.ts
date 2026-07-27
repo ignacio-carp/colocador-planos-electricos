@@ -15,8 +15,8 @@ describe('normativeRules S-03', () => {
     delete process.env.NORMATIVE_RULES_VERSION
   })
 
-  it('resolves active version from manifest (tomacorrientes ruleset)', () => {
-    assert.equal(resolveActiveNormativeRulesVersion(), 'cambre-tomas-2026.07.1')
+  it('resolves active version from manifest (componentes ruleset)', () => {
+    assert.equal(resolveActiveNormativeRulesVersion(), 'cambre-completo-2026.07.2')
   })
 
   it('loads legacy rules bundle', () => {

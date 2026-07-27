@@ -8,17 +8,16 @@ import {
 } from './symbolScale'
 
 describe('symbolScale', () => {
-  it('uses the latest worker final_symbol_scale as source of truth', () => {
+  it('turns the latest worker scale into a radius via the symbol paper size', () => {
+    // The worker's scale converts millimetres of paper to drawing units, so a
+    // 4.5 mm symbol on a plan in metres at 1:100 (scale 0.1) has a 0.225 m radius.
     const radius = resolveElectricalSymbolRadius(
       {
-        room_processing_runs: [
-          { final_symbol_scale: 180 },
-          { final_symbol_scale: 225 },
-        ],
+        room_processing_runs: [{ final_symbol_scale: 0.05 }, { final_symbol_scale: 0.1 }],
       },
       [],
     )
-    assert.equal(radius, 225)
+    assert.equal(radius, 0.225)
   })
 
   it('uses worker drawing_units_per_meter when final scale is unavailable', () => {
