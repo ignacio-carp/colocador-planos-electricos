@@ -100,12 +100,6 @@ export type JobPipelineMetadata = {
     room_types: Record<string, string>
     room_warnings: Record<string, string[]>
   }
-  /**
-   * Why the geometric detector did not answer, when it did not. Its presence is
-   * the signal that the rooms in this job were drawn by a model rather than
-   * measured from the plan.
-   */
-  room_detection_failure?: string
 }
 
 export type JobRow = {

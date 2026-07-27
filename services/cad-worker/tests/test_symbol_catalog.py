@@ -124,7 +124,7 @@ def test_room_relative_cap_reduces_the_symbol_in_a_tiny_room() -> None:
     room = {"vertices": [[0, 0], [1500, 0], [1500, 2000], [0, 2000]]}
     resolution = resolve_drawing_units(4, geometry, [room])
     scale = compute_symbol_scale_resolution(
-        resolution,
+        resolve_drawing_units(4, geometry, [room]),
         [room],
         plot_scale=200.0,
         paper_mm=4.5,
