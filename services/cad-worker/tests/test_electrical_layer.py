@@ -59,8 +59,14 @@ def test_apply_electrical_layer_adds_block_inserts(tmp_path: Path) -> None:
     ]
     inserts = [e for e in out_doc.modelspace() if e.dxftype() == "INSERT"]
     assert len(inserts) >= 1
-    lines = [e for e in out_doc.modelspace() if e.dxftype() == "LINE"]
-    assert len(lines) == 1
+    # The source drawing is untouched; the symbology legend adds its own geometry
+    # on the electrical layer.
+    source_lines = [
+        e
+        for e in out_doc.modelspace()
+        if e.dxftype() == "LINE" and e.dxf.layer != OUTPUT_ELECTRICAL_LAYER_NAME
+    ]
+    assert len(source_lines) == 1
 
 
 def test_apply_electrical_layer_uses_outlet_type_block(tmp_path: Path) -> None:

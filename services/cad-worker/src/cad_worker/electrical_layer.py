@@ -46,6 +46,7 @@ from cad_worker.symbol_geometry import (
     symbol_primitives,
     wall_rotation_degrees,
 )
+from cad_worker.symbol_legend import LEGEND_ROOM_ID, draw_legend, legend_origin
 from cad_worker.unit_resolution import polygon_vertices, resolve_drawing_units
 
 logger = logging.getLogger(__name__)
@@ -362,6 +363,45 @@ def _placement_rotation(item: dict[str, object], symbol: SymbolDef) -> float:
     return 0.0
 
 
+def _draw_symbol_legend(
+    msp: Any,
+    *,
+    counts: dict[str, int],
+    layer_name: str,
+    color_aci: int,
+    scale: float,
+    points: list[tuple[float, float]],
+    generation_id: str,
+) -> int:
+    """Draw the symbology reference beside the plan; returns entities drawn.
+
+    Tagged with the same XDATA convention as the components, so the sweep that
+    removes stray entities from the layer leaves it alone and a reprocess
+    replaces it instead of stacking a second copy.
+    """
+    origin = legend_origin(points, scale)
+    if origin is None or not counts:
+        return 0
+    entities = draw_legend(
+        msp,
+        counts=counts,
+        layer_name=layer_name,
+        scale=scale,
+        origin=origin,
+        color_aci=color_aci,
+    )
+    for entity in entities:
+        entity.set_xdata(
+            CAMBRE_APPID,
+            [
+                (CAMBRE_ROOM_GROUP_CODE, LEGEND_ROOM_ID),
+                (CAMBRE_GENERATOR_VERSION_GROUP_CODE, f"generator_version={GENERATOR_VERSION}"),
+                (CAMBRE_GENERATION_ID_GROUP_CODE, f"generation_id={generation_id}"),
+            ],
+        )
+    return len(entities)
+
+
 def _audit_drawn_symbols(
     doc: Drawing,
     layer_name: str,
@@ -555,6 +595,10 @@ def apply_electrical_layer(
         _remove_room_entities(doc.modelspace(), layer_name, target_room_id)
         for target_room_id in sorted(target_room_ids)
     )
+    # The legend describes the whole layer, so it is rebuilt on every run
+    # regardless of which room was processed. It is bookkeeping, not a component,
+    # so it stays out of the removed/added counts an architect reads.
+    _remove_room_entities(doc.modelspace(), layer_name, LEGEND_ROOM_ID)
     if target_room_ids:
         logger.info(
             "Incremental merge room_ids=%s: removed %d existing entities",
@@ -606,6 +650,21 @@ def apply_electrical_layer(
         )
         added += 1
 
+    component_counts: dict[str, int] = {}
+    for _x, _y, item, _symbol, _index in accepted:
+        kind = resolve_placement_kind(item)
+        component_counts[kind] = component_counts.get(kind, 0) + 1
+
+    legend_drawn = _draw_symbol_legend(
+        msp,
+        counts=component_counts,
+        layer_name=layer_name,
+        color_aci=config.color_aci,
+        scale=symbol_scale,
+        points=[(x, y) for x, y, _item, _symbol, _index in accepted],
+        generation_id=generation_id,
+    )
+
     preserved = _modelspace_entity_counts_by_layer(doc, exclude) == source_entity_counts
     if not preserved:
         raise RuntimeError(
@@ -650,6 +709,8 @@ def apply_electrical_layer(
         "bbox_margin_drawing_units": effective_bbox_margin,
         "blocks_used": sorted(blocks_used),
         "outlets_added": added,
+        "component_counts": component_counts,
+        "legend_entities": legend_drawn,
         "source_layers_preserved": preserved,
         "output_checksum_sha256": _sha256_file(output_path),
     }

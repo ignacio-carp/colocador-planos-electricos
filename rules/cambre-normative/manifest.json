@@ -1,27 +1,35 @@
 {
   "active_version": "cambre-completo-2026.07.2",
+  "note": "Un solo ruleset activo a la vez. Los retirados quedan por trazabilidad de trabajos viejos; no se activan. El alcance vigente está en docs/normative-rules.md.",
   "versions": [
     {
       "version": "cambre-normative-2026.05.1",
       "path": "2026.05.1/rules.json",
-      "description": "MVP normative rules stub for Cambre electrical outlets"
+      "status": "retired",
+      "description": "Stub inicial del MVP",
+      "retired_reason": "Reemplazado por el ruleset de vivienda; nunca pasó de stub"
     },
     {
       "version": "cambre-vivienda-2026.06.3",
       "path": "2026.06.3/rules.json",
-      "description": "Reglas completas de generación de plano eléctrico vivienda (AEA 770/771): PMU, circuitos, simbología y cómputo",
-      "replaces": "cambre-normative-2026.05.1"
+      "status": "retired",
+      "description": "Alcance completo AEA 770/771: PMU, circuitos, simbología y cómputo",
+      "replaces": "cambre-normative-2026.05.1",
+      "retired_reason": "Declaraba un alcance que el motor nunca implementó (circuitos, tablero, cómputo). Se retiró para que el ruleset no prometa más de lo que el sistema hace"
     },
     {
       "version": "cambre-tomas-2026.07.1",
       "path": "2026.07.1/rules.json",
-      "description": "Tomacorrientes por habitación — 3 secciones: estrategia, apliques/simbología, reglas por ambiente",
-      "replaces": "cambre-vivienda-2026.06.3"
+      "status": "retired",
+      "description": "Solo tomacorrientes por ambiente",
+      "replaces": "cambre-vivienda-2026.06.3",
+      "retired_reason": "Excluía explícitamente llaves e iluminación, que son parte del entregable mínimo de un plano eléctrico"
     },
     {
       "version": "cambre-completo-2026.07.2",
       "path": "2026.07.2/rules.json",
-      "description": "Tomas + centros de luz + llaves por ambiente. Sigue sin cubrir circuitos, tablero, cómputo ni canalización",
+      "status": "active",
+      "description": "Tomas, centros de luz y llaves por ambiente. No cubre circuitos, tablero, cómputo ni canalización",
       "replaces": "cambre-tomas-2026.07.1"
     }
   ]
