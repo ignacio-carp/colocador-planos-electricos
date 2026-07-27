@@ -40,6 +40,7 @@ import { buildPlanRenderMetadata, type PlanRenderMetadata } from './llmRenderCon
 import {
   PRELIMINARY_WARNING_ANALYSIS_DEGRADED,
   PRELIMINARY_WARNING_NO_ROOMS,
+  PRELIMINARY_WARNING_ROOMS_FROM_VISION,
 } from './preliminaryAnalysis'
 
 export type RetriedAnalysisResult<T> = {
@@ -141,7 +142,7 @@ async function runRoomDetection(
   jobId: string,
   correlationId: string,
   geometryExtract: Record<string, unknown>,
-): Promise<CadWorkerDetectRoomsResult | undefined> {
+): Promise<{ result?: CadWorkerDetectRoomsResult; failure?: string }> {
   const insunits = geometryExtract.insunits
   try {
     const result = await detectRoomsFromGeometry(
@@ -157,7 +158,7 @@ async function runRoomDetection(
       labels_total: result.labels_total,
       labels_resolved: result.labels_resolved,
     })
-    return result
+    return { result }
   } catch (e) {
     logStructured('warn', {
       event: 'cad_worker_detect_rooms_failed',
@@ -167,7 +168,15 @@ async function runRoomDetection(
       code: e instanceof CadWorkerError ? e.code : 'DETECT_ROOMS_ERROR',
       note: 'falls back to the vision model for this plan',
     })
-    return undefined
+    return {
+      failure: [
+        e instanceof CadWorkerError ? e.code : 'DETECT_ROOMS_ERROR',
+        e instanceof Error ? e.message : String(e),
+      ]
+        .filter(Boolean)
+        .join(': ')
+        .slice(0, 300),
+    }
   }
 }
 
@@ -328,9 +337,21 @@ export async function runPreliminaryAnalysisPipeline(
     }
 
     lastExecutedStep = 'detect_rooms'
-    const detection = geometryExtract
+    const detectionOutcome = geometryExtract
       ? await runRoomDetection(jobId, correlationId, geometryExtract)
-      : undefined
+      : { failure: 'NO_GEOMETRY: el cad-worker no devolvió geometría del DXF' }
+    const detection = detectionOutcome.result
+    // Reported even when the fallback succeeds: rooms drawn by a model are not
+    // the same product as rooms measured from the drawing, and the architect
+    // has to be able to tell which one they are looking at.
+    const roomDetectionFailure = hasUsableRooms(detection)
+      ? undefined
+      : (detectionOutcome.failure ??
+        (detection
+          ? `SIN_AMBIENTES: el detector geométrico corrió pero no resolvió ningún ambiente (${
+              detection.detector ?? 'sin detector'
+            }, ${detection.labels_resolved ?? 0}/${detection.labels_total ?? 0} etiquetas)`
+          : 'DETECT_ROOMS_UNAVAILABLE: no se pudo consultar al cad-worker'))
 
     lastExecutedStep = 'vision_layout'
     let visionResult: Record<string, unknown> | undefined
@@ -429,6 +450,16 @@ export async function runPreliminaryAnalysisPipeline(
     if (analysisDegradedReason) {
       preliminaryWarnings.push(PRELIMINARY_WARNING_ANALYSIS_DEGRADED)
     }
+    if (roomDetectionFailure) {
+      preliminaryWarnings.push(PRELIMINARY_WARNING_ROOMS_FROM_VISION)
+      logStructured('warn', {
+        event: 'preliminary_rooms_from_vision_model',
+        job_id: jobId,
+        correlation_id: correlationId,
+        contract_version: PIPELINE_CONTRACT_VERSION,
+        reason: roomDetectionFailure,
+      })
+    }
     if (rooms.length === 0) {
       preliminaryWarnings.push(PRELIMINARY_WARNING_NO_ROOMS)
       logStructured('warn', {
@@ -452,6 +483,7 @@ export async function runPreliminaryAnalysisPipeline(
     // A re-analysis that falls back to the vision model must not keep the room
     // types from a previous deterministic run.
     delete existingMeta.detected_rooms
+    delete existingMeta.room_detection_failure
 
     const done = await patchJob(jobId, {
       status: 'listo_para_editar',
@@ -461,7 +493,7 @@ export async function runPreliminaryAnalysisPipeline(
         vision_layout: visionResult,
         ...(hasUsableRooms(detection)
           ? { detected_rooms: detectedRoomsMetadata(detection as CadWorkerDetectRoomsResult) }
-          : {}),
+          : { room_detection_failure: roomDetectionFailure }),
         preliminary_recommendations: [],
         room_processing_state: roomProcessingState,
         preliminary_analysis_completed_at: completedAt,

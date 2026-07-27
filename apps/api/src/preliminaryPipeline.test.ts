@@ -109,7 +109,16 @@ describe('runPreliminaryAnalysisPipeline (stub mode)', { concurrency: false }, (
     const result = await runPreliminaryAnalysisPipeline(job.id, 'corr-empty')
     assert.ok(result)
     assert.equal(result!.status, 'listo_para_editar')
-    assert.deepEqual(result!.pipeline_metadata?.preliminary_analysis_warnings, ['NO_ROOMS_DETECTED'])
+    // The stub path has no CAD worker, so the geometric detector never answers
+    // and the rooms come from the model. That has to be stated, not implied.
+    assert.deepEqual(result!.pipeline_metadata?.preliminary_analysis_warnings, [
+      'ROOMS_FROM_VISION_MODEL',
+      'NO_ROOMS_DETECTED',
+    ])
+    assert.match(
+      String(result!.pipeline_metadata?.room_detection_failure),
+      /NO_GEOMETRY|DETECT_ROOMS/,
+    )
     assert.deepEqual(result!.pipeline_metadata?.room_processing_state, {})
     delete process.env.CAD_STUB_EMPTY_ROOMS
   })

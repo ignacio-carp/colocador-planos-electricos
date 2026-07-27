@@ -36,7 +36,6 @@ from cad_worker.symbol_catalog import (
     UnknownPlacementKindError,
     compute_symbol_scale_resolution,
     paper_mm_of,
-    paper_size_is_legible,
     read_dxf_insunits,
     resolve_placement_kind,
     resolve_plot_scale,
@@ -366,7 +365,7 @@ def _placement_rotation(item: dict[str, object], symbol: SymbolDef) -> float:
 def _audit_drawn_symbols(
     doc: Drawing,
     layer_name: str,
-    symbol_scale: float,
+    nominal_scale: float,
 ) -> dict[str, object]:
     """Measure what was actually drawn and refuse to hand back an illegible plan.
 
@@ -374,6 +373,11 @@ def _audit_drawn_symbols(
     wrote symbols that were not: 200 m circles in one release, 3 cm in the next.
     The only defence that holds is measuring the written geometry and failing
     loudly, so a wrong size never reaches an architect as a silent output.
+
+    The measurement is against the **nominal** scale, the one the plot scale and
+    the resolved units imply. Dividing by the scale actually applied made the
+    check tautological: it returned the block's declared size no matter how the
+    symbol had been resized, which is exactly the failure it exists to catch.
     """
     footprints_mm: list[float] = []
     for entity in doc.modelspace():
@@ -389,24 +393,37 @@ def _audit_drawn_symbols(
             float(extents.extmax.x - extents.extmin.x),
             float(extents.extmax.y - extents.extmin.y),
         )
-        footprints_mm.append(paper_mm_of(footprint_du, symbol_scale))
+        footprints_mm.append(paper_mm_of(footprint_du, nominal_scale))
 
     if not footprints_mm:
         return {"symbols_measured": 0}
 
-    illegible = [value for value in footprints_mm if not paper_size_is_legible(value)]
-    if illegible:
+    # Oversize is the catastrophic direction and always a bug: it is how a plan
+    # ends up with 200-metre circles, and no plan is better than that plan.
+    oversized = [value for value in footprints_mm if value > MAX_SYMBOL_PAPER_MM + 1e-6]
+    if oversized:
         raise RuntimeError(
-            "Refusing to write an illegible electrical layer: "
-            f"{len(illegible)} of {len(footprints_mm)} symbols measure "
-            f"{min(illegible):.2f}–{max(illegible):.2f} mm on paper, outside the "
-            f"[{MIN_SYMBOL_PAPER_MM}, {MAX_SYMBOL_PAPER_MM}] mm legibility band",
+            "Refusing to write an oversized electrical layer: "
+            f"{len(oversized)} of {len(footprints_mm)} symbols measure up to "
+            f"{max(oversized):.2f} mm on paper, above the {MAX_SYMBOL_PAPER_MM} mm limit",
         )
-    return {
+
+    # Undersize is reported, not refused. A tiny room or an untrusted unit
+    # resolution can legitimately produce a small symbol, and delivering a plan
+    # with a warning beats delivering nothing at all.
+    undersized = [value for value in footprints_mm if value < MIN_SYMBOL_PAPER_MM - 1e-6]
+    audit: dict[str, object] = {
         "symbols_measured": len(footprints_mm),
         "symbol_paper_mm_min": round(min(footprints_mm), 3),
         "symbol_paper_mm_max": round(max(footprints_mm), 3),
     }
+    if undersized:
+        audit["symbols_below_legibility"] = len(undersized)
+        audit["symbol_audit_warning"] = (
+            f"{len(undersized)} de {len(footprints_mm)} símbolos miden menos de "
+            f"{MIN_SYMBOL_PAPER_MM} mm de papel (mínimo {min(undersized):.2f} mm)"
+        )
+    return audit
 
 
 def apply_electrical_layer(
@@ -596,7 +613,7 @@ def apply_electrical_layer(
         )
 
     # Measured before the file is written: an illegible layer is never saved.
-    symbol_audit = _audit_drawn_symbols(doc, layer_name, symbol_scale)
+    symbol_audit = _audit_drawn_symbols(doc, layer_name, scale_resolution.nominal_scale)
 
     save_dxf_file(doc, output_path)
 

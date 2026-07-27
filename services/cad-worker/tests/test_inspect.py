@@ -42,3 +42,30 @@ def test_inspect_invalid_dxf_code(tmp_path: Path) -> None:
     assert proc.returncode == 3
     payload = json.loads(proc.stdout)
     assert payload["code"] == "CAD_WORKER_INVALID_DXF"
+
+
+def test_diagnose_reports_the_whole_chain(tmp_path) -> None:
+    """One command that explains what the engine sees, so a diagnosis is not archaeology."""
+    import ezdxf
+
+    from cad_worker.diagnose import diagnose
+
+    src = tmp_path / "plan.dxf"
+    doc = ezdxf.new()
+    doc.header["$INSUNITS"] = 6
+    doc.layers.add("MUROS")
+    doc.layers.add("NOM - LOCALES")
+    msp = doc.modelspace()
+    for start, end in (((0, 0), (4, 0)), ((4, 0), (4, 3)), ((4, 3), (0, 3)), ((0, 3), (0, 0))):
+        msp.add_line(start, end, dxfattribs={"layer": "MUROS"})
+    msp.add_text("DORMITORIO", dxfattribs={"insert": (2, 1.5), "layer": "NOM - LOCALES"})
+    doc.saveas(src)
+
+    report = diagnose(src)
+    assert report["dependencies_missing"] == []
+    assert report["extraction"]["etiquetas_de_local"] == 1
+    assert report["units"]["effective_insunits"] == 6
+    # 4.5 mm of paper at 1:100 on a drawing in metres.
+    assert abs(report["symbol_scale"]["symbol_size_in_drawing_units"] - 0.45) < 1e-9
+    assert report["rooms"]["ok"] is True
+    assert "VEREDICTO" not in report["verdict"]

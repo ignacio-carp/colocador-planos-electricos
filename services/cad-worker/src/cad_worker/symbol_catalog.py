@@ -21,6 +21,7 @@ from dataclasses import dataclass
 from typing import Any, Literal
 
 from cad_worker.constants import (
+    CONFIDENT_UNITS_THRESHOLD,
     DEFAULT_PLOT_SCALE,
     MAX_SYMBOL_PAPER_MM,
     MAX_SYMBOL_ROOM_MINOR_RATIO,
@@ -263,6 +264,20 @@ def compute_symbol_scale_resolution(
         if max_scale < nominal_scale:
             final_scale = max_scale
             clamp_reason = "room_relative_footprint"
+
+    # The cap may not shrink a symbol out of legibility: a room too small to hold
+    # a readable symbol is a real situation (a 1 m² toilette), and the answer is a
+    # symbol that overflows its room, not one nobody can read.
+    #
+    # But the floor is denominated in the resolved units, so it can only be
+    # trusted when the units are. Under a wrong resolution it would inflate
+    # rather than protect, which is exactly how 200-metre symbols happened; below
+    # the confidence threshold the dimensionless cap rules alone.
+    if resolution.confidence >= CONFIDENT_UNITS_THRESHOLD and paper_mm > 0:
+        floor_scale = nominal_scale * (MIN_SYMBOL_PAPER_MM / paper_mm)
+        if final_scale < floor_scale:
+            final_scale = floor_scale
+            clamp_reason = "room_relative_footprint_floored"
     final_scale = max(final_scale, 1e-12)
 
     return SymbolScaleResolution(

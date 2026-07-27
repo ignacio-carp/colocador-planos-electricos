@@ -128,6 +128,16 @@ def main(argv: list[str] | None = None) -> None:
     )
     p_detect.add_argument("--insunits", type=int, default=None)
 
+    p_diagnose = subparsers.add_parser(
+        "diagnose",
+        help=(
+            "Explain what the engine sees in one DXF and what it would draw: "
+            "dependencies, extraction, units, symbol size and rooms."
+        ),
+    )
+    p_diagnose.add_argument("--input", required=True, help="Path to the DXF")
+    p_diagnose.add_argument("--json", action="store_true", dest="as_json")
+
     p_harness = subparsers.add_parser(
         "harness",
         help=(
@@ -182,6 +192,10 @@ def main(argv: list[str] | None = None) -> None:
         raise SystemExit(place_elements_cmd(args.payload_json))
     if args.command == "detect-rooms":
         raise SystemExit(detect_rooms_cmd(args.geometry_json, args.insunits))
+    if args.command == "diagnose":
+        from cad_worker.diagnose import diagnose_cmd
+
+        raise SystemExit(diagnose_cmd(args.input, args.as_json))
     if args.command == "harness":
         from cad_worker.harness.runner import harness_cmd
 

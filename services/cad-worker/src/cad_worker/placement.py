@@ -220,7 +220,16 @@ def _build_edge_spans(
         # opening entity laid over a continuous wall, or as a plain gap in the
         # wall bodies. Real studio files use the second, the tidy fixtures the
         # first, so both count.
-        unbacked = subtract_intervals((0.0, length), _merge_intervals(wall_intervals))
+        #
+        # The gap only means "doorway" when the rest of the edge does have a wall
+        # behind it. An edge with no wall at all is not a room made of doors, it
+        # is a boundary we could not verify — reading it as a doorway deleted
+        # every usable span and left rooms with no outlets at all.
+        unbacked = (
+            subtract_intervals((0.0, length), _merge_intervals(wall_intervals))
+            if edge.wall_supported
+            else []
+        )
         edge.door_intervals = [
             interval
             for interval in _merge_intervals(opening_intervals + unbacked)

@@ -20,6 +20,12 @@ SUPPORTED_PLOT_SCALES = (20.0, 25.0, 33.0, 50.0, 75.0, 100.0, 125.0, 150.0, 200.
 # it still bounds the symbol when the unit resolution itself is wrong.
 MAX_SYMBOL_ROOM_MINOR_RATIO = 0.15
 
+# The legibility floor is denominated in the resolved units, so under a wrong
+# unit resolution it would inflate instead of protect — the exact mechanism that
+# produced 200-metre symbols. Below this confidence the dimensionless room cap
+# rules alone and the symbol is allowed to come out small.
+CONFIDENT_UNITS_THRESHOLD = 0.5
+
 GENERATOR_VERSION = "cad-worker-electrical-v3"
 
 # Blocks from superseded generations. They are purged from the electrical layer
