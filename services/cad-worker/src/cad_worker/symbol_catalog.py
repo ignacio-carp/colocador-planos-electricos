@@ -1,18 +1,31 @@
-"""Electrical symbol catalog — maps outlet_type / element to DXF block geometry (US-009)."""
+"""Electrical symbol catalog: shapes declared in millimetres of paper.
+
+An electrical symbol is an annotation, not a scale drawing of the device. Its
+size is decided on the sheet — a tomacorriente reads at about 4.5 mm at any plot
+scale — and only then converted to drawing units. Declaring the geometry directly
+in paper millimetres removes the whole class of bug that produced 200-metre
+circles: there is no dimensionless "block radius" left to multiply by a wrong
+unit guess.
+
+    drawing units = paper mm * (plot scale / 1000) * drawing units per metre
+
+Every symbol is drawn with its wall side toward local -Y, so a single INSERT
+rotation aligns it to whatever wall the placer chose.
+"""
 
 from __future__ import annotations
 
 import math
+import re
 from dataclasses import dataclass
 from typing import Any, Literal
 
 from cad_worker.constants import (
-    ASSUMED_PLOT_SCALE,
-    CONFIDENT_UNITS_THRESHOLD,
-    MAX_SYMBOL_CLASSIFIED_SPAN_RATIO,
+    DEFAULT_PLOT_SCALE,
+    MAX_SYMBOL_PAPER_MM,
     MAX_SYMBOL_ROOM_MINOR_RATIO,
-    MIN_SYMBOL_DIAMETER_M,
-    OUTLET_BLOCK_RADIUS,
+    MIN_SYMBOL_PAPER_MM,
+    SUPPORTED_PLOT_SCALES,
     SYMBOL_PAPER_MM,
 )
 from cad_worker.unit_resolution import (
@@ -23,15 +36,13 @@ from cad_worker.unit_resolution import (
 )
 
 GeometryType = Literal[
-    "circle_cross",
-    "circle_cross_double",
-    "circle_s",
-    "circle_cross_emergency",
-    "filled_circle",
     "toma",
+    "toma_doble",
     "toma_especial",
+    "centro_luz",
     "brazo",
     "llave",
+    "llave_combinacion",
     "tablero",
     "puesta_tierra",
 ]
@@ -41,84 +52,140 @@ OUTLET_TYPES = frozenset(
     {"standard", "double", "switch", "dedicated_appliance", "emergency"},
 )
 
-# Vivienda ruleset element types (cambre-vivienda-2026.06.3 symbology.blocks).
-ELEMENT_TYPES = frozenset(
-    {
-        "centro",
-        "brazo",
-        "toma",
-        "toma_especial",
-        "llave",
-        "tablero",
-        "puesta_tierra",
-        "tablero_seccional",
-        "tablero_principal_medidor",
-    },
-)
-
-# Legacy outlet_type → vivienda element (for backward-compatible placements).
+# Legacy outlet_type → element (for backward-compatible placements).
 LEGACY_TO_ELEMENT: dict[str, str] = {
     "standard": "toma",
-    "double": "toma",
+    "double": "toma_doble",
     "switch": "llave",
     "dedicated_appliance": "toma_especial",
     "emergency": "toma_especial",
 }
 
-# 4.5 mm on paper at 1:100 -> 0.45 m model-space nominal diameter.
-TARGET_SYMBOL_DIAMETER_M = SYMBOL_PAPER_MM / 1000.0 * ASSUMED_PLOT_SCALE
-CROSS_ARM_RATIO = 0.65
-
-# Backwards-compatible alias. Unit resolution intentionally only considers the
-# three architectural candidates required by the worker contract.
+# Backwards-compatible alias.
 INSUNITS_PER_METER = INSUNITS_DRAWING_UNITS_PER_METER
 
 
 @dataclass(frozen=True)
 class SymbolDef:
+    """One catalog entry, sized in millimetres on the printed sheet."""
+
     block_name: str
     geometry: GeometryType
     color_aci: int
-    element: str | None = None
+    element: str
+    paper_mm: float = SYMBOL_PAPER_MM
+    # Ceiling devices keep the drawing's orientation; wall devices turn to face
+    # the room they serve.
+    rotates_with_wall: bool = True
+    # Switch gangs: how many levers the symbol shows.
+    poles: int = 1
+    label: str = ""
 
 
 @dataclass(frozen=True)
 class SymbolScaleResolution:
+    """One scale for the whole document, plus why it was reduced if it was."""
+
     nominal_scale: float
     final_scale: float
     scale_clamped: bool
     clamp_reason: str | None
     room_median_minor_dimension_m: float | None
-    nominal_footprint_m: float
-    final_footprint_m: float
+    plot_scale: float
+    nominal_paper_mm: float
+    final_paper_mm: float
 
 
 class UnknownPlacementKindError(ValueError):
     """Raised when a placement does not identify a supported symbol kind."""
 
 
+# ACI colours land on the INSERT, never inside the block, so a plan can be
+# recoloured per layer or per instance without regenerating geometry.
+_TOMA = 1
+_LUZ = 5
+_LLAVE = 6
+_ESPECIAL = 2
+_TABLERO = 7
+_TIERRA = 3
+
 CATALOG: dict[str, SymbolDef] = {
-    # Legacy MVP types (geometry updated to vivienda symbology; block names unified)
-    "standard": SymbolDef("SYM_TOMA", "toma", 3, "toma"),
-    "double": SymbolDef("SYM_TOMA", "toma", 3, "toma"),
-    "switch": SymbolDef("SYM_LLAVE", "llave", 1, "llave"),
-    "dedicated_appliance": SymbolDef("SYM_TOMA_ESP", "toma_especial", 5, "toma_especial"),
-    "emergency": SymbolDef("SYM_TOMA_ESP", "toma_especial", 6, "toma_especial"),
-    # Vivienda element types (symbology.blocks from cambre-vivienda-2026.06.3)
-    "centro": SymbolDef("SYM_CENTRO", "filled_circle", 3, "centro"),
-    "brazo": SymbolDef("SYM_BRAZO", "brazo", 3, "brazo"),
-    "toma": SymbolDef("SYM_TOMA", "toma", 3, "toma"),
-    "toma_especial": SymbolDef("SYM_TOMA_ESP", "toma_especial", 5, "toma_especial"),
-    "llave": SymbolDef("SYM_LLAVE", "llave", 1, "llave"),
-    "tablero": SymbolDef("SYM_TABLERO", "tablero", 7, "tablero"),
-    "tablero_seccional": SymbolDef("SYM_TABLERO", "tablero", 7, "tablero"),
-    "tablero_principal_medidor": SymbolDef("SYM_TABLERO", "tablero", 7, "tablero"),
-    "puesta_tierra": SymbolDef("SYM_PAT", "puesta_tierra", 3, "puesta_tierra"),
+    "toma": SymbolDef("CBR_TOMA", "toma", _TOMA, "toma", label="Tomacorriente 10 A"),
+    "toma_doble": SymbolDef(
+        "CBR_TOMA_DOBLE",
+        "toma_doble",
+        _TOMA,
+        "toma_doble",
+        label="Tomacorriente doble 10 A",
+    ),
+    "toma_especial": SymbolDef(
+        "CBR_TOMA_ESP",
+        "toma_especial",
+        _ESPECIAL,
+        "toma_especial",
+        label="Tomacorriente especial 20 A",
+    ),
+    "centro": SymbolDef(
+        "CBR_CENTRO",
+        "centro_luz",
+        _LUZ,
+        "centro",
+        rotates_with_wall=False,
+        label="Centro de luz",
+    ),
+    "brazo": SymbolDef("CBR_BRAZO", "brazo", _LUZ, "brazo", label="Brazo / aplique de pared"),
+    "llave": SymbolDef("CBR_LLAVE_1", "llave", _LLAVE, "llave", poles=1, label="Llave 1 punto"),
+    "llave_2_puntos": SymbolDef(
+        "CBR_LLAVE_2",
+        "llave",
+        _LLAVE,
+        "llave_2_puntos",
+        poles=2,
+        label="Llave 2 puntos",
+    ),
+    "llave_3_puntos": SymbolDef(
+        "CBR_LLAVE_3",
+        "llave",
+        _LLAVE,
+        "llave_3_puntos",
+        poles=3,
+        label="Llave 3 puntos",
+    ),
+    "llave_combinacion": SymbolDef(
+        "CBR_LLAVE_COMB",
+        "llave_combinacion",
+        _LLAVE,
+        "llave_combinacion",
+        label="Llave de combinación",
+    ),
+    "tablero": SymbolDef(
+        "CBR_TABLERO",
+        "tablero",
+        _TABLERO,
+        "tablero",
+        paper_mm=5.0,
+        label="Tablero seccional",
+    ),
+    "puesta_tierra": SymbolDef(
+        "CBR_PAT",
+        "puesta_tierra",
+        _TIERRA,
+        "puesta_tierra",
+        label="Puesta a tierra",
+    ),
 }
+
+# Aliases kept so placements written by older runs still resolve.
+CATALOG["tablero_seccional"] = CATALOG["tablero"]
+CATALOG["tablero_principal_medidor"] = CATALOG["tablero"]
+
+ELEMENT_TYPES = frozenset(CATALOG)
+
+_PLOT_SCALE_PATTERN = re.compile(r"1[\s._:/-]\s*(\d{2,4})")
 
 
 def resolve_placement_kind(item: dict[str, object]) -> str:
-    """Resolve symbol key from element (vivienda) or outlet_type (legacy)."""
+    """Resolve symbol key from element (preferred) or outlet_type (legacy)."""
     for key in ("element", "tipo_componente"):
         element = item.get(key)
         if isinstance(element, str) and element in CATALOG:
@@ -137,7 +204,6 @@ def resolve_outlet_type(item: dict[str, object]) -> str:
     kind = resolve_placement_kind(item)
     if kind in OUTLET_TYPES:
         return kind
-    # Map vivienda element back to closest legacy outlet_type for metadata.
     for legacy, element in LEGACY_TO_ELEMENT.items():
         if element == kind:
             return legacy
@@ -148,32 +214,100 @@ def resolve_symbol(item: dict[str, object]) -> SymbolDef:
     return CATALOG[resolve_placement_kind(item)]
 
 
-def _median_wall_length(geometry: dict[str, object] | None) -> float | None:
-    if not geometry:
-        return None
-    walls = geometry.get("paredes")
-    if not isinstance(walls, list):
-        return None
-    lengths: list[float] = []
-    for wall in walls:
-        if not isinstance(wall, dict):
+def resolve_plot_scale(geometry: dict[str, object] | None) -> float:
+    """Plot scale read from the drawing's own annotation layers.
+
+    Studios name their dimension layers after the sheet scale ("_NOM - COTAS
+    1.100"), which is the only place a DXF states it. Absent that, 1:100 is the
+    convention for a house plan and the symbol stays inside the legibility band
+    either way.
+    """
+    if not isinstance(geometry, dict):
+        return DEFAULT_PLOT_SCALE
+    counts: dict[float, int] = {}
+    for item in geometry.get("dimensiones", []) or []:
+        if not isinstance(item, dict):
             continue
-        start = wall.get("inicio")
-        end = wall.get("fin")
-        if not isinstance(start, (list, tuple)) or not isinstance(end, (list, tuple)):
+        match = _PLOT_SCALE_PATTERN.search(str(item.get("capa") or ""))
+        if not match:
             continue
-        if len(start) < 2 or len(end) < 2:
-            continue
-        dx = float(end[0]) - float(start[0])
-        dy = float(end[1]) - float(start[1])
-        length = math.hypot(dx, dy)
-        if length > 1e-6:
-            lengths.append(length)
-    if not lengths:
+        value = float(match.group(1))
+        if value in SUPPORTED_PLOT_SCALES:
+            counts[value] = counts.get(value, 0) + 1
+    if not counts:
+        return DEFAULT_PLOT_SCALE
+    return max(sorted(counts), key=lambda scale: counts[scale])
+
+
+def compute_symbol_scale_resolution(
+    resolution: UnitResolution,
+    room_polygons: list[object] | None,
+    *,
+    plot_scale: float = DEFAULT_PLOT_SCALE,
+    paper_mm: float = SYMBOL_PAPER_MM,
+) -> SymbolScaleResolution:
+    """INSERT scale converting paper millimetres to drawing units, once per document.
+
+    The room-relative cap is the last line of defence: it is a pure ratio, so it
+    still bounds the symbol when the unit resolution itself is wrong.
+    """
+    per_meter = resolution.drawing_units_per_meter
+    nominal_scale = (plot_scale / 1000.0) * per_meter
+    median_minor_m = room_median_minor_dimension_m(room_polygons, resolution)
+
+    final_scale = nominal_scale
+    clamp_reason: str | None = None
+    if median_minor_m is not None and median_minor_m > 0:
+        max_footprint_du = MAX_SYMBOL_ROOM_MINOR_RATIO * median_minor_m * per_meter
+        max_scale = max_footprint_du / paper_mm
+        if max_scale < nominal_scale:
+            final_scale = max_scale
+            clamp_reason = "room_relative_footprint"
+    final_scale = max(final_scale, 1e-12)
+
+    return SymbolScaleResolution(
+        nominal_scale=nominal_scale,
+        final_scale=final_scale,
+        scale_clamped=final_scale < nominal_scale * (1.0 - 1e-9),
+        clamp_reason=clamp_reason,
+        room_median_minor_dimension_m=median_minor_m,
+        plot_scale=plot_scale,
+        nominal_paper_mm=paper_mm,
+        final_paper_mm=paper_mm * final_scale / nominal_scale if nominal_scale > 0 else 0.0,
+    )
+
+
+def paper_mm_of(footprint_drawing_units: float, scale: float) -> float:
+    """Invert the scale: how many millimetres of paper a drawn symbol occupies."""
+    if scale <= 0 or not math.isfinite(scale):
+        return math.inf
+    return footprint_drawing_units / scale
+
+
+def paper_size_is_legible(paper_mm: float) -> bool:
+    return MIN_SYMBOL_PAPER_MM - 1e-6 <= paper_mm <= MAX_SYMBOL_PAPER_MM + 1e-6
+
+
+def read_dxf_insunits(doc: Any) -> int | None:
+    """Read AutoCAD $INSUNITS from a DXF document."""
+    try:
+        val = int(doc.header.get("$INSUNITS", 0))
+        return val if val else None
+    except (TypeError, ValueError, AttributeError):
         return None
-    lengths.sort()
-    mid = len(lengths) // 2
-    return lengths[mid] if len(lengths) % 2 else (lengths[mid - 1] + lengths[mid]) / 2
+
+
+def drawing_units_per_meter(
+    insunits: int | None,
+    bbox: dict[str, float] | None,
+    geometry: dict[str, object] | None,
+) -> float:
+    """Compatibility helper routed through the shared unit resolver."""
+    resolved_geometry = dict(geometry or {})
+    if not resolved_geometry.get("paredes") and bbox:
+        span = max(bbox["max_x"] - bbox["min_x"], bbox["max_y"] - bbox["min_y"])
+        resolved_geometry["paredes"] = [{"inicio": [0.0, 0.0], "fin": [span, 0.0]}]
+    return resolve_drawing_units(insunits, resolved_geometry, []).drawing_units_per_meter
 
 
 def infer_insunits(
@@ -186,99 +320,3 @@ def infer_insunits(
         span = max(bbox["max_x"] - bbox["min_x"], bbox["max_y"] - bbox["min_y"])
         resolved_geometry["paredes"] = [{"inicio": [0.0, 0.0], "fin": [span, 0.0]}]
     return resolve_drawing_units(None, resolved_geometry, []).effective_insunits
-
-
-def drawing_units_per_meter(
-    insunits: int | None,
-    bbox: dict[str, float] | None,
-    geometry: dict[str, object] | None,
-) -> float:
-    resolved_geometry = dict(geometry or {})
-    if not resolved_geometry.get("paredes") and bbox:
-        span = max(bbox["max_x"] - bbox["min_x"], bbox["max_y"] - bbox["min_y"])
-        resolved_geometry["paredes"] = [{"inicio": [0.0, 0.0], "fin": [span, 0.0]}]
-    return resolve_drawing_units(insunits, resolved_geometry, []).drawing_units_per_meter
-
-
-def compute_symbol_scale_resolution(
-    resolution: UnitResolution,
-    room_polygons: list[object] | None,
-    bbox: dict[str, float] | None,
-    *,
-    base_footprint: float,
-) -> SymbolScaleResolution:
-    """Resolve a shared INSERT scale using the measured unscaled block footprint."""
-    per_meter = resolution.drawing_units_per_meter
-    nominal_scale = TARGET_SYMBOL_DIAMETER_M / 2.0 * per_meter / OUTLET_BLOCK_RADIUS
-    measured_base = max(float(base_footprint), 1e-9)
-    nominal_footprint_m = measured_base * nominal_scale / per_meter
-    median_minor_m = room_median_minor_dimension_m(room_polygons, resolution)
-
-    if median_minor_m is not None:
-        room_cap_m = MAX_SYMBOL_ROOM_MINOR_RATIO * median_minor_m
-        if resolution.confidence >= CONFIDENT_UNITS_THRESHOLD:
-            max_footprint_m = max(MIN_SYMBOL_DIAMETER_M, room_cap_m)
-            reason = "room_relative_footprint"
-        else:
-            # The 0.15 m floor is metre-denominated: under a wrong unit
-            # resolution it inflates instead of protecting (0.15 m read as
-            # mm becomes 150 real metres). The room-relative cap is a pure
-            # ratio in drawing units, so with untrusted units it rules alone.
-            max_footprint_m = max(room_cap_m, 1e-9)
-            reason = "room_relative_footprint_low_confidence"
-    else:
-        max_footprint_m = TARGET_SYMBOL_DIAMETER_M
-        reason = "no_rooms_fallback"
-        if bbox:
-            span_du = max(bbox["max_x"] - bbox["min_x"], bbox["max_y"] - bbox["min_y"])
-            if span_du > 0:
-                span_guard_m = span_du / per_meter * MAX_SYMBOL_CLASSIFIED_SPAN_RATIO
-                if span_guard_m < max_footprint_m:
-                    max_footprint_m = span_guard_m
-                    reason = "classified_bbox_span"
-
-    max_scale = max_footprint_m * per_meter / measured_base
-    final_scale = max(min(nominal_scale, max_scale), 1e-9)
-    clamped = final_scale < nominal_scale * (1.0 - 1e-9)
-    return SymbolScaleResolution(
-        nominal_scale=nominal_scale,
-        final_scale=final_scale,
-        scale_clamped=clamped,
-        clamp_reason=reason if clamped else None,
-        room_median_minor_dimension_m=median_minor_m,
-        nominal_footprint_m=nominal_footprint_m,
-        final_footprint_m=measured_base * final_scale / per_meter,
-    )
-
-
-def compute_symbol_radius_drawing_units(
-    bbox: dict[str, float] | None,
-    geometry: dict[str, object] | None = None,
-    insunits: int | None = None,
-) -> float:
-    """Compatibility helper for the final scale of a circle-only unit block."""
-    resolution = resolve_drawing_units(insunits, geometry, [])
-    return compute_symbol_scale_resolution(
-        resolution,
-        [],
-        bbox,
-        base_footprint=2.0,
-    ).final_scale
-
-
-def read_dxf_insunits(doc: Any) -> int | None:
-    """Read AutoCAD $INSUNITS from a DXF document."""
-    try:
-        val = int(doc.header.get("$INSUNITS", 0))
-        return val if val else None
-    except (TypeError, ValueError, AttributeError):
-        return None
-
-
-def compute_symbol_scale(
-    bbox: dict[str, float] | None,
-    geometry: dict[str, object] | None = None,
-    insunits: int | None = None,
-) -> float:
-    """Scale factor for block INSERT (block geometry uses OUTLET_BLOCK_RADIUS as base)."""
-    return compute_symbol_radius_drawing_units(bbox, geometry, insunits) / OUTLET_BLOCK_RADIUS

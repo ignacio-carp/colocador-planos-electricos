@@ -1,5 +1,12 @@
-/** Electrical symbol sizing resolved by the CAD worker. */
+/** Electrical symbol sizing resolved by the CAD worker.
+ *
+ * The worker draws every symbol at a fixed size in millimetres of paper and
+ * reports the scale that converts paper to drawing units. The viewer only needs
+ * a radius, so it multiplies that scale by half the symbol's paper size — the
+ * same number the DXF was written with, never a second guess.
+ */
 
+const SYMBOL_PAPER_MM = 4.5
 const TARGET_SYMBOL_DIAMETER_M = 0.03
 
 const INSUNITS_PER_METER: Record<number, number> = {
@@ -113,13 +120,13 @@ export function resolveElectricalSymbolRadius(
   for (let index = runs.length - 1; index >= 0; index -= 1) {
     const finalScale = runs[index]?.final_symbol_scale
     if (typeof finalScale === 'number' && Number.isFinite(finalScale) && finalScale > 0) {
-      return finalScale
+      return (finalScale * SYMBOL_PAPER_MM) / 2
     }
   }
 
   const finalScale = meta.cad_worker_apply?.final_symbol_scale
   if (typeof finalScale === 'number' && Number.isFinite(finalScale) && finalScale > 0) {
-    return finalScale
+    return (finalScale * SYMBOL_PAPER_MM) / 2
   }
 
   const legacyWorkerRadius = meta.cad_worker_apply?.symbol_radius_drawing_units

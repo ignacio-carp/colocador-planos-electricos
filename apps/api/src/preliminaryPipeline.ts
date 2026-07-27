@@ -6,10 +6,17 @@ import {
   cadWorkerConfigSummary,
   cadWorkerDisabled,
   cadWorkerTransport,
+  detectRoomsFromGeometry,
   extractGeometryFromDxf,
   inspectDxfFile,
   renderPlanFromDxf,
+  type CadWorkerDetectRoomsResult,
 } from './cadWorkerBridge'
+import {
+  buildVisionLayoutFromDetectedRooms,
+  detectedRoomsMetadata,
+  hasUsableRooms,
+} from './deterministicRooms'
 import { OpenAiClientError } from './openaiClient'
 import {
   buildLiveVisionFallback,
@@ -123,6 +130,45 @@ async function runCadWorkerGeometryExtract(
     furniture_count: geometry.muebles?.length ?? 0,
   })
   return geometry as Record<string, unknown>
+}
+
+/**
+ * Deterministic room segmentation. A failure is reported and the pipeline falls
+ * back to the vision model, because some drawings genuinely cannot be segmented
+ * from their own geometry (no wall layer, no room names).
+ */
+async function runRoomDetection(
+  jobId: string,
+  correlationId: string,
+  geometryExtract: Record<string, unknown>,
+): Promise<CadWorkerDetectRoomsResult | undefined> {
+  const insunits = geometryExtract.insunits
+  try {
+    const result = await detectRoomsFromGeometry(
+      geometryExtract,
+      typeof insunits === 'number' ? insunits : undefined,
+    )
+    logStructured('info', {
+      event: 'cad_worker_detect_rooms',
+      job_id: jobId,
+      correlation_id: correlationId,
+      detector: result.detector,
+      rooms: result.rooms?.length ?? 0,
+      labels_total: result.labels_total,
+      labels_resolved: result.labels_resolved,
+    })
+    return result
+  } catch (e) {
+    logStructured('warn', {
+      event: 'cad_worker_detect_rooms_failed',
+      job_id: jobId,
+      correlation_id: correlationId,
+      error: e instanceof Error ? e.message : String(e),
+      code: e instanceof CadWorkerError ? e.code : 'DETECT_ROOMS_ERROR',
+      note: 'falls back to the vision model for this plan',
+    })
+    return undefined
+  }
 }
 
 async function runCadWorkerPlanRender(
@@ -281,10 +327,35 @@ export async function runPreliminaryAnalysisPipeline(
       throw new Error('CAD worker is required for preliminary analysis in live mode')
     }
 
+    lastExecutedStep = 'detect_rooms'
+    const detection = geometryExtract
+      ? await runRoomDetection(jobId, correlationId, geometryExtract)
+      : undefined
+
     lastExecutedStep = 'vision_layout'
     let visionResult: Record<string, unknown> | undefined
     let analysisDegradedReason: string | undefined
-    await runTimedStep(jobId, correlationId, 'vision_layout', async () => {
+
+    if (hasUsableRooms(detection)) {
+      // Geometry answered the question. The model is not asked to guess it.
+      visionResult = buildVisionLayoutFromDetectedRooms(
+        jobId,
+        correlationId,
+        detection as CadWorkerDetectRoomsResult,
+      ) as Record<string, unknown>
+      logStructured('info', {
+        event: 'preliminary_rooms_deterministic',
+        job_id: jobId,
+        correlation_id: correlationId,
+        contract_version: PIPELINE_CONTRACT_VERSION,
+        detector: detection?.detector,
+        rooms: detection?.rooms?.length ?? 0,
+        labels_total: detection?.labels_total,
+        labels_resolved: detection?.labels_resolved,
+      })
+    }
+
+    if (!visionResult) await runTimedStep(jobId, correlationId, 'vision_layout', async () => {
       const outcome = await runAnalysisWithSingleRetry(
         async (attempt) => {
           if (process.env.CAD_IA_SIMULATE_FAILURE === 'true' && pipelineMode === 'stub') {
@@ -378,6 +449,9 @@ export async function runPreliminaryAnalysisPipeline(
     delete existingMeta.outlet_placements
     delete existingMeta.normative_rules_version
     delete existingMeta.analysis_degraded_reason
+    // A re-analysis that falls back to the vision model must not keep the room
+    // types from a previous deterministic run.
+    delete existingMeta.detected_rooms
 
     const done = await patchJob(jobId, {
       status: 'listo_para_editar',
@@ -385,6 +459,9 @@ export async function runPreliminaryAnalysisPipeline(
       pipeline_metadata: {
         ...existingMeta,
         vision_layout: visionResult,
+        ...(hasUsableRooms(detection)
+          ? { detected_rooms: detectedRoomsMetadata(detection as CadWorkerDetectRoomsResult) }
+          : {}),
         preliminary_recommendations: [],
         room_processing_state: roomProcessingState,
         preliminary_analysis_completed_at: completedAt,

@@ -34,6 +34,9 @@ class RoomTruth:
     room_type: str
     polygon: list[Point]
     expected_outlets: int
+    # Lights and switches are placed by the same run; a room with a door and a
+    # lighting rule gets exactly one switch.
+    expected_switches: int = 1
     # Exact expected placement points (du) when computable by hand (spec §4.5).
     expected_points: list[Point] = field(default_factory=list)
     # Minimum number of pairwise non-collinear walls the placements must use.
@@ -221,7 +224,9 @@ def _cocina(out_dir: Path) -> Fixture:
                 id="cocina-01",
                 room_type="cocina",
                 polygon=_rect_polygon(0, 0, 3000, 3000),
-                expected_outlets=2,
+                # cambre-completo-2026.07.2 spaces kitchen outlets every 4 m of
+                # usable perimeter, so a 3x3 kitchen takes three.
+                expected_outlets=3,
                 expected_distinct_walls=2,
                 expected_warnings=["KITCHEN-COUNTER-UNVERIFIED"],
             ),
@@ -464,13 +469,13 @@ def _poisoned_symbol_fixture(out_dir: Path) -> Fixture:
     msp = doc.modelspace()
     _add_walls(msp, _rect_walls(10.0, 8.0, 13.0, 12.0))
     _add_openings(msp, [((11.0, 8.0), (11.9, 8.0))])
-    poisoned = doc.blocks.new(name="SYM_TOMA")
+    poisoned = doc.blocks.new(name="CBR_TOMA")
     poisoned.add_circle((0.0, 0.0), 100.0)
     path = out_dir / "simbolo_envenenado.dxf"
     doc.saveas(path)
     return Fixture(
         name="simbolo_envenenado",
-        description="Definicion SYM_TOMA preexistente con footprint gigante",
+        description="Definicion CBR_TOMA preexistente con footprint gigante",
         insunits=6,
         du_per_m=1.0,
         rooms=[

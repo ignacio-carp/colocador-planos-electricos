@@ -5,8 +5,14 @@ from __future__ import annotations
 from pathlib import Path
 
 import ezdxf
+import pytest
 
-from cad_worker.constants import DEFAULT_OUTLET_BLOCK_NAME, OUTPUT_ELECTRICAL_LAYER_NAME
+from cad_worker.constants import (
+    DEFAULT_OUTLET_BLOCK_NAME,
+    MAX_SYMBOL_PAPER_MM,
+    MIN_SYMBOL_PAPER_MM,
+    OUTPUT_ELECTRICAL_LAYER_NAME,
+)
 from cad_worker.electrical_layer import apply_electrical_layer
 
 ROOM_POLYGON = {
@@ -48,7 +54,7 @@ def test_apply_electrical_layer_adds_block_inserts(tmp_path: Path) -> None:
 
     out_doc = ezdxf.readfile(str(out))
     assert OUTPUT_ELECTRICAL_LAYER_NAME in [layer.dxf.name for layer in out_doc.layers]
-    assert DEFAULT_OUTLET_BLOCK_NAME in [b.name for b in out_doc.blocks] or "SYM_TOMA" in [
+    assert DEFAULT_OUTLET_BLOCK_NAME in [b.name for b in out_doc.blocks] or "CBR_TOMA" in [
         b.name for b in out_doc.blocks
     ]
     inserts = [e for e in out_doc.modelspace() if e.dxftype() == "INSERT"]
@@ -74,13 +80,13 @@ def test_apply_electrical_layer_uses_outlet_type_block(tmp_path: Path) -> None:
     result = apply_electrical_layer(src, out, placements)
     assert result["outlets_added"] == 1
     blocks_used = result.get("blocks_used", [])
-    assert "SYM_LLAVE" in blocks_used or "CAMBRE_SWITCH" in blocks_used
+    assert "CBR_LLAVE_1" in blocks_used or "CAMBRE_SWITCH" in blocks_used
 
     out_doc = ezdxf.readfile(str(out))
     block_names = [b.name for b in out_doc.blocks]
-    assert "SYM_LLAVE" in block_names or "CAMBRE_SWITCH" in block_names
+    assert "CBR_LLAVE_1" in block_names or "CAMBRE_SWITCH" in block_names
     inserts = [e for e in out_doc.modelspace() if e.dxftype() == "INSERT"]
-    assert inserts[0].dxf.name in ("SYM_LLAVE", "CAMBRE_SWITCH")
+    assert inserts[0].dxf.name in ("CBR_LLAVE_1", "CAMBRE_SWITCH")
 
 
 def test_apply_electrical_layer_nuevas_tomas_format(tmp_path: Path) -> None:
@@ -251,7 +257,8 @@ def test_apply_removes_legacy_entities_and_purges_blocks(tmp_path: Path) -> None
     doc.saveas(src)
 
     result = apply_electrical_layer(src, out, [_placement(1000, 0)])
-    assert result["legacy_entities_removed"] == 6
+    # One blockref per legacy family plus the untagged stray line.
+    assert result["legacy_entities_removed"] == len(LEGACY_BLOCK_NAMES) + 1
     assert set(result["legacy_blocks_purged"]) == set(LEGACY_BLOCK_NAMES)
     saved = ezdxf.readfile(out)
     assert not [
@@ -266,15 +273,15 @@ def test_apply_versions_poisoned_symbol_block(tmp_path: Path) -> None:
     out = tmp_path / "safe.dxf"
     doc = ezdxf.new()
     doc.modelspace().add_line((0, 0), (5000, 0))
-    poisoned = doc.blocks.new("SYM_TOMA")
+    poisoned = doc.blocks.new("CBR_TOMA")
     poisoned.add_circle((0, 0), 100)
     doc.saveas(src)
 
     result = apply_electrical_layer(src, out, [_placement(1000, 0)])
-    assert result["blocks_used"] == ["SYM_TOMA__V2"]
+    assert result["blocks_used"] == ["CBR_TOMA__V2"]
     saved = ezdxf.readfile(out)
     insert = next(entity for entity in saved.modelspace() if entity.dxftype() == "INSERT")
-    assert insert.dxf.name == "SYM_TOMA__V2"
+    assert insert.dxf.name == "CBR_TOMA__V2"
 
 
 def test_apply_reports_degenerate_unknown_and_outside_placements(tmp_path: Path) -> None:
@@ -306,3 +313,79 @@ def test_apply_reports_degenerate_unknown_and_outside_placements(tmp_path: Path)
         "outside_room_polygon",
     ]
     assert result["outlets_added"] == 0
+
+
+def test_symbols_are_drawn_once_per_document_at_a_legible_paper_size(tmp_path: Path) -> None:
+    """One scale for every symbol, measured on the written geometry."""
+    from ezdxf import bbox as ezdxf_bbox
+
+    src = tmp_path / "rooms.dxf"
+    out = tmp_path / "wired.dxf"
+    doc = ezdxf.new()
+    doc.header["$INSUNITS"] = 6
+    doc.layers.new("MUROS")
+    msp = doc.modelspace()
+    for start, end in (
+        ((0, 0), (5, 0)),
+        ((5, 0), (5, 4)),
+        ((5, 4), (0, 4)),
+        ((0, 4), (0, 0)),
+    ):
+        msp.add_line(start, end, dxfattribs={"layer": "MUROS"})
+    doc.saveas(src)
+
+    polygon = {"vertices": [{"x": 0, "y": 0}, {"x": 5, "y": 0}, {"x": 5, "y": 4}, {"x": 0, "y": 4}]}
+    placements = [
+        {
+            "element": element,
+            "position": {"x": 1.0 + index, "y": 2.0},
+            "room_polygon": polygon,
+            "wall_normal": [0.0, 1.0],
+        }
+        for index, element in enumerate(("toma", "llave_3_puntos", "centro", "tablero"))
+    ]
+
+    result = apply_electrical_layer(src, out, placements)
+    assert result["outlets_added"] == 4
+    assert result["symbols_measured"] == 4
+    assert MIN_SYMBOL_PAPER_MM <= result["symbol_paper_mm_min"]
+    assert result["symbol_paper_mm_max"] <= MAX_SYMBOL_PAPER_MM
+
+    saved = ezdxf.readfile(out)
+    inserts = [
+        entity
+        for entity in saved.modelspace()
+        if entity.dxftype() == "INSERT" and entity.dxf.layer == OUTPUT_ELECTRICAL_LAYER_NAME
+    ]
+    assert {round(float(entity.dxf.xscale), 9) for entity in inserts} == {
+        round(result["symbol_scale"], 9),
+    }, "a single document-wide scale, not one per room run"
+    # 4.5 mm on paper at 1:100 is 0.45 m in a drawing measured in metres.
+    toma = next(entity for entity in inserts if entity.dxf.name == "CBR_TOMA")
+    extents = ezdxf_bbox.extents([toma], fast=True)
+    assert max(
+        float(extents.extmax.x - extents.extmin.x),
+        float(extents.extmax.y - extents.extmin.y),
+    ) == pytest.approx(0.45, abs=1e-6)
+
+
+def test_illegible_symbols_are_refused_instead_of_written(tmp_path: Path) -> None:
+    """The measured post-condition is the only thing that caught 200 m circles."""
+    from cad_worker.electrical_layer import _audit_drawn_symbols
+
+    src = tmp_path / "plan.dxf"
+    doc = ezdxf.new()
+    doc.layers.new(OUTPUT_ELECTRICAL_LAYER_NAME)
+    block = doc.blocks.new("CBR_TOMA")
+    block.add_circle((0, 0), 2.25)
+    doc.modelspace().add_blockref(
+        "CBR_TOMA",
+        (0, 0),
+        dxfattribs={"layer": OUTPUT_ELECTRICAL_LAYER_NAME, "xscale": 1.0, "yscale": 1.0},
+    )
+    doc.saveas(src)
+
+    # Declaring a scale 100x larger than the one actually applied makes every
+    # symbol measure 0.045 mm on paper.
+    with pytest.raises(RuntimeError, match="illegible"):
+        _audit_drawn_symbols(doc, OUTPUT_ELECTRICAL_LAYER_NAME, 100.0)

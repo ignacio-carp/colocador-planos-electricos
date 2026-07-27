@@ -22,6 +22,14 @@ INSUNITS_DRAWING_UNITS_PER_METER: dict[int, float] = {
 _EVIDENCE_SCORE_MIN = 0.65
 _OVERRIDE_MARGIN_MIN = 0.18
 
+# A dimension entity is not a heuristic: it states a real-world length the
+# architect vouched for. With enough of them the units are measured, not guessed,
+# so this family alone can settle the question — hence its own sample floor and
+# its promotion to two strong families in the override test.
+_DIMENSION_FAMILY = "dimensions"
+_DIMENSION_MIN_SAMPLES = 6
+_DIMENSION_DECISIVE_SCORE = 0.85
+
 
 @dataclass(frozen=True)
 class UnitResolution:
@@ -92,6 +100,38 @@ def _segment_lengths(geometry: dict[str, object], key: str) -> list[float]:
         if math.isfinite(length) and length > 1e-9:
             lengths.append(length)
     return _robust_values(lengths)
+
+
+def dimension_lengths(geometry: dict[str, object]) -> list[float]:
+    """Measured lengths (drawing units) of the plan's dimension entities."""
+    items = geometry.get("dimensiones")
+    if not isinstance(items, list):
+        return []
+    lengths: list[float] = []
+    for item in items:
+        if not isinstance(item, dict):
+            continue
+        value = _finite_positive(item.get("medida_du"))
+        if value is not None:
+            lengths.append(value)
+    return _robust_values(lengths)
+
+
+def _dimension_score(per_meter: float, lengths: list[float]) -> float:
+    """How architectural the dimensions look when read at this unit candidate.
+
+    A house is dimensioned in spans of roughly a metre to a dozen metres. Read at
+    the wrong unit the same numbers become centimetres or kilometres, and the
+    distribution says so immediately.
+    """
+    if len(lengths) < _DIMENSION_MIN_SAMPLES:
+        return 0.0
+    metres = sorted(length / per_meter for length in lengths)
+    median = statistics.median(metres)
+    p90 = _percentile(metres, 0.90)
+    median_score = _range_score(median, (0.8, 12.0), (0.25, 45.0))
+    spread_score = _range_score(p90, (1.0, 40.0), (0.4, 120.0))
+    return min(median_score, spread_score)
 
 
 def polygon_vertices(raw: object) -> list[tuple[float, float]]:
@@ -173,8 +213,11 @@ def _candidate_family_scores(
     opening_lengths: list[float],
     room_areas: list[float],
     room_minors: list[float],
+    dimension_values: list[float],
 ) -> dict[str, float]:
     family_scores: dict[str, float] = {}
+    if len(dimension_values) >= _DIMENSION_MIN_SAMPLES:
+        family_scores[_DIMENSION_FAMILY] = _dimension_score(per_meter, dimension_values)
     if wall_lengths:
         wall_m = statistics.median(wall_lengths) / per_meter
         family_scores["walls"] = _range_score(wall_m, (1.0, 12.0), (0.3, 30.0))
@@ -222,6 +265,7 @@ def resolve_drawing_units(
     wall_lengths = _segment_lengths(geometry, "paredes")
     opening_lengths = _segment_lengths(geometry, "aberturas")
     room_areas, room_minors = _room_statistics(rooms)
+    dimension_values = dimension_lengths(geometry)
 
     family_by_candidate: dict[int, dict[str, float]] = {}
     scores: dict[int, float] = {}
@@ -232,6 +276,7 @@ def resolve_drawing_units(
             opening_lengths,
             room_areas,
             room_minors,
+            dimension_values,
         )
         family_by_candidate[candidate] = families
         base = sum(families.values()) / len(families) if families else 0.0
@@ -245,7 +290,13 @@ def resolve_drawing_units(
     strong_families = [
         name for name, score in family_by_candidate[best].items() if score >= _EVIDENCE_SCORE_MIN
     ]
-    decisive = len(strong_families) >= 2 and margin >= _OVERRIDE_MARGIN_MIN
+    # Dimensions are a measurement of the drawing against itself, so a decisive
+    # dimension family counts as the two independent families an override needs.
+    dimension_decisive = (
+        family_by_candidate[best].get(_DIMENSION_FAMILY, 0.0) >= _DIMENSION_DECISIVE_SCORE
+    )
+    effective_strength = len(strong_families) + (1 if dimension_decisive else 0)
+    decisive = effective_strength >= 2 and margin >= _OVERRIDE_MARGIN_MIN
     header_supported = header in INSUNITS_DRAWING_UNITS_PER_METER
 
     if header_supported and header != best and not decisive:
@@ -254,10 +305,11 @@ def resolve_drawing_units(
         reason = "header retained: geometric evidence was not independently decisive"
     elif decisive:
         effective = best
-        confidence = min(0.99, 0.62 + 0.08 * len(strong_families) + margin * 0.2)
+        confidence = min(0.99, 0.62 + 0.08 * effective_strength + margin * 0.2)
         reason = (
-            f"geometry selected INSUNITS={best} from {len(strong_families)} "
-            f"independent evidence families (margin={margin:.3f})"
+            f"geometry selected INSUNITS={best} from {effective_strength} "
+            f"independent evidence families (margin={margin:.3f}"
+            f"{', dimensions decisive' if dimension_decisive else ''})"
         )
     elif header_supported:
         effective = int(header)

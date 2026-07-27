@@ -43,6 +43,8 @@ export type ElectricalElement = {
   catalog_sku: string | null
   source: string | null
   label: string | null
+  /** Inward normal of the wall the element sits on; drives symbol rotation. */
+  wall_normal?: [number, number] | null
 }
 
 export type RenderData = {
@@ -58,7 +60,7 @@ export type RenderData = {
     'pendiente' | 'procesando' | 'procesada' | 'error' | 'omitida'
   >
   electrical_elements?: ElectricalElement[]
-  /** Radius of electrical symbols in DXF drawing units (~3 cm diameter). */
+  /** Radius of electrical symbols in DXF drawing units, as written to the DXF. */
   electrical_symbol_radius_drawing_units?: number
 }
 

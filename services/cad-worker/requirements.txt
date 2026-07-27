@@ -3,3 +3,9 @@ matplotlib>=3.8,<4
 fastapi>=0.115,<1
 uvicorn[standard]>=0.30,<1
 python-multipart>=0.0.9,<1
+# Room detection: raster flood-fill (numpy/Pillow) + polygon algebra (shapely).
+# These are runtime dependencies, not dev extras — detect-rooms is part of the
+# preliminary pipeline and returns an explicit error without them.
+numpy>=1.26,<3
+pillow>=10,<12
+shapely>=2.0,<3

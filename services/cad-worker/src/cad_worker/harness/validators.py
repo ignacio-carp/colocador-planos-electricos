@@ -51,12 +51,37 @@ class Check:
         return data
 
 
-def _positions(result: dict[str, Any]) -> list[Point]:
+#: A placement list now carries three families of component. Outlet rules
+#: (count, spacing, clearance) only ever meant the first one, so the validators
+#: read the element instead of assuming everything is a tomacorriente.
+OUTLET_ELEMENTS = frozenset({"toma", "toma_doble", "toma_especial"})
+SWITCH_ELEMENTS = frozenset(
+    {"llave", "llave_2_puntos", "llave_3_puntos", "llave_combinacion"},
+)
+CEILING_ELEMENTS = frozenset({"centro"})
+
+
+def _element_of(item: dict[str, Any]) -> str:
+    element = item.get("element")
+    if isinstance(element, str) and element:
+        return element
+    return "toma" if item.get("outlet_type") else ""
+
+
+def _positions(result: dict[str, Any], elements: frozenset[str] | None = None) -> list[Point]:
     points: list[Point] = []
     for item in result.get("outlet_placements", []):
+        if elements is not None and _element_of(item) not in elements:
+            continue
         pos = item.get("position", {})
         points.append((float(pos.get("x", 0.0)), float(pos.get("y", 0.0))))
     return points
+
+
+def _placements_of(result: dict[str, Any], elements: frozenset[str]) -> list[dict[str, Any]]:
+    return [
+        item for item in result.get("outlet_placements", []) if _element_of(item) in elements
+    ]
 
 
 def _segments(geometry: dict[str, Any], key: str) -> list[tuple[Point, Point]]:
@@ -104,7 +129,7 @@ def validate_room(
         add("count_matches_rule", False, f"el colocador fallo con {error_code}")
         return checks
 
-    points = _positions(result)
+    points = _positions(result, OUTLET_ELEMENTS)
     walls = _segments(geometry, "paredes")
     openings = _segments(geometry, "aberturas")
 
@@ -113,6 +138,31 @@ def validate_room(
         len(points) == truth.expected_outlets,
         f"esperadas {truth.expected_outlets}, colocadas {len(points)}"
         f" (required={result.get('required_outlets')})",
+    )
+
+    ceiling = _positions(result, CEILING_ELEMENTS)
+    add(
+        "lighting_inside_room",
+        all(point_in_polygon(point, truth.polygon) for point in ceiling),
+        f"{len(ceiling)} centros de luz, todos dentro del polígono"
+        if ceiling
+        else "sin centros de luz",
+    )
+
+    switches = _placements_of(result, SWITCH_ELEMENTS)
+    add(
+        "switch_beside_door",
+        len(switches) == truth.expected_switches,
+        f"esperadas {truth.expected_switches} llaves, colocadas {len(switches)}",
+    )
+
+    wall_mounted = _placements_of(result, OUTLET_ELEMENTS | SWITCH_ELEMENTS)
+    oriented = [item for item in wall_mounted if item.get("wall_normal")]
+    add(
+        "wall_normal_present",
+        len(oriented) == len(wall_mounted),
+        f"{len(oriented)}/{len(wall_mounted)} componentes de pared traen normal"
+        " (sin ella el símbolo no puede rotarse hacia el ambiente)",
     )
     if fixture.expected_effective_insunits is not None:
         effective = result.get("effective_insunits")
@@ -463,7 +513,7 @@ def validate_drawn_output(
     )
 
     blocks_used = apply_result.get("blocks_used", [])
-    poison_ok = not fixture.expect_poison_versioned or "SYM_TOMA__V2" in blocks_used
+    poison_ok = not fixture.expect_poison_versioned or "CBR_TOMA__V2" in blocks_used
     checks.append(
         Check(
             fixture=fx,

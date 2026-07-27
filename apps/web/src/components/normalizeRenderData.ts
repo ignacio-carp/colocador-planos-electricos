@@ -44,6 +44,15 @@ export function normalizeRenderData(data: RenderData): RenderGeometry {
 }
 
 /** Normalize electrical elements (chat / rules placements) for the viewer overlay. */
+function parseWallNormal(raw: unknown): [number, number] | null {
+  if (!Array.isArray(raw) || raw.length < 2) return null
+  const x = Number(raw[0])
+  const y = Number(raw[1])
+  if (!Number.isFinite(x) || !Number.isFinite(y)) return null
+  if (Math.hypot(x, y) < 1e-9) return null
+  return [x, y]
+}
+
 export function normalizeElectricalElements(raw: unknown): ElectricalElement[] {
   if (!Array.isArray(raw)) return []
   const out: ElectricalElement[] = []
@@ -62,6 +71,7 @@ export function normalizeElectricalElements(raw: unknown): ElectricalElement[] {
       catalog_sku: typeof e.catalog_sku === 'string' ? e.catalog_sku : null,
       source: typeof e.source === 'string' ? e.source : null,
       label: typeof e.label === 'string' ? e.label : null,
+      wall_normal: parseWallNormal(e.wall_normal),
     })
   }
   return out

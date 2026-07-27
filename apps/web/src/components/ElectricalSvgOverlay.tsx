@@ -4,29 +4,51 @@ import type { ElectricalElement } from './PlanViewer2D'
 
 const LEGACY_TO_ELEMENT: Record<string, string> = {
   standard: 'toma',
-  double: 'toma',
+  double: 'toma_doble',
   switch: 'llave',
   dedicated_appliance: 'toma_especial',
   emergency: 'toma_especial',
 }
 
-/** Colors per element / outlet_type (matches cad-worker symbol catalog). */
+/**
+ * Colors per element, mirroring the ACI colours the worker puts on each INSERT
+ * so the preview and the delivered DXF read the same way.
+ */
 const SYMBOL_COLORS: Record<string, string> = {
   toma: '#dc2626',
+  toma_doble: '#dc2626',
   standard: '#dc2626',
-  double: '#b91c1c',
-  centro: '#dc2626',
-  brazo: '#dc2626',
-  llave: '#7c3aed',
-  switch: '#7c3aed',
+  double: '#dc2626',
+  centro: '#2563eb',
+  brazo: '#2563eb',
+  llave: '#c026d3',
+  llave_2_puntos: '#c026d3',
+  llave_3_puntos: '#c026d3',
+  llave_combinacion: '#c026d3',
+  switch: '#c026d3',
   toma_especial: '#ea580c',
   dedicated_appliance: '#ea580c',
-  emergency: '#16a34a',
+  emergency: '#ea580c',
   tablero: '#1f2937',
   puesta_tierra: '#059669',
 }
 
 const DEFAULT_COLOR = '#dc2626'
+
+/** Elements drawn on the ceiling keep the drawing's orientation. */
+const CEILING_ELEMENTS = new Set(['centro'])
+
+/**
+ * Rotation, in SVG degrees, that points the symbol's local +Y along the wall's
+ * inward normal. Screen Y grows downward, so the sign is flipped against the
+ * worker's model-space formula.
+ */
+function rotationFor(element: ElectricalElement, kind: string): number {
+  if (CEILING_ELEMENTS.has(kind)) return 0
+  const normal = element.wall_normal
+  if (!normal) return 0
+  return -(Math.atan2(normal[1], normal[0]) * (180 / Math.PI) - 90)
+}
 
 function resolveSymbolKind(element: ElectricalElement): string {
   if (element.element) return element.element
@@ -46,54 +68,91 @@ function worldLengthToScreen(
 
 type SymbolGlyphProps = {
   kind: string
-  x: number
-  y: number
   r: number
   color: string
   stroke: number
 }
 
-function SymbolGlyph({ kind, x, y, r, color, stroke }: SymbolGlyphProps) {
-  const legX = r * 0.4
-  const legTop = r * 0.25
-  const legBottom = r * 1.3
+/**
+ * Glyphs in the symbol's own frame: origin on the wall, body growing along -Y
+ * (screen up). Same conventions as cad_worker/symbol_geometry.py, so the
+ * preview cannot claim a shape the DXF does not contain. `r` is half the
+ * symbol's paper size, in screen pixels.
+ */
+function SymbolGlyph({ kind, r, color, stroke }: SymbolGlyphProps) {
+  const fill = 'rgba(255,255,255,0.85)'
+  const thin = stroke * 0.85
 
   if (kind === 'centro') {
-    return <circle cx={x} cy={y} r={r} fill={color} stroke={color} strokeWidth={stroke} />
-  }
-
-  if (kind === 'toma' || kind === 'standard' || kind === 'double') {
+    const d = r * Math.cos(Math.PI / 4)
     return (
       <>
-        <circle cx={x} cy={y} r={r} fill="rgba(255,255,255,0.85)" stroke={color} strokeWidth={stroke} />
-        <line x1={x - legX} y1={y + legTop} x2={x - legX} y2={y + legBottom} stroke={color} strokeWidth={stroke * 0.85} />
-        <line x1={x + legX} y1={y + legTop} x2={x + legX} y2={y + legBottom} stroke={color} strokeWidth={stroke * 0.85} />
+        <circle cx={0} cy={0} r={r} fill={fill} stroke={color} strokeWidth={stroke} />
+        <line x1={-d} y1={-d} x2={d} y2={d} stroke={color} strokeWidth={thin} />
+        <line x1={-d} y1={d} x2={d} y2={-d} stroke={color} strokeWidth={thin} />
+      </>
+    )
+  }
+
+  if (kind === 'toma' || kind === 'toma_doble' || kind === 'standard' || kind === 'double') {
+    const bodyR = r * 0.69
+    const cy = -(r * 2 - bodyR)
+    return (
+      <>
+        <line x1={-r * 0.28} y1={0} x2={-r * 0.28} y2={cy + bodyR} stroke={color} strokeWidth={thin} />
+        <line x1={r * 0.28} y1={0} x2={r * 0.28} y2={cy + bodyR} stroke={color} strokeWidth={thin} />
+        <circle cx={0} cy={cy} r={bodyR} fill={fill} stroke={color} strokeWidth={stroke} />
+        {kind === 'toma_doble' || kind === 'double' ? (
+          <line x1={0} y1={cy - bodyR} x2={0} y2={cy + bodyR} stroke={color} strokeWidth={thin} />
+        ) : null}
       </>
     )
   }
 
   if (kind === 'toma_especial' || kind === 'dedicated_appliance' || kind === 'emergency') {
-    const bar = r * 1.2
+    const bodyR = r * 0.64
+    const cy = -(r * 2 - bodyR)
     return (
       <>
-        <circle cx={x} cy={y} r={r} fill="rgba(255,255,255,0.85)" stroke={color} strokeWidth={stroke} />
-        <line x1={x - legX} y1={y + legTop} x2={x - legX} y2={y + legBottom} stroke={color} strokeWidth={stroke * 0.85} />
-        <line x1={x + legX} y1={y + legTop} x2={x + legX} y2={y + legBottom} stroke={color} strokeWidth={stroke * 0.85} />
-        <line x1={x - bar} y1={y + bar} x2={x + bar} y2={y + bar} stroke={color} strokeWidth={stroke * 0.85} />
+        <line x1={-r * 0.27} y1={0} x2={-r * 0.27} y2={cy + bodyR} stroke={color} strokeWidth={thin} />
+        <line x1={r * 0.27} y1={0} x2={r * 0.27} y2={cy + bodyR} stroke={color} strokeWidth={thin} />
+        <circle cx={0} cy={cy} r={bodyR} fill={fill} stroke={color} strokeWidth={stroke} />
+        <line x1={-r * 0.67} y1={-r * 0.33} x2={r * 0.67} y2={-r * 0.33} stroke={color} strokeWidth={thin} />
       </>
     )
   }
 
-  if (kind === 'llave' || kind === 'switch') {
-    const dot = r * 0.3
-    const ox = x - r * 0.85
-    const oy = y - r * 0.85
-    const tip = r * 0.7
+  if (kind.startsWith('llave') || kind === 'switch') {
+    const poles = kind === 'llave_3_puntos' ? 3 : kind === 'llave_2_puntos' ? 2 : 1
+    const tipX = r * 0.68
+    const tipY = -r * 1.0
+    const angle = Math.atan2(tipY, tipX)
+    const nx = -Math.sin(angle)
+    const ny = Math.cos(angle)
+    const tickLength = r * 0.2
     return (
       <>
-        <circle cx={ox} cy={oy} r={dot} fill={color} stroke={color} strokeWidth={stroke * 0.5} />
-        <line x1={ox} y1={oy} x2={x + tip} y2={y + tip} stroke={color} strokeWidth={stroke} />
-        <line x1={x + tip} y1={y + tip} x2={x + tip * 0.3} y2={y + tip * 1.35} stroke={color} strokeWidth={stroke} />
+        <circle cx={0} cy={0} r={r * 0.17} fill={color} stroke={color} strokeWidth={stroke * 0.5} />
+        <line x1={0} y1={0} x2={tipX} y2={tipY} stroke={color} strokeWidth={stroke} />
+        {Array.from({ length: poles }, (_, index) => {
+          const along = 0.62 + index * 0.34
+          const bx = tipX * along
+          const by = tipY * along
+          return (
+            <line
+              key={index}
+              x1={bx - nx * tickLength}
+              y1={by - ny * tickLength}
+              x2={bx + nx * tickLength}
+              y2={by + ny * tickLength}
+              stroke={color}
+              strokeWidth={thin}
+            />
+          )
+        })}
+        {kind === 'llave_combinacion' ? (
+          <line x1={0} y1={0} x2={tipX * 0.55} y2={tipY * 0.95} stroke={color} strokeWidth={thin} />
+        ) : null}
       </>
     )
   }
@@ -101,41 +160,49 @@ function SymbolGlyph({ kind, x, y, r, color, stroke }: SymbolGlyphProps) {
   if (kind === 'brazo') {
     return (
       <>
+        <line x1={-r} y1={0} x2={r} y2={0} stroke={color} strokeWidth={stroke} />
         <path
-          d={`M ${x - r} ${y} A ${r} ${r} 0 0 1 ${x + r} ${y}`}
+          d={`M ${-r * 0.84} 0 A ${r * 0.84} ${r * 0.84} 0 0 1 ${r * 0.84} 0`}
           fill="none"
           stroke={color}
           strokeWidth={stroke}
         />
-        <line x1={x - r} y1={y} x2={x + r} y2={y} stroke={color} strokeWidth={stroke} />
+        <line x1={0} y1={0} x2={0} y2={-r * 0.84} stroke={color} strokeWidth={thin} />
       </>
     )
   }
 
   if (kind === 'tablero') {
-    const w = r * 2
-    const h = r * 1.25
+    const halfWidth = r * 0.81
+    const height = r * 2
     return (
-      <rect
-        x={x - w / 2}
-        y={y - h / 2}
-        width={w}
-        height={h}
-        fill="rgba(255,255,255,0.85)"
-        stroke={color}
-        strokeWidth={stroke}
-      />
+      <>
+        <rect
+          x={-halfWidth}
+          y={-height}
+          width={halfWidth * 2}
+          height={height}
+          fill={fill}
+          stroke={color}
+          strokeWidth={stroke}
+        />
+        <line x1={-halfWidth} y1={0} x2={halfWidth} y2={-height} stroke={color} strokeWidth={thin} />
+      </>
     )
   }
 
-  // Fallback: legacy circle+cross
-  return (
-    <>
-      <circle cx={x} cy={y} r={r} fill="rgba(255,255,255,0.85)" stroke={color} strokeWidth={stroke} />
-      <line x1={x - r} y1={y} x2={x + r} y2={y} stroke={color} strokeWidth={stroke * 0.85} />
-      <line x1={x} y1={y - r} x2={x} y2={y + r} stroke={color} strokeWidth={stroke * 0.85} />
-    </>
-  )
+  if (kind === 'puesta_tierra') {
+    return (
+      <>
+        <line x1={0} y1={0} x2={0} y2={-r * 1.07} stroke={color} strokeWidth={stroke} />
+        <line x1={-r * 0.71} y1={0} x2={r * 0.71} y2={0} stroke={color} strokeWidth={thin} />
+        <line x1={-r * 0.47} y1={r * 0.33} x2={r * 0.47} y2={r * 0.33} stroke={color} strokeWidth={thin} />
+        <line x1={-r * 0.22} y1={r * 0.67} x2={r * 0.22} y2={r * 0.67} stroke={color} strokeWidth={thin} />
+      </>
+    )
+  }
+
+  return <circle cx={0} cy={0} r={r} fill={fill} stroke={color} strokeWidth={stroke} />
 }
 
 type Props = {
@@ -191,11 +258,11 @@ export default function ElectricalSvgOverlay({
         const stroke = Math.max(0.75, r * 0.18)
         const title = [element.label ?? kind, element.catalog_sku].filter(Boolean).join(' · ')
         return (
-          <g key={element.id}>
+          <g key={element.id} transform={`translate(${x} ${y}) rotate(${rotationFor(element, kind)})`}>
             <title>{title}</title>
-            <SymbolGlyph kind={kind} x={x} y={y} r={r} color={color} stroke={stroke} />
+            <SymbolGlyph kind={kind} r={r} color={color} stroke={stroke} />
             {element.source === 'chat' ? (
-              <circle cx={x + r} cy={y - r} r={Math.max(1.5, r * 0.2)} fill="#2563eb" />
+              <circle cx={r} cy={-r} r={Math.max(1.5, r * 0.2)} fill="#2563eb" />
             ) : null}
           </g>
         )

@@ -1,5 +1,5 @@
 {
-  "active_version": "cambre-tomas-2026.07.1",
+  "active_version": "cambre-completo-2026.07.2",
   "versions": [
     {
       "version": "cambre-normative-2026.05.1",
@@ -17,6 +17,12 @@
       "path": "2026.07.1/rules.json",
       "description": "Tomacorrientes por habitación — 3 secciones: estrategia, apliques/simbología, reglas por ambiente",
       "replaces": "cambre-vivienda-2026.06.3"
+    },
+    {
+      "version": "cambre-completo-2026.07.2",
+      "path": "2026.07.2/rules.json",
+      "description": "Tomas + centros de luz + llaves por ambiente. Sigue sin cubrir circuitos, tablero, cómputo ni canalización",
+      "replaces": "cambre-tomas-2026.07.1"
     }
   ]
 }

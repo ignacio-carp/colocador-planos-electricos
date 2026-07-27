@@ -93,6 +93,10 @@ export type RenderElectricalElement = {
   room_id: string | null
   position: Point2D
   outlet_type: string
+  /** Catalog element (toma, centro, llave_2_puntos, ...). Drives the symbol. */
+  element: string | null
+  /** Inward normal of the wall the element sits on; drives symbol rotation. */
+  wall_normal: [number, number] | null
   catalog_sku: string | null
   source: string | null
   label: string | null
@@ -102,6 +106,14 @@ export type RenderElectricalElement = {
  * Normalizes pipeline_metadata.outlet_placements (US-008 or chat-sourced)
  * into render-ready electrical elements for the viewer overlay.
  */
+function parseWallNormal(raw: unknown): [number, number] | null {
+  if (!Array.isArray(raw) || raw.length < 2) return null
+  const x = Number(raw[0])
+  const y = Number(raw[1])
+  if (!Number.isFinite(x) || !Number.isFinite(y) || Math.hypot(x, y) < 1e-9) return null
+  return [x, y]
+}
+
 export function normalizeElectricalElements(raw: unknown): RenderElectricalElement[] {
   if (!Array.isArray(raw)) return []
   const out: RenderElectricalElement[] = []
@@ -116,6 +128,8 @@ export function normalizeElectricalElements(raw: unknown): RenderElectricalEleme
       room_id: typeof p.room_id === 'string' ? p.room_id : null,
       position,
       outlet_type: typeof p.outlet_type === 'string' ? p.outlet_type : 'standard',
+      element: typeof p.element === 'string' ? p.element : null,
+      wall_normal: parseWallNormal(p.wall_normal),
       catalog_sku: typeof p.catalog_sku === 'string' ? p.catalog_sku : null,
       source: typeof p.source === 'string' ? p.source : null,
       label: typeof p.label === 'string' ? p.label : null,

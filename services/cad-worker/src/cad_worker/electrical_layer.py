@@ -23,7 +23,8 @@ from cad_worker.constants import (
     DEFAULT_OUTLET_BLOCK_NAME,
     GENERATOR_VERSION,
     LEGACY_BLOCK_NAMES,
-    OUTLET_BLOCK_RADIUS,
+    MAX_SYMBOL_PAPER_MM,
+    MIN_SYMBOL_PAPER_MM,
     OUTPUT_ELECTRICAL_LAYER_NAME,
 )
 from cad_worker.detect_rooms import detect_rooms_from_walls
@@ -31,13 +32,20 @@ from cad_worker.dxf_io import open_dxf_file, save_dxf_file
 from cad_worker.extract_geometry import extract_geometry, geometry_bounding_box, point_inside_bbox
 from cad_worker.geometry import point_in_polygon, point_seg_distance, polygon_edges
 from cad_worker.symbol_catalog import (
-    CROSS_ARM_RATIO,
     SymbolDef,
     UnknownPlacementKindError,
     compute_symbol_scale_resolution,
+    paper_mm_of,
+    paper_size_is_legible,
     read_dxf_insunits,
     resolve_placement_kind,
+    resolve_plot_scale,
     resolve_symbol,
+)
+from cad_worker.symbol_geometry import (
+    symbol_paper_extent,
+    symbol_primitives,
+    wall_rotation_degrees,
 )
 from cad_worker.unit_resolution import polygon_vertices, resolve_drawing_units
 
@@ -133,77 +141,25 @@ def _modelspace_entity_counts_by_layer(doc: Drawing, exclude_layers: set[str]) -
     return counts
 
 
-def _add_cross_arms(block: Any, radius: float, color_aci: int) -> None:
-    arm = radius * CROSS_ARM_RATIO
-    block.add_line((-arm, 0), (arm, 0), dxfattribs={"color": color_aci})
-    block.add_line((0, -arm), (0, arm), dxfattribs={"color": color_aci})
-
-
-def _add_toma_legs(block: Any, radius: float, color_aci: int) -> None:
-    """IRAM tomacorriente: circle + two vertical legs (NOT a cross)."""
-    leg_x = radius * 0.4
-    leg_top = radius * 0.25
-    leg_bottom = radius * 1.3
-    block.add_line((-leg_x, leg_top), (-leg_x, leg_bottom), dxfattribs={"color": color_aci})
-    block.add_line((leg_x, leg_top), (leg_x, leg_bottom), dxfattribs={"color": color_aci})
+#: Entities inside a block definition are drawn BYBLOCK so the INSERT's colour
+#: governs. That is what lets one catalog serve a plan recoloured per layer.
+BYBLOCK = 0
 
 
 def _populate_symbol_block(block: Any, symbol: SymbolDef) -> None:
-    color = symbol.color_aci
-    r = OUTLET_BLOCK_RADIUS
-    geom = symbol.geometry
-
-    if geom == "filled_circle":
-        block.add_circle((0, 0), r, dxfattribs={"color": color})
-    elif geom == "toma":
-        block.add_circle((0, 0), r, dxfattribs={"color": color})
-        _add_toma_legs(block, r, color)
-    elif geom == "toma_especial":
-        block.add_circle((0, 0), r, dxfattribs={"color": color})
-        _add_toma_legs(block, r, color)
-        bar = r * 1.2
-        block.add_line((-bar, -bar), (bar, -bar), dxfattribs={"color": color})
-    elif geom == "brazo":
-        block.add_arc((0, 0), r, 0, 180, dxfattribs={"color": color})
-        block.add_line((-r, 0), (r, 0), dxfattribs={"color": color})
-    elif geom == "llave":
-        dot = r * 0.3
-        block.add_circle((-r * 0.85, -r * 0.85), dot, dxfattribs={"color": color})
-        tip = r * 0.7
-        block.add_line((-r * 0.85, -r * 0.85), (tip, tip), dxfattribs={"color": color})
-        block.add_line((tip, tip), (tip * 0.3, tip * 1.35), dxfattribs={"color": color})
-    elif geom == "tablero":
-        w, h = r * 2.0, r * 1.25
-        block.add_line((-w / 2, -h / 2), (w / 2, -h / 2), dxfattribs={"color": color})
-        block.add_line((w / 2, -h / 2), (w / 2, h / 2), dxfattribs={"color": color})
-        block.add_line((w / 2, h / 2), (-w / 2, h / 2), dxfattribs={"color": color})
-        block.add_line((-w / 2, h / 2), (-w / 2, -h / 2), dxfattribs={"color": color})
-    elif geom == "puesta_tierra":
-        block.add_line((0, r), (0, 0), dxfattribs={"color": color})
-        block.add_line((-r * 0.8, 0), (r * 0.8, 0), dxfattribs={"color": color})
-        block.add_line((-r * 0.5, -r * 0.4), (r * 0.5, -r * 0.4), dxfattribs={"color": color})
-        block.add_line((-r * 0.2, -r * 0.8), (r * 0.2, -r * 0.8), dxfattribs={"color": color})
-    elif geom == "circle_cross":
-        block.add_circle((0, 0), r, dxfattribs={"color": color})
-        _add_cross_arms(block, r, color)
-    elif geom == "circle_cross_double":
-        block.add_circle((0, 0), r, dxfattribs={"color": color})
-        _add_cross_arms(block, r, color)
-        inner = r * 0.45
-        block.add_line((-inner, -inner), (inner, inner), dxfattribs={"color": color})
-        block.add_line((-inner, inner), (inner, -inner), dxfattribs={"color": color})
-    elif geom == "circle_s":
-        s = r * 0.55
-        block.add_circle((0, 0), r, dxfattribs={"color": color})
-        block.add_line((-s * 0.6, s * 0.5), (s * 0.6, -s * 0.5), dxfattribs={"color": color})
-        block.add_line((-s * 0.3, s * 0.8), (s * 0.8, -s * 0.2), dxfattribs={"color": color})
-    elif geom == "circle_cross_emergency":
-        block.add_circle((0, 0), r, dxfattribs={"color": color})
-        _add_cross_arms(block, r, color)
-        block.add_circle((0, 0), r * 0.35, dxfattribs={"color": color})
-    else:
-        block.add_circle((0, 0), r, dxfattribs={"color": color})
-        _add_toma_legs(block, r, color)
+    """Draw the symbol in millimetres of paper; the INSERT scale converts."""
+    attribs = {"color": BYBLOCK}
+    for primitive in symbol_primitives(symbol):
+        kind = primitive[0]
+        if kind == "circle":
+            _, cx, cy, radius = primitive
+            block.add_circle((cx, cy), radius, dxfattribs=attribs)
+        elif kind == "line":
+            _, x1, y1, x2, y2 = primitive
+            block.add_line((x1, y1), (x2, y2), dxfattribs=attribs)
+        elif kind == "arc":
+            _, cx, cy, radius, start, end = primitive
+            block.add_arc((cx, cy), radius, start, end, dxfattribs=attribs)
 
 
 def _create_symbol_block(doc: Drawing, block_name: str, symbol: SymbolDef) -> None:
@@ -225,15 +181,14 @@ def _block_footprint(doc: Drawing, block_name: str) -> float | None:
     return footprint if math.isfinite(footprint) and footprint > 1e-9 else None
 
 
-def _expected_symbol_footprint(symbol: SymbolDef) -> float:
-    scratch = ezdxf.new("R2010", setup=False)
-    _create_symbol_block(scratch, "__EXPECTED_SYMBOL__", symbol)
-    return _block_footprint(scratch, "__EXPECTED_SYMBOL__") or 2.0 * OUTLET_BLOCK_RADIUS
-
-
 def _block_matches_symbol(doc: Drawing, block_name: str, symbol: SymbolDef) -> bool:
+    """Whether an existing block of this name really is our symbol.
+
+    A file can already contain a block called CBR_TOMA drawn to a different size;
+    reusing it blindly is how a plan ends up with symbols of two sizes.
+    """
     actual = _block_footprint(doc, block_name)
-    expected = _expected_symbol_footprint(symbol)
+    expected = symbol_paper_extent(symbol)
     return actual is not None and abs(actual - expected) <= max(expected * 0.05, 1e-6)
 
 
@@ -262,10 +217,15 @@ def _ensure_symbol_block(doc: Drawing, symbol: SymbolDef) -> None:
 
 
 def _ensure_outlet_block(doc: Drawing, block_name: str, color_aci: int) -> None:
-    """Legacy helper — ensures standard circle+cross block."""
+    """Legacy helper — ensures a standard outlet block under a caller-chosen name."""
     _ensure_symbol_block(
         doc,
-        SymbolDef(block_name=block_name, geometry="circle_cross", color_aci=color_aci),
+        SymbolDef(
+            block_name=block_name,
+            geometry="toma",
+            color_aci=color_aci,
+            element="toma",
+        ),
     )
 
 
@@ -382,6 +342,73 @@ def _sha256_file(path: Path) -> str:
     return hashlib.sha256(path.read_bytes()).hexdigest()
 
 
+def _placement_rotation(item: dict[str, object], symbol: SymbolDef) -> float:
+    """Angle that turns the symbol to face the room it serves.
+
+    The placer already computes the inward normal of the wall it chose; carrying
+    it here is what makes an outlet's leads point into the wall instead of
+    sideways. Ceiling devices and placements without a normal stay unrotated.
+    """
+    if not symbol.rotates_with_wall:
+        return 0.0
+    normal = item.get("wall_normal")
+    if isinstance(normal, (list, tuple)) and len(normal) >= 2:
+        try:
+            return wall_rotation_degrees((float(normal[0]), float(normal[1])))
+        except (TypeError, ValueError):
+            return 0.0
+    angle = item.get("wall_angle_deg")
+    if isinstance(angle, (int, float)) and math.isfinite(float(angle)):
+        return float(angle)
+    return 0.0
+
+
+def _audit_drawn_symbols(
+    doc: Drawing,
+    layer_name: str,
+    symbol_scale: float,
+) -> dict[str, object]:
+    """Measure what was actually drawn and refuse to hand back an illegible plan.
+
+    Every earlier generation of this code computed a scale that looked right and
+    wrote symbols that were not: 200 m circles in one release, 3 cm in the next.
+    The only defence that holds is measuring the written geometry and failing
+    loudly, so a wrong size never reaches an architect as a silent output.
+    """
+    footprints_mm: list[float] = []
+    for entity in doc.modelspace():
+        if entity.dxftype() != "INSERT" or str(entity.dxf.layer) != layer_name:
+            continue
+        try:
+            extents = ezdxf_bbox.extents([entity], fast=True)
+        except Exception:  # noqa: BLE001
+            continue
+        if not extents.has_data:
+            continue
+        footprint_du = max(
+            float(extents.extmax.x - extents.extmin.x),
+            float(extents.extmax.y - extents.extmin.y),
+        )
+        footprints_mm.append(paper_mm_of(footprint_du, symbol_scale))
+
+    if not footprints_mm:
+        return {"symbols_measured": 0}
+
+    illegible = [value for value in footprints_mm if not paper_size_is_legible(value)]
+    if illegible:
+        raise RuntimeError(
+            "Refusing to write an illegible electrical layer: "
+            f"{len(illegible)} of {len(footprints_mm)} symbols measure "
+            f"{min(illegible):.2f}–{max(illegible):.2f} mm on paper, outside the "
+            f"[{MIN_SYMBOL_PAPER_MM}, {MAX_SYMBOL_PAPER_MM}] mm legibility band",
+        )
+    return {
+        "symbols_measured": len(footprints_mm),
+        "symbol_paper_mm_min": round(min(footprints_mm), 3),
+        "symbol_paper_mm_max": round(max(footprints_mm), 3),
+    }
+
+
 def apply_electrical_layer(
     input_path: Path,
     output_path: Path,
@@ -485,20 +512,21 @@ def apply_electrical_layer(
         if kind not in resolved_blocks:
             resolved_blocks[kind] = _ensure_safe_symbol_block(doc, symbol)
 
-    base_footprints = [
-        footprint
-        for block_name in resolved_blocks.values()
-        if (footprint := _block_footprint(doc, block_name)) is not None
-    ]
-    max_base_footprint = max(base_footprints, default=2.0 * OUTLET_BLOCK_RADIUS)
+    # One scale for the whole document. Computing it per room made the same plan
+    # carry symbols of different sizes depending on when each room was processed.
+    plot_scale = resolve_plot_scale(geometry)
+    largest_paper_mm = max(
+        (footprint for block_name in resolved_blocks.values()
+         if (footprint := _block_footprint(doc, block_name)) is not None),
+        default=float(MAX_SYMBOL_PAPER_MM),
+    )
     scale_resolution = compute_symbol_scale_resolution(
         unit_resolution,
         resolution_polygons,
-        bbox,
-        base_footprint=max_base_footprint,
+        plot_scale=plot_scale,
+        paper_mm=largest_paper_mm,
     )
     symbol_scale = scale_resolution.final_scale
-    symbol_radius = symbol_scale * OUTLET_BLOCK_RADIUS
 
     target_room_ids = {
         str(room_id or item.get("room_id") or BATCH_ROOM_ID)
@@ -532,7 +560,7 @@ def apply_electrical_layer(
 
     msp = doc.modelspace()
     added = 0
-    for x, y, item, _symbol, _index in accepted:
+    for x, y, item, symbol, _index in accepted:
         kind = resolve_placement_kind(item)
         block_name = resolved_blocks[kind]
         blocks_used.add(block_name)
@@ -544,6 +572,10 @@ def apply_electrical_layer(
                 "xscale": symbol_scale,
                 "yscale": symbol_scale,
                 "zscale": symbol_scale,
+                "rotation": _placement_rotation(item, symbol),
+                # Colour on the INSERT, BYBLOCK inside the definition: one block
+                # per symbol serves every colour scheme.
+                "color": symbol.color_aci,
             },
         )
         entity_room_id = str(room_id or item.get("room_id") or BATCH_ROOM_ID)
@@ -563,6 +595,9 @@ def apply_electrical_layer(
             "Source modelspace entities were modified; US-009 requires non-destructive layer add",
         )
 
+    # Measured before the file is written: an illegible layer is never saved.
+    symbol_audit = _audit_drawn_symbols(doc, layer_name, symbol_scale)
+
     save_dxf_file(doc, output_path)
 
     result: dict[str, Any] = {
@@ -572,7 +607,8 @@ def apply_electrical_layer(
         "layer": layer_name,
         "block_name": config.block_name,
         "symbol_scale": symbol_scale,
-        "symbol_radius_drawing_units": symbol_radius,
+        "plot_scale": scale_resolution.plot_scale,
+        **symbol_audit,
         "drawing_insunits": header_insunits,
         "header_insunits": unit_resolution.header_insunits,
         "effective_insunits": unit_resolution.effective_insunits,
@@ -587,8 +623,8 @@ def apply_electrical_layer(
         "scale_clamped": scale_resolution.scale_clamped,
         "clamp_reason": scale_resolution.clamp_reason,
         "room_median_minor_dimension_m": scale_resolution.room_median_minor_dimension_m,
-        "nominal_symbol_footprint_m": scale_resolution.nominal_footprint_m,
-        "final_symbol_footprint_m": scale_resolution.final_footprint_m,
+        "nominal_symbol_paper_mm": scale_resolution.nominal_paper_mm,
+        "final_symbol_paper_mm": scale_resolution.final_paper_mm,
         "legacy_entities_removed": legacy_entities_removed,
         "legacy_blocks_purged": legacy_blocks_purged,
         "placements_rejected": placements_rejected,

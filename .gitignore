@@ -45,5 +45,11 @@ __pycache__/
 venv/
 **/*.egg-info/
 
+# Real-plan corpus (client CAD files: never committed, several MB each).
+# The harness skips its real-plan gates when this directory is absent, so CI
+# stays green without them. See docs/placement-spec/README.md.
+fixtures/real/
+docs/placement-spec/renders/
+
 # Others
 .gitignore.local

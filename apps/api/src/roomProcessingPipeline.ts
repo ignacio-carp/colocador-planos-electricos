@@ -182,7 +182,14 @@ function filterPlacementsForRoom(
 function roomTypeFromLayout(
   visionLayout: Record<string, unknown> | undefined,
   roomId: string,
+  detectedRoomTypes?: Record<string, string>,
 ): string {
+  // The US-007 contract's room_type enum is coarse (lavadero and vestidor both
+  // collapse to "storage"), so the detector's own type wins when it exists —
+  // that is what the normative rules are keyed on.
+  const detected = detectedRoomTypes?.[roomId]
+  if (typeof detected === 'string' && detected.trim()) return detected
+
   const interpretation = visionLayout?.layout_interpretation as { rooms?: unknown[] } | undefined
   const rooms =
     interpretation?.rooms ?? (Array.isArray(visionLayout?.rooms) ? visionLayout.rooms : [])
@@ -214,6 +221,7 @@ async function runDeterministicPlacementForRoom(params: {
   roomPolygon: unknown
   rulesVersion: string
   processingInstruction?: string
+  detectedRoomTypes?: Record<string, string>
 }): Promise<{
   outletPlacements: unknown[]
   rulesVersion: string
@@ -246,7 +254,11 @@ async function runDeterministicPlacementForRoom(params: {
   const payload: Record<string, unknown> = {
     room: {
       id: params.roomId,
-      room_type: roomTypeFromLayout(params.visionLayout, params.roomId),
+      room_type: roomTypeFromLayout(
+        params.visionLayout,
+        params.roomId,
+        params.detectedRoomTypes,
+      ),
       polygon: params.roomPolygon,
     },
     geometry,
@@ -288,6 +300,7 @@ async function runUs008ForRoom(params: {
   processingInstruction?: string
   viewportImageDataUrl?: string
   drawingUnitsPerMeter?: number | null
+  detectedRoomTypes?: Record<string, string>
 }): Promise<{
   outletPlacements: unknown[]
   rulesVersion: string
@@ -315,6 +328,7 @@ async function runUs008ForRoom(params: {
       roomPolygon,
       rulesVersion,
       processingInstruction: params.processingInstruction,
+      detectedRoomTypes: params.detectedRoomTypes,
     })
   }
 
@@ -524,6 +538,9 @@ export async function runRoomProcessingPipeline(
             processingInstruction: options?.processingInstruction,
             viewportImageDataUrl: options?.viewportImageDataUrl,
             drawingUnitsPerMeter: resolveDrawingUnitsPerMeter(currentMeta),
+            detectedRoomTypes: (
+              currentMeta.detected_rooms as { room_types?: Record<string, string> } | undefined
+            )?.room_types,
           })
 
       const mergedPlacements = options?.skipUs008
