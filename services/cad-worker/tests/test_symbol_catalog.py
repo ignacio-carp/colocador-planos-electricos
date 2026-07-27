@@ -122,6 +122,7 @@ def test_scale_converts_paper_millimetres_to_drawing_units() -> None:
 def test_room_relative_cap_reduces_the_symbol_in_a_tiny_room() -> None:
     geometry = {"paredes": [{"inicio": [0, 0], "fin": [3000, 0]}]}
     room = {"vertices": [[0, 0], [1500, 0], [1500, 2000], [0, 2000]]}
+    resolution = resolve_drawing_units(4, geometry, [room])
     scale = compute_symbol_scale_resolution(
         resolve_drawing_units(4, geometry, [room]),
         [room],
@@ -129,9 +130,30 @@ def test_room_relative_cap_reduces_the_symbol_in_a_tiny_room() -> None:
         paper_mm=4.5,
     )
     assert scale.scale_clamped is True
-    assert scale.clamp_reason == "room_relative_footprint"
-    # The cap is a pure ratio: 15% of the 1.5 m minor dimension.
-    assert 4.5 * scale.final_scale <= 0.15 * 1500 + 1e-9
+    assert scale.clamp_reason in ("room_relative_footprint", "room_relative_footprint_floored")
+    assert scale.final_scale < scale.nominal_scale
+    if scale.clamp_reason == "room_relative_footprint":
+        # The cap is a pure ratio: 15% of the 1.5 m minor dimension.
+        assert 4.5 * scale.final_scale <= 0.15 * 1500 + 1e-9
+
+
+def test_legibility_floor_stops_a_tiny_room_from_hiding_the_symbol() -> None:
+    """A 1 m² toilette gets a symbol that overflows it, not one nobody can read.
+
+    Only when the units are trustworthy: the floor is denominated in them, so
+    under a wrong resolution it would inflate instead of protect.
+    """
+    geometry = {
+        "paredes": [{"inicio": [0, 0], "fin": [4000, 0]}, {"inicio": [0, 0], "fin": [0, 3000]}],
+        "dimensiones": [{"medida_du": 1000.0 * n, "dimlfac": 1.0} for n in (1, 2, 3, 4, 5, 6, 7)],
+    }
+    room = {"vertices": [[0, 0], [1000, 0], [1000, 1000], [0, 1000]]}
+    resolution = resolve_drawing_units(4, geometry, [room])
+    assert resolution.confidence >= 0.5, "el caso necesita unidades confiables"
+
+    scale = compute_symbol_scale_resolution(resolution, [room], plot_scale=100.0, paper_mm=4.5)
+    assert scale.clamp_reason == "room_relative_footprint_floored"
+    assert scale.final_paper_mm == pytest.approx(MIN_SYMBOL_PAPER_MM)
 
 
 def test_room_relative_cap_still_bounds_the_symbol_under_wrong_units() -> None:

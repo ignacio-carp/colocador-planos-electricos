@@ -59,8 +59,14 @@ def test_apply_electrical_layer_adds_block_inserts(tmp_path: Path) -> None:
     ]
     inserts = [e for e in out_doc.modelspace() if e.dxftype() == "INSERT"]
     assert len(inserts) >= 1
-    lines = [e for e in out_doc.modelspace() if e.dxftype() == "LINE"]
-    assert len(lines) == 1
+    # The source drawing is untouched; the symbology legend adds its own geometry
+    # on the electrical layer.
+    source_lines = [
+        e
+        for e in out_doc.modelspace()
+        if e.dxftype() == "LINE" and e.dxf.layer != OUTPUT_ELECTRICAL_LAYER_NAME
+    ]
+    assert len(source_lines) == 1
 
 
 def test_apply_electrical_layer_uses_outlet_type_block(tmp_path: Path) -> None:
@@ -369,11 +375,7 @@ def test_symbols_are_drawn_once_per_document_at_a_legible_paper_size(tmp_path: P
     ) == pytest.approx(0.45, abs=1e-6)
 
 
-def test_illegible_symbols_are_refused_instead_of_written(tmp_path: Path) -> None:
-    """The measured post-condition is the only thing that caught 200 m circles."""
-    from cad_worker.electrical_layer import _audit_drawn_symbols
-
-    src = tmp_path / "plan.dxf"
+def _doc_with_one_symbol(scale: float) -> ezdxf.document.Drawing:
     doc = ezdxf.new()
     doc.layers.new(OUTPUT_ELECTRICAL_LAYER_NAME)
     block = doc.blocks.new("CBR_TOMA")
@@ -381,11 +383,42 @@ def test_illegible_symbols_are_refused_instead_of_written(tmp_path: Path) -> Non
     doc.modelspace().add_blockref(
         "CBR_TOMA",
         (0, 0),
-        dxfattribs={"layer": OUTPUT_ELECTRICAL_LAYER_NAME, "xscale": 1.0, "yscale": 1.0},
+        dxfattribs={"layer": OUTPUT_ELECTRICAL_LAYER_NAME, "xscale": scale, "yscale": scale},
     )
-    doc.saveas(src)
+    return doc
 
-    # Declaring a scale 100x larger than the one actually applied makes every
-    # symbol measure 0.045 mm on paper.
-    with pytest.raises(RuntimeError, match="illegible"):
-        _audit_drawn_symbols(doc, OUTPUT_ELECTRICAL_LAYER_NAME, 100.0)
+
+def test_oversized_symbols_are_refused_instead_of_written() -> None:
+    """Oversize is the direction that produced 200 m circles: no plan beats that plan."""
+    from cad_worker.electrical_layer import _audit_drawn_symbols
+
+    # Drawn 100x larger than the nominal scale implies: 450 mm on paper.
+    doc = _doc_with_one_symbol(100.0)
+    with pytest.raises(RuntimeError, match="oversized"):
+        _audit_drawn_symbols(doc, OUTPUT_ELECTRICAL_LAYER_NAME, 1.0)
+
+
+def test_undersized_symbols_are_reported_not_refused() -> None:
+    """A small symbol is a warning; refusing would deliver nothing at all."""
+    from cad_worker.electrical_layer import _audit_drawn_symbols
+
+    doc = _doc_with_one_symbol(1.0)
+    audit = _audit_drawn_symbols(doc, OUTPUT_ELECTRICAL_LAYER_NAME, 10.0)
+    assert audit["symbols_measured"] == 1
+    assert audit["symbols_below_legibility"] == 1
+    assert "menos de" in str(audit["symbol_audit_warning"])
+
+
+def test_audit_measures_against_the_nominal_scale_not_the_applied_one() -> None:
+    """Dividing by the applied scale made the check tautological.
+
+    It returned the block's declared size no matter how the symbol had been
+    resized, so it could never catch the failure it exists to catch.
+    """
+    from cad_worker.electrical_layer import _audit_drawn_symbols
+
+    # Block is 4.5 units wide; drawn at half the nominal scale it covers half
+    # the paper it should.
+    doc = _doc_with_one_symbol(0.5)
+    audit = _audit_drawn_symbols(doc, OUTPUT_ELECTRICAL_LAYER_NAME, 1.0)
+    assert audit["symbol_paper_mm_max"] == pytest.approx(2.25)

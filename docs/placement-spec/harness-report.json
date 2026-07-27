@@ -3016,13 +3016,13 @@
         "rooms_wired": 24,
         "components": {
           "centro": 40,
-          "llave": 9,
+          "llave": 12,
           "llave_2_puntos": 2,
           "llave_3_puntos": 2,
-          "toma": 44
+          "toma": 45
         },
         "room_errors": [],
-        "output_dxf": "/tmp/cambre-harness-ms8rr99q/real/cambre-vivienda-contaminado-electrico.dxf",
+        "output_dxf": "/tmp/cambre-harness-_hgk5cys/real/cambre-vivienda-contaminado-electrico.dxf",
         "render_png": null,
         "error": null,
         "gates": [
@@ -3039,17 +3039,17 @@
           {
             "gate": "G2_size",
             "ok": true,
-            "detail": "97 símbolos entre 4.277 y 5.294 mm de papel (banda [3.0, 5.5]), escala única 0.1"
+            "detail": "101 símbolos entre 4.176 y 5.291 mm de papel (banda [3.0, 5.5]), escala única 0.1"
           },
           {
             "gate": "G3_orientation",
             "ok": true,
-            "detail": "57/57 componentes de pared con normal de pared"
+            "detail": "61/61 componentes de pared con normal de pared"
           },
           {
             "gate": "G4_placement",
             "ok": true,
-            "detail": "97 componentes dibujados en 27 ambientes, 0 fuera de su polígono, 0 rechazos en total"
+            "detail": "101 componentes dibujados en 27 ambientes, 0 fuera de su polígono, 0 rechazos en total"
           },
           {
             "gate": "G6_hygiene",
@@ -3059,7 +3059,7 @@
           {
             "gate": "G6_idempotence",
             "ok": true,
-            "detail": "primera corrida 97 inserts, segunda 97"
+            "detail": "primera corrida 101 inserts, segunda 101"
           }
         ]
       },
@@ -3070,13 +3070,13 @@
         "rooms_wired": 24,
         "components": {
           "centro": 40,
-          "llave": 9,
+          "llave": 12,
           "llave_2_puntos": 2,
           "llave_3_puntos": 2,
-          "toma": 44
+          "toma": 45
         },
         "room_errors": [],
-        "output_dxf": "/tmp/cambre-harness-ms8rr99q/real/cambre-vivienda-limpio-electrico.dxf",
+        "output_dxf": "/tmp/cambre-harness-_hgk5cys/real/cambre-vivienda-limpio-electrico.dxf",
         "render_png": null,
         "error": null,
         "gates": [
@@ -3093,17 +3093,17 @@
           {
             "gate": "G2_size",
             "ok": true,
-            "detail": "97 símbolos entre 4.277 y 5.294 mm de papel (banda [3.0, 5.5]), escala única 0.1"
+            "detail": "101 símbolos entre 4.176 y 5.291 mm de papel (banda [3.0, 5.5]), escala única 0.1"
           },
           {
             "gate": "G3_orientation",
             "ok": true,
-            "detail": "57/57 componentes de pared con normal de pared"
+            "detail": "61/61 componentes de pared con normal de pared"
           },
           {
             "gate": "G4_placement",
             "ok": true,
-            "detail": "97 componentes dibujados en 27 ambientes, 0 fuera de su polígono, 0 rechazos en total"
+            "detail": "101 componentes dibujados en 27 ambientes, 0 fuera de su polígono, 0 rechazos en total"
           },
           {
             "gate": "G6_hygiene",
@@ -3113,7 +3113,7 @@
           {
             "gate": "G6_idempotence",
             "ok": true,
-            "detail": "primera corrida 97 inserts, segunda 97"
+            "detail": "primera corrida 101 inserts, segunda 101"
           }
         ]
       },
@@ -3124,13 +3124,13 @@
         "rooms_wired": 24,
         "components": {
           "centro": 40,
-          "llave": 9,
+          "llave": 12,
           "llave_2_puntos": 2,
           "llave_3_puntos": 2,
-          "toma": 44
+          "toma": 45
         },
         "room_errors": [],
-        "output_dxf": "/tmp/cambre-harness-ms8rr99q/real/cambre-vivienda-simbolos-3cm-electrico.dxf",
+        "output_dxf": "/tmp/cambre-harness-_hgk5cys/real/cambre-vivienda-simbolos-3cm-electrico.dxf",
         "render_png": null,
         "error": null,
         "gates": [
@@ -3147,17 +3147,17 @@
           {
             "gate": "G2_size",
             "ok": true,
-            "detail": "97 símbolos entre 4.277 y 5.294 mm de papel (banda [3.0, 5.5]), escala única 0.1"
+            "detail": "101 símbolos entre 4.176 y 5.291 mm de papel (banda [3.0, 5.5]), escala única 0.1"
           },
           {
             "gate": "G3_orientation",
             "ok": true,
-            "detail": "57/57 componentes de pared con normal de pared"
+            "detail": "61/61 componentes de pared con normal de pared"
           },
           {
             "gate": "G4_placement",
             "ok": true,
-            "detail": "97 componentes dibujados en 27 ambientes, 0 fuera de su polígono, 0 rechazos en total"
+            "detail": "101 componentes dibujados en 27 ambientes, 0 fuera de su polígono, 0 rechazos en total"
           },
           {
             "gate": "G6_hygiene",
@@ -3167,7 +3167,7 @@
           {
             "gate": "G6_idempotence",
             "ok": true,
-            "detail": "primera corrida 97 inserts, segunda 97"
+            "detail": "primera corrida 101 inserts, segunda 101"
           }
         ]
       },

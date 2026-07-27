@@ -64,6 +64,8 @@ type WorkspaceSummary = {
   rooms: Room[]
   preliminary_recommendations: PreliminaryRecommendation[]
   preliminary_analysis_warnings?: string[]
+  /** Why the geometric room detector did not answer, when it did not. */
+  room_detection_failure?: string | null
   room_processing_state: RoomProcessingState
   room_processing_runs?: RoomProcessingRun[]
   normative_rules_version: string | null
@@ -622,6 +624,24 @@ export default function JobDetail({ jobId, onNavigate }: JobDetailProps) {
               startingAnalysis={startingAnalysis}
               onReprocess={() => void startPreliminaryAnalysis()}
             />
+          ) : null}
+
+          {workspace?.preliminary_analysis_warnings?.includes('ROOMS_FROM_VISION_MODEL') ? (
+            <div className="mb-6 rounded-xl border border-outline-variant bg-surface-container-low px-6 py-4">
+              <p className="text-body-sm font-bold text-on-surface">
+                Ambientes estimados por IA, no medidos del plano
+              </p>
+              <p className="mt-1 text-body-sm text-on-surface-variant">
+                El detector geométrico no pudo segmentar este plano, así que los ambientes los
+                estimó un modelo a partir de la imagen. Las posiciones de los componentes van a
+                ser aproximadas y pueden cambiar entre corridas.
+                {workspace?.room_detection_failure ? (
+                  <span className="text-technical-label mt-2 block text-outline">
+                    {workspace.room_detection_failure}
+                  </span>
+                ) : null}
+              </p>
+            </div>
           ) : null}
 
           {isAnalyzing(job.status) ? (

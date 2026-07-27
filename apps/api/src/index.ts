@@ -742,6 +742,9 @@ app.get(
       room_processing_runs: meta.room_processing_runs ?? [],
       preliminary_analysis_completed_at: meta.preliminary_analysis_completed_at ?? null,
       preliminary_analysis_warnings: meta.preliminary_analysis_warnings ?? [],
+      // Present only when the rooms came from the vision model instead of the
+      // drawing's own geometry, so the architect can tell the two apart.
+      room_detection_failure: meta.room_detection_failure ?? null,
       normative_rules_version: meta.normative_rules_version ?? null,
       outlet_placements: meta.outlet_placements ?? [],
       layer_suggestions: layerSuggestions,
