@@ -131,8 +131,17 @@ def main(argv: list[str] | None = None) -> None:
     p_harness = subparsers.add_parser(
         "harness",
         help=(
-            "Verification loop: synthetic fixtures -> deterministic pipeline "
-            "-> geometric validators -> pass/fail report."
+            "Verification loop: synthetic fixtures and the real-plan corpus "
+            "-> deterministic pipeline -> geometric validators -> pass/fail report."
+        ),
+    )
+    p_harness.add_argument(
+        "--render-real",
+        action="store_true",
+        dest="render_real",
+        help=(
+            "Also rasterize each real plan to PNG for eyeball review. Slow: "
+            "rendering a 5 MB studio drawing costs more than every gate combined."
         ),
     )
     p_harness.add_argument(
@@ -176,7 +185,7 @@ def main(argv: list[str] | None = None) -> None:
     if args.command == "harness":
         from cad_worker.harness.runner import harness_cmd
 
-        raise SystemExit(harness_cmd(args.out_dir, args.report))
+        raise SystemExit(harness_cmd(args.out_dir, args.report, args.render_real))
 
     raise SystemExit(2)
 

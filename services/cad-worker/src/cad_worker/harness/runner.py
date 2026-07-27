@@ -83,7 +83,56 @@ def _placements_snapshot(results: dict[str, Any | None]) -> str:
     )
 
 
-def run_harness(work_dir: Path, report_path: Path | None = None) -> dict[str, Any]:
+#: Real plans that cannot be solved honestly, with the reason. Keeping them in
+#: the corpus is the point: the engine must fail loudly, not invent a layout.
+EXPECTED_REAL_FAILURES = {
+    "traslado-st.dxf": "layout industrial sin capa de muros reconocible",
+}
+
+
+def _real_plan_root() -> Path | None:
+    for parent in [Path(__file__).resolve(), *Path(__file__).resolve().parents]:
+        candidate = parent / "fixtures" / "real"
+        if candidate.is_dir():
+            return candidate
+    return None
+
+
+def _run_real_plans(work_dir: Path, *, render: bool = False) -> dict[str, Any]:
+    """Grade the acceptance gates on real studio DXFs, when the corpus is present.
+
+    Rendering is off by default: rasterizing a 5 MB studio drawing costs more
+    than every gate combined, and the gates are what must run on every change.
+    Ask for it from the CLI when you want the images to look at.
+    """
+    from cad_worker.harness.real_plans import discover_real_plans, run_real_plan
+
+    root = _real_plan_root()
+    plans = discover_real_plans(root) if root else []
+    if not plans:
+        return {
+            "status": "skipped",
+            "reason": "fixtures/real/ no está presente (archivos CAD de cliente, no se commitean)",
+            "plans": [],
+        }
+
+    out_dir = Path(work_dir) / "real"
+    results: list[dict[str, Any]] = []
+    for plan in plans:
+        report = run_real_plan(plan, out_dir, render=render).as_dict()
+        expected = EXPECTED_REAL_FAILURES.get(plan.name)
+        if expected:
+            report["expected_fail"] = expected
+        results.append(report)
+    return {"status": "ok", "root": str(root), "plans": results}
+
+
+def run_harness(
+    work_dir: Path,
+    report_path: Path | None = None,
+    *,
+    render_real: bool = False,
+) -> dict[str, Any]:
     work_dir = Path(work_dir)
     rules = _find_rules_bundle()
     all_checks: list[Check] = []
@@ -148,15 +197,24 @@ def run_harness(work_dir: Path, report_path: Path | None = None) -> dict[str, An
             },
         )
 
+    real_plans = _run_real_plans(work_dir, render=render_real)
+
     passed = sum(1 for c in all_checks if c.ok)
     report: dict[str, Any] = {
         "mode": "deterministic",
         "ruleset": rules.get("version"),
         "fixtures": fixture_reports,
+        "real_plans": real_plans,
         "summary": {
             "total_checks": len(all_checks),
             "passed": passed,
             "failed": len(all_checks) - passed,
+            "real_plans_run": len(real_plans["plans"]),
+            "real_plans_failed": sum(
+                1
+                for plan in real_plans["plans"]
+                if not plan["ok"] and not plan.get("expected_fail")
+            ),
         },
         "baseline": {
             "mode": "llm",
@@ -182,22 +240,49 @@ def print_report(report: dict[str, Any]) -> None:
             mark = "PASS" if check["ok"] else "FAIL"
             room = f" [{check['room_id']}]" if check.get("room_id") else ""
             print(f"  {mark:4} {check['check']}{room}: {check['detail']}")
+    real = report.get("real_plans") or {}
+    if real.get("status") == "ok":
+        print("\n== planos reales")
+        for plan in real["plans"]:
+            mark = "PASS" if plan["ok"] else ("XFAIL" if plan.get("expected_fail") else "FAIL")
+            print(
+                f"  {mark:5} {plan['plan']}: {plan['rooms_wired']}/{plan['rooms_detected']}"
+                f" ambientes cableados, componentes {plan['components']}",
+            )
+            for gate in plan["gates"]:
+                print(f"        {'ok ' if gate['ok'] else 'FAIL'} {gate['gate']}: {gate['detail']}")
+            if plan.get("expected_fail"):
+                print(f"        fallo esperado: {plan['expected_fail']}")
+    elif real:
+        print(f"\n== planos reales: {real.get('status')} — {real.get('reason')}")
+
     summary = report["summary"]
     print(
         f"\nTOTAL: {summary['passed']}/{summary['total_checks']} checks OK"
         f" — {summary['failed']} fallidos (ruleset {report.get('ruleset')})",
     )
+    if summary.get("real_plans_run"):
+        print(
+            f"PLANOS REALES: {summary['real_plans_run']} corridos, "
+            f"{summary['real_plans_failed']} fallidos",
+        )
 
 
-def harness_cmd(out_dir: str | None, report: str | None) -> int:
+def harness_cmd(out_dir: str | None, report: str | None, render_real: bool = False) -> int:
     import tempfile
 
     if out_dir:
         work_dir = Path(out_dir)
         work_dir.mkdir(parents=True, exist_ok=True)
-        result = run_harness(work_dir, Path(report) if report else None)
+        result = run_harness(work_dir, Path(report) if report else None, render_real=render_real)
     else:
         with tempfile.TemporaryDirectory(prefix="cambre-harness-") as tmp:
-            result = run_harness(Path(tmp), Path(report) if report else None)
+            result = run_harness(
+                Path(tmp),
+                Path(report) if report else None,
+                render_real=render_real,
+            )
     print_report(result)
-    return 0 if result["summary"]["failed"] == 0 else 1
+    summary = result["summary"]
+    failed = summary["failed"] + summary.get("real_plans_failed", 0)
+    return 0 if failed == 0 else 1

@@ -1,6 +1,6 @@
 {
   "mode": "deterministic",
-  "ruleset": "cambre-tomas-2026.07.1",
+  "ruleset": "cambre-completo-2026.07.2",
   "fixtures": [
     {
       "fixture": "dormitorio_basico",
@@ -21,6 +21,24 @@
           "check": "count_matches_rule",
           "ok": true,
           "detail": "esperadas 2, colocadas 2 (required=2)",
+          "room_id": "dorm-01"
+        },
+        {
+          "check": "lighting_inside_room",
+          "ok": true,
+          "detail": "1 centros de luz, todos dentro del polígono",
+          "room_id": "dorm-01"
+        },
+        {
+          "check": "switch_beside_door",
+          "ok": true,
+          "detail": "esperadas 1 llaves, colocadas 1",
+          "room_id": "dorm-01"
+        },
+        {
+          "check": "wall_normal_present",
+          "ok": true,
+          "detail": "3/3 componentes de pared traen normal (sin ella el símbolo no puede rotarse hacia el ambiente)",
           "room_id": "dorm-01"
         },
         {
@@ -62,12 +80,42 @@
         {
           "check": "bbox_guard_zero",
           "ok": true,
-          "detail": "enviadas 2, dibujadas 2, descartadas 0"
+          "detail": "enviadas 4, dibujadas 4, rechazos esperados 0, fuera bbox 0"
         },
         {
-          "check": "scale_sane",
+          "check": "placement_rejections",
           "ok": true,
-          "detail": "simbolo 3.00 cm reales (objetivo 3 cm ±50%)"
+          "detail": "rechazos=[], esperados=[]"
+        },
+        {
+          "check": "xdata_containment",
+          "ok": true,
+          "detail": "4/4 contenidos; 4/4 con XDATA versionado"
+        },
+        {
+          "check": "footprint_relative",
+          "ok": true,
+          "detail": "footprints_m=[0.45, 0.45, 0.45, 0.45], rango=[0.15, 0.450]"
+        },
+        {
+          "check": "origin_guard",
+          "ok": true,
+          "detail": "inserts prohibidos cerca del origen=0"
+        },
+        {
+          "check": "legacy_cleanup",
+          "ok": true,
+          "detail": "removed=0, inserts=[], defs=[]"
+        },
+        {
+          "check": "poisoned_block_defense",
+          "ok": true,
+          "detail": "blocks_used=['CBR_CENTRO', 'CBR_LLAVE_1', 'CBR_TOMA']"
+        },
+        {
+          "check": "idempotent_reprocess",
+          "ok": true,
+          "detail": "primera=4, segunda=4, esperada=4"
         },
         {
           "check": "determinism",
@@ -95,6 +143,24 @@
           "check": "count_matches_rule",
           "ok": true,
           "detail": "esperadas 2, colocadas 2 (required=2)",
+          "room_id": "dorm-01"
+        },
+        {
+          "check": "lighting_inside_room",
+          "ok": true,
+          "detail": "1 centros de luz, todos dentro del polígono",
+          "room_id": "dorm-01"
+        },
+        {
+          "check": "switch_beside_door",
+          "ok": true,
+          "detail": "esperadas 1 llaves, colocadas 1",
+          "room_id": "dorm-01"
+        },
+        {
+          "check": "wall_normal_present",
+          "ok": true,
+          "detail": "3/3 componentes de pared traen normal (sin ella el símbolo no puede rotarse hacia el ambiente)",
           "room_id": "dorm-01"
         },
         {
@@ -136,12 +202,42 @@
         {
           "check": "bbox_guard_zero",
           "ok": true,
-          "detail": "enviadas 2, dibujadas 2, descartadas 0"
+          "detail": "enviadas 4, dibujadas 4, rechazos esperados 0, fuera bbox 0"
         },
         {
-          "check": "scale_sane",
+          "check": "placement_rejections",
           "ok": true,
-          "detail": "simbolo 3.00 cm reales (objetivo 3 cm ±50%)"
+          "detail": "rechazos=[], esperados=[]"
+        },
+        {
+          "check": "xdata_containment",
+          "ok": true,
+          "detail": "4/4 contenidos; 4/4 con XDATA versionado"
+        },
+        {
+          "check": "footprint_relative",
+          "ok": true,
+          "detail": "footprints_m=[0.45, 0.45, 0.45, 0.45], rango=[0.15, 0.450]"
+        },
+        {
+          "check": "origin_guard",
+          "ok": true,
+          "detail": "inserts prohibidos cerca del origen=0"
+        },
+        {
+          "check": "legacy_cleanup",
+          "ok": true,
+          "detail": "removed=0, inserts=[], defs=[]"
+        },
+        {
+          "check": "poisoned_block_defense",
+          "ok": true,
+          "detail": "blocks_used=['CBR_CENTRO', 'CBR_LLAVE_1', 'CBR_TOMA']"
+        },
+        {
+          "check": "idempotent_reprocess",
+          "ok": true,
+          "detail": "primera=4, segunda=4, esperada=4"
         },
         {
           "check": "determinism",
@@ -172,6 +268,24 @@
           "room_id": "dorm-01"
         },
         {
+          "check": "lighting_inside_room",
+          "ok": true,
+          "detail": "1 centros de luz, todos dentro del polígono",
+          "room_id": "dorm-01"
+        },
+        {
+          "check": "switch_beside_door",
+          "ok": true,
+          "detail": "esperadas 1 llaves, colocadas 1",
+          "room_id": "dorm-01"
+        },
+        {
+          "check": "wall_normal_present",
+          "ok": true,
+          "detail": "3/3 componentes de pared traen normal (sin ella el símbolo no puede rotarse hacia el ambiente)",
+          "room_id": "dorm-01"
+        },
+        {
           "check": "inside_polygon",
           "ok": true,
           "detail": "2/2 dentro del poligono del ambiente",
@@ -210,12 +324,42 @@
         {
           "check": "bbox_guard_zero",
           "ok": true,
-          "detail": "enviadas 2, dibujadas 2, descartadas 0"
+          "detail": "enviadas 4, dibujadas 4, rechazos esperados 0, fuera bbox 0"
         },
         {
-          "check": "scale_sane",
+          "check": "placement_rejections",
           "ok": true,
-          "detail": "simbolo 3.00 cm reales (objetivo 3 cm ±50%)"
+          "detail": "rechazos=[], esperados=[]"
+        },
+        {
+          "check": "xdata_containment",
+          "ok": true,
+          "detail": "4/4 contenidos; 4/4 con XDATA versionado"
+        },
+        {
+          "check": "footprint_relative",
+          "ok": true,
+          "detail": "footprints_m=[0.45, 0.45, 0.45, 0.45], rango=[0.15, 0.450]"
+        },
+        {
+          "check": "origin_guard",
+          "ok": true,
+          "detail": "inserts prohibidos cerca del origen=0"
+        },
+        {
+          "check": "legacy_cleanup",
+          "ok": true,
+          "detail": "removed=0, inserts=[], defs=[]"
+        },
+        {
+          "check": "poisoned_block_defense",
+          "ok": true,
+          "detail": "blocks_used=['CBR_CENTRO', 'CBR_LLAVE_1', 'CBR_TOMA']"
+        },
+        {
+          "check": "idempotent_reprocess",
+          "ok": true,
+          "detail": "primera=4, segunda=4, esperada=4"
         },
         {
           "check": "determinism",
@@ -246,6 +390,24 @@
           "room_id": "dorm-02"
         },
         {
+          "check": "lighting_inside_room",
+          "ok": true,
+          "detail": "1 centros de luz, todos dentro del polígono",
+          "room_id": "dorm-02"
+        },
+        {
+          "check": "switch_beside_door",
+          "ok": true,
+          "detail": "esperadas 1 llaves, colocadas 1",
+          "room_id": "dorm-02"
+        },
+        {
+          "check": "wall_normal_present",
+          "ok": true,
+          "detail": "3/3 componentes de pared traen normal (sin ella el símbolo no puede rotarse hacia el ambiente)",
+          "room_id": "dorm-02"
+        },
+        {
           "check": "inside_polygon",
           "ok": true,
           "detail": "2/2 dentro del poligono del ambiente",
@@ -284,12 +446,42 @@
         {
           "check": "bbox_guard_zero",
           "ok": true,
-          "detail": "enviadas 2, dibujadas 2, descartadas 0"
+          "detail": "enviadas 4, dibujadas 4, rechazos esperados 0, fuera bbox 0"
         },
         {
-          "check": "scale_sane",
+          "check": "placement_rejections",
           "ok": true,
-          "detail": "simbolo 3.00 cm reales (objetivo 3 cm ±50%)"
+          "detail": "rechazos=[], esperados=[]"
+        },
+        {
+          "check": "xdata_containment",
+          "ok": true,
+          "detail": "4/4 contenidos; 4/4 con XDATA versionado"
+        },
+        {
+          "check": "footprint_relative",
+          "ok": true,
+          "detail": "footprints_m=[0.45, 0.45, 0.45, 0.45], rango=[0.15, 0.525]"
+        },
+        {
+          "check": "origin_guard",
+          "ok": true,
+          "detail": "inserts prohibidos cerca del origen=0"
+        },
+        {
+          "check": "legacy_cleanup",
+          "ok": true,
+          "detail": "removed=0, inserts=[], defs=[]"
+        },
+        {
+          "check": "poisoned_block_defense",
+          "ok": true,
+          "detail": "blocks_used=['CBR_CENTRO', 'CBR_LLAVE_1', 'CBR_TOMA']"
+        },
+        {
+          "check": "idempotent_reprocess",
+          "ok": true,
+          "detail": "primera=4, segunda=4, esperada=4"
         },
         {
           "check": "determinism",
@@ -317,6 +509,24 @@
           "check": "count_matches_rule",
           "ok": true,
           "detail": "esperadas 4, colocadas 4 (required=4)",
+          "room_id": "estar-l"
+        },
+        {
+          "check": "lighting_inside_room",
+          "ok": true,
+          "detail": "2 centros de luz, todos dentro del polígono",
+          "room_id": "estar-l"
+        },
+        {
+          "check": "switch_beside_door",
+          "ok": true,
+          "detail": "esperadas 1 llaves, colocadas 1",
+          "room_id": "estar-l"
+        },
+        {
+          "check": "wall_normal_present",
+          "ok": true,
+          "detail": "5/5 componentes de pared traen normal (sin ella el símbolo no puede rotarse hacia el ambiente)",
           "room_id": "estar-l"
         },
         {
@@ -358,12 +568,42 @@
         {
           "check": "bbox_guard_zero",
           "ok": true,
-          "detail": "enviadas 4, dibujadas 4, descartadas 0"
+          "detail": "enviadas 7, dibujadas 7, rechazos esperados 0, fuera bbox 0"
         },
         {
-          "check": "scale_sane",
+          "check": "placement_rejections",
           "ok": true,
-          "detail": "simbolo 3.00 cm reales (objetivo 3 cm ±50%)"
+          "detail": "rechazos=[], esperados=[]"
+        },
+        {
+          "check": "xdata_containment",
+          "ok": true,
+          "detail": "7/7 contenidos; 7/7 con XDATA versionado"
+        },
+        {
+          "check": "footprint_relative",
+          "ok": true,
+          "detail": "footprints_m=[0.45, 0.45, 0.45, 0.45, 0.45, 0.45, 0.45], rango=[0.15, 0.750]"
+        },
+        {
+          "check": "origin_guard",
+          "ok": true,
+          "detail": "inserts prohibidos cerca del origen=0"
+        },
+        {
+          "check": "legacy_cleanup",
+          "ok": true,
+          "detail": "removed=0, inserts=[], defs=[]"
+        },
+        {
+          "check": "poisoned_block_defense",
+          "ok": true,
+          "detail": "blocks_used=['CBR_CENTRO', 'CBR_LLAVE_2', 'CBR_TOMA']"
+        },
+        {
+          "check": "idempotent_reprocess",
+          "ok": true,
+          "detail": "primera=7, segunda=7, esperada=7"
         },
         {
           "check": "determinism",
@@ -390,13 +630,31 @@
         {
           "check": "count_matches_rule",
           "ok": true,
-          "detail": "esperadas 2, colocadas 2 (required=2)",
+          "detail": "esperadas 3, colocadas 3 (required=3)",
+          "room_id": "cocina-01"
+        },
+        {
+          "check": "lighting_inside_room",
+          "ok": true,
+          "detail": "1 centros de luz, todos dentro del polígono",
+          "room_id": "cocina-01"
+        },
+        {
+          "check": "switch_beside_door",
+          "ok": true,
+          "detail": "esperadas 1 llaves, colocadas 1",
+          "room_id": "cocina-01"
+        },
+        {
+          "check": "wall_normal_present",
+          "ok": true,
+          "detail": "4/4 componentes de pared traen normal (sin ella el símbolo no puede rotarse hacia el ambiente)",
           "room_id": "cocina-01"
         },
         {
           "check": "inside_polygon",
           "ok": true,
-          "detail": "2/2 dentro del poligono del ambiente",
+          "detail": "3/3 dentro del poligono del ambiente",
           "room_id": "cocina-01"
         },
         {
@@ -420,7 +678,7 @@
         {
           "check": "distinct_walls",
           "ok": true,
-          "detail": "2 paredes distintas usadas (esperadas >= 2)",
+          "detail": "3 paredes distintas usadas (esperadas >= 2)",
           "room_id": "cocina-01"
         },
         {
@@ -432,12 +690,42 @@
         {
           "check": "bbox_guard_zero",
           "ok": true,
-          "detail": "enviadas 2, dibujadas 2, descartadas 0"
+          "detail": "enviadas 5, dibujadas 5, rechazos esperados 0, fuera bbox 0"
         },
         {
-          "check": "scale_sane",
+          "check": "placement_rejections",
           "ok": true,
-          "detail": "simbolo 3.00 cm reales (objetivo 3 cm ±50%)"
+          "detail": "rechazos=[], esperados=[]"
+        },
+        {
+          "check": "xdata_containment",
+          "ok": true,
+          "detail": "5/5 contenidos; 5/5 con XDATA versionado"
+        },
+        {
+          "check": "footprint_relative",
+          "ok": true,
+          "detail": "footprints_m=[0.45, 0.45, 0.45, 0.45, 0.45], rango=[0.15, 0.450]"
+        },
+        {
+          "check": "origin_guard",
+          "ok": true,
+          "detail": "inserts prohibidos cerca del origen=0"
+        },
+        {
+          "check": "legacy_cleanup",
+          "ok": true,
+          "detail": "removed=0, inserts=[], defs=[]"
+        },
+        {
+          "check": "poisoned_block_defense",
+          "ok": true,
+          "detail": "blocks_used=['CBR_CENTRO', 'CBR_LLAVE_1', 'CBR_TOMA']"
+        },
+        {
+          "check": "idempotent_reprocess",
+          "ok": true,
+          "detail": "primera=5, segunda=5, esperada=5"
         },
         {
           "check": "determinism",
@@ -471,6 +759,24 @@
           "check": "count_matches_rule",
           "ok": true,
           "detail": "esperadas 2, colocadas 2 (required=2)",
+          "room_id": "dorm-m"
+        },
+        {
+          "check": "lighting_inside_room",
+          "ok": true,
+          "detail": "1 centros de luz, todos dentro del polígono",
+          "room_id": "dorm-m"
+        },
+        {
+          "check": "switch_beside_door",
+          "ok": true,
+          "detail": "esperadas 1 llaves, colocadas 1",
+          "room_id": "dorm-m"
+        },
+        {
+          "check": "wall_normal_present",
+          "ok": true,
+          "detail": "3/3 componentes de pared traen normal (sin ella el símbolo no puede rotarse hacia el ambiente)",
           "room_id": "dorm-m"
         },
         {
@@ -516,6 +822,24 @@
           "room_id": "estar-m"
         },
         {
+          "check": "lighting_inside_room",
+          "ok": true,
+          "detail": "2 centros de luz, todos dentro del polígono",
+          "room_id": "estar-m"
+        },
+        {
+          "check": "switch_beside_door",
+          "ok": true,
+          "detail": "esperadas 1 llaves, colocadas 1",
+          "room_id": "estar-m"
+        },
+        {
+          "check": "wall_normal_present",
+          "ok": true,
+          "detail": "4/4 componentes de pared traen normal (sin ella el símbolo no puede rotarse hacia el ambiente)",
+          "room_id": "estar-m"
+        },
+        {
           "check": "inside_polygon",
           "ok": true,
           "detail": "3/3 dentro del poligono del ambiente",
@@ -554,12 +878,42 @@
         {
           "check": "bbox_guard_zero",
           "ok": true,
-          "detail": "enviadas 5, dibujadas 5, descartadas 0"
+          "detail": "enviadas 10, dibujadas 10, rechazos esperados 0, fuera bbox 0"
         },
         {
-          "check": "scale_sane",
+          "check": "placement_rejections",
           "ok": true,
-          "detail": "simbolo 3.00 cm reales (objetivo 3 cm ±50%)"
+          "detail": "rechazos=[], esperados=[]"
+        },
+        {
+          "check": "xdata_containment",
+          "ok": true,
+          "detail": "10/10 contenidos; 10/10 con XDATA versionado"
+        },
+        {
+          "check": "footprint_relative",
+          "ok": true,
+          "detail": "footprints_m=[0.45, 0.45, 0.45, 0.45, 0.45, 0.45, 0.45, 0.45, 0.45, 0.45], rango=[0.15, 0.600]"
+        },
+        {
+          "check": "origin_guard",
+          "ok": true,
+          "detail": "inserts prohibidos cerca del origen=0"
+        },
+        {
+          "check": "legacy_cleanup",
+          "ok": true,
+          "detail": "removed=0, inserts=[], defs=[]"
+        },
+        {
+          "check": "poisoned_block_defense",
+          "ok": true,
+          "detail": "blocks_used=['CBR_CENTRO', 'CBR_LLAVE_1', 'CBR_LLAVE_2', 'CBR_TOMA']"
+        },
+        {
+          "check": "idempotent_reprocess",
+          "ok": true,
+          "detail": "primera=10, segunda=10, esperada=10"
         },
         {
           "check": "determinism",
@@ -587,6 +941,24 @@
           "check": "count_matches_rule",
           "ok": true,
           "detail": "esperadas 4, colocadas 4 (required=4)",
+          "room_id": "estar-largo"
+        },
+        {
+          "check": "lighting_inside_room",
+          "ok": true,
+          "detail": "2 centros de luz, todos dentro del polígono",
+          "room_id": "estar-largo"
+        },
+        {
+          "check": "switch_beside_door",
+          "ok": true,
+          "detail": "esperadas 1 llaves, colocadas 1",
+          "room_id": "estar-largo"
+        },
+        {
+          "check": "wall_normal_present",
+          "ok": true,
+          "detail": "5/5 componentes de pared traen normal (sin ella el símbolo no puede rotarse hacia el ambiente)",
           "room_id": "estar-largo"
         },
         {
@@ -628,12 +1000,42 @@
         {
           "check": "bbox_guard_zero",
           "ok": true,
-          "detail": "enviadas 4, dibujadas 4, descartadas 0"
+          "detail": "enviadas 7, dibujadas 7, rechazos esperados 0, fuera bbox 0"
         },
         {
-          "check": "scale_sane",
+          "check": "placement_rejections",
           "ok": true,
-          "detail": "simbolo 3.00 cm reales (objetivo 3 cm ±50%)"
+          "detail": "rechazos=[], esperados=[]"
+        },
+        {
+          "check": "xdata_containment",
+          "ok": true,
+          "detail": "7/7 contenidos; 7/7 con XDATA versionado"
+        },
+        {
+          "check": "footprint_relative",
+          "ok": true,
+          "detail": "footprints_m=[0.3, 0.3, 0.3, 0.3, 0.3, 0.3, 0.3], rango=[0.15, 0.300]"
+        },
+        {
+          "check": "origin_guard",
+          "ok": true,
+          "detail": "inserts prohibidos cerca del origen=0"
+        },
+        {
+          "check": "legacy_cleanup",
+          "ok": true,
+          "detail": "removed=0, inserts=[], defs=[]"
+        },
+        {
+          "check": "poisoned_block_defense",
+          "ok": true,
+          "detail": "blocks_used=['CBR_CENTRO', 'CBR_LLAVE_2', 'CBR_TOMA']"
+        },
+        {
+          "check": "idempotent_reprocess",
+          "ok": true,
+          "detail": "primera=7, segunda=7, esperada=7"
         },
         {
           "check": "determinism",
@@ -663,12 +1065,2139 @@
           "detail": "dos corridas byte-identicas"
         }
       ]
+    },
+    {
+      "fixture": "unidades_mm_correcto",
+      "description": "Geometria real en mm; header correcto para matriz trust-but-verify",
+      "checks": [
+        {
+          "check": "detect_rooms_count",
+          "ok": true,
+          "detail": "esperadas 1, detectadas 1 (faces=1)"
+        },
+        {
+          "check": "detection_effective_units",
+          "ok": true,
+          "detail": "esperadas INSUNITS=4, obtenidas=4"
+        },
+        {
+          "check": "detect_rooms_match",
+          "ok": true,
+          "detail": "area verdad 12.00 m2 matcheada",
+          "room_id": "room-mm-correcto"
+        },
+        {
+          "check": "count_matches_rule",
+          "ok": true,
+          "detail": "esperadas 3, colocadas 3 (required=3)",
+          "room_id": "room-mm-correcto"
+        },
+        {
+          "check": "lighting_inside_room",
+          "ok": true,
+          "detail": "1 centros de luz, todos dentro del polígono",
+          "room_id": "room-mm-correcto"
+        },
+        {
+          "check": "switch_beside_door",
+          "ok": true,
+          "detail": "esperadas 1 llaves, colocadas 1",
+          "room_id": "room-mm-correcto"
+        },
+        {
+          "check": "wall_normal_present",
+          "ok": true,
+          "detail": "4/4 componentes de pared traen normal (sin ella el símbolo no puede rotarse hacia el ambiente)",
+          "room_id": "room-mm-correcto"
+        },
+        {
+          "check": "placement_effective_units",
+          "ok": true,
+          "detail": "esperadas INSUNITS=4, obtenidas=4",
+          "room_id": "room-mm-correcto"
+        },
+        {
+          "check": "inside_polygon",
+          "ok": true,
+          "detail": "3/3 dentro del poligono del ambiente",
+          "room_id": "room-mm-correcto"
+        },
+        {
+          "check": "on_wall",
+          "ok": true,
+          "detail": "peor distancia a pared 10.0 du (tolerancia 50.0)",
+          "room_id": "room-mm-correcto"
+        },
+        {
+          "check": "clearance_openings",
+          "ok": true,
+          "detail": "sin tomas a menos de 150 mm de aberturas",
+          "room_id": "room-mm-correcto"
+        },
+        {
+          "check": "no_overlap",
+          "ok": true,
+          "detail": "separacion minima 600 mm respetada",
+          "room_id": "room-mm-correcto"
+        },
+        {
+          "check": "distinct_walls",
+          "ok": true,
+          "detail": "3 paredes distintas usadas (esperadas >= 3)",
+          "room_id": "room-mm-correcto"
+        },
+        {
+          "check": "warnings_match",
+          "ok": true,
+          "detail": "warnings=[]",
+          "room_id": "room-mm-correcto"
+        },
+        {
+          "check": "bbox_guard_zero",
+          "ok": true,
+          "detail": "enviadas 5, dibujadas 5, rechazos esperados 0, fuera bbox 0"
+        },
+        {
+          "check": "apply_effective_units",
+          "ok": true,
+          "detail": "effective=4, override=False; esperado=4/False"
+        },
+        {
+          "check": "placement_rejections",
+          "ok": true,
+          "detail": "rechazos=[], esperados=[]"
+        },
+        {
+          "check": "xdata_containment",
+          "ok": true,
+          "detail": "5/5 contenidos; 5/5 con XDATA versionado"
+        },
+        {
+          "check": "footprint_relative",
+          "ok": true,
+          "detail": "footprints_m=[0.45, 0.45, 0.45, 0.45, 0.45], rango=[0.15, 0.450]"
+        },
+        {
+          "check": "origin_guard",
+          "ok": true,
+          "detail": "inserts prohibidos cerca del origen=0"
+        },
+        {
+          "check": "legacy_cleanup",
+          "ok": true,
+          "detail": "removed=0, inserts=[], defs=[]"
+        },
+        {
+          "check": "poisoned_block_defense",
+          "ok": true,
+          "detail": "blocks_used=['CBR_CENTRO', 'CBR_LLAVE_1', 'CBR_TOMA']"
+        },
+        {
+          "check": "idempotent_reprocess",
+          "ok": true,
+          "detail": "primera=5, segunda=5, esperada=5"
+        },
+        {
+          "check": "determinism",
+          "ok": true,
+          "detail": "dos corridas byte-identicas"
+        }
+      ]
+    },
+    {
+      "fixture": "unidades_mm_mentiroso",
+      "description": "Geometria real en mm; header mentiroso para matriz trust-but-verify",
+      "checks": [
+        {
+          "check": "detect_rooms_count",
+          "ok": true,
+          "detail": "esperadas 1, detectadas 1 (faces=1)"
+        },
+        {
+          "check": "detection_effective_units",
+          "ok": true,
+          "detail": "esperadas INSUNITS=4, obtenidas=4"
+        },
+        {
+          "check": "detect_rooms_match",
+          "ok": true,
+          "detail": "area verdad 12.00 m2 matcheada",
+          "room_id": "room-mm-mentiroso"
+        },
+        {
+          "check": "count_matches_rule",
+          "ok": true,
+          "detail": "esperadas 3, colocadas 3 (required=3)",
+          "room_id": "room-mm-mentiroso"
+        },
+        {
+          "check": "lighting_inside_room",
+          "ok": true,
+          "detail": "1 centros de luz, todos dentro del polígono",
+          "room_id": "room-mm-mentiroso"
+        },
+        {
+          "check": "switch_beside_door",
+          "ok": true,
+          "detail": "esperadas 1 llaves, colocadas 1",
+          "room_id": "room-mm-mentiroso"
+        },
+        {
+          "check": "wall_normal_present",
+          "ok": true,
+          "detail": "4/4 componentes de pared traen normal (sin ella el símbolo no puede rotarse hacia el ambiente)",
+          "room_id": "room-mm-mentiroso"
+        },
+        {
+          "check": "placement_effective_units",
+          "ok": true,
+          "detail": "esperadas INSUNITS=4, obtenidas=4",
+          "room_id": "room-mm-mentiroso"
+        },
+        {
+          "check": "inside_polygon",
+          "ok": true,
+          "detail": "3/3 dentro del poligono del ambiente",
+          "room_id": "room-mm-mentiroso"
+        },
+        {
+          "check": "on_wall",
+          "ok": true,
+          "detail": "peor distancia a pared 10.0 du (tolerancia 50.0)",
+          "room_id": "room-mm-mentiroso"
+        },
+        {
+          "check": "clearance_openings",
+          "ok": true,
+          "detail": "sin tomas a menos de 150 mm de aberturas",
+          "room_id": "room-mm-mentiroso"
+        },
+        {
+          "check": "no_overlap",
+          "ok": true,
+          "detail": "separacion minima 600 mm respetada",
+          "room_id": "room-mm-mentiroso"
+        },
+        {
+          "check": "distinct_walls",
+          "ok": true,
+          "detail": "3 paredes distintas usadas (esperadas >= 3)",
+          "room_id": "room-mm-mentiroso"
+        },
+        {
+          "check": "warnings_match",
+          "ok": true,
+          "detail": "warnings=[]",
+          "room_id": "room-mm-mentiroso"
+        },
+        {
+          "check": "bbox_guard_zero",
+          "ok": true,
+          "detail": "enviadas 5, dibujadas 5, rechazos esperados 0, fuera bbox 0"
+        },
+        {
+          "check": "apply_effective_units",
+          "ok": true,
+          "detail": "effective=4, override=True; esperado=4/True"
+        },
+        {
+          "check": "placement_rejections",
+          "ok": true,
+          "detail": "rechazos=[], esperados=[]"
+        },
+        {
+          "check": "xdata_containment",
+          "ok": true,
+          "detail": "5/5 contenidos; 5/5 con XDATA versionado"
+        },
+        {
+          "check": "footprint_relative",
+          "ok": true,
+          "detail": "footprints_m=[0.45, 0.45, 0.45, 0.45, 0.45], rango=[0.15, 0.450]"
+        },
+        {
+          "check": "origin_guard",
+          "ok": true,
+          "detail": "inserts prohibidos cerca del origen=0"
+        },
+        {
+          "check": "legacy_cleanup",
+          "ok": true,
+          "detail": "removed=0, inserts=[], defs=[]"
+        },
+        {
+          "check": "poisoned_block_defense",
+          "ok": true,
+          "detail": "blocks_used=['CBR_CENTRO', 'CBR_LLAVE_1', 'CBR_TOMA']"
+        },
+        {
+          "check": "idempotent_reprocess",
+          "ok": true,
+          "detail": "primera=5, segunda=5, esperada=5"
+        },
+        {
+          "check": "determinism",
+          "ok": true,
+          "detail": "dos corridas byte-identicas"
+        }
+      ]
+    },
+    {
+      "fixture": "unidades_mm_ausente",
+      "description": "Geometria real en mm; header ausente para matriz trust-but-verify",
+      "checks": [
+        {
+          "check": "detect_rooms_count",
+          "ok": true,
+          "detail": "esperadas 1, detectadas 1 (faces=1)"
+        },
+        {
+          "check": "detection_effective_units",
+          "ok": true,
+          "detail": "esperadas INSUNITS=4, obtenidas=4"
+        },
+        {
+          "check": "detect_rooms_match",
+          "ok": true,
+          "detail": "area verdad 12.00 m2 matcheada",
+          "room_id": "room-mm-ausente"
+        },
+        {
+          "check": "count_matches_rule",
+          "ok": true,
+          "detail": "esperadas 3, colocadas 3 (required=3)",
+          "room_id": "room-mm-ausente"
+        },
+        {
+          "check": "lighting_inside_room",
+          "ok": true,
+          "detail": "1 centros de luz, todos dentro del polígono",
+          "room_id": "room-mm-ausente"
+        },
+        {
+          "check": "switch_beside_door",
+          "ok": true,
+          "detail": "esperadas 1 llaves, colocadas 1",
+          "room_id": "room-mm-ausente"
+        },
+        {
+          "check": "wall_normal_present",
+          "ok": true,
+          "detail": "4/4 componentes de pared traen normal (sin ella el símbolo no puede rotarse hacia el ambiente)",
+          "room_id": "room-mm-ausente"
+        },
+        {
+          "check": "placement_effective_units",
+          "ok": true,
+          "detail": "esperadas INSUNITS=4, obtenidas=4",
+          "room_id": "room-mm-ausente"
+        },
+        {
+          "check": "inside_polygon",
+          "ok": true,
+          "detail": "3/3 dentro del poligono del ambiente",
+          "room_id": "room-mm-ausente"
+        },
+        {
+          "check": "on_wall",
+          "ok": true,
+          "detail": "peor distancia a pared 10.0 du (tolerancia 50.0)",
+          "room_id": "room-mm-ausente"
+        },
+        {
+          "check": "clearance_openings",
+          "ok": true,
+          "detail": "sin tomas a menos de 150 mm de aberturas",
+          "room_id": "room-mm-ausente"
+        },
+        {
+          "check": "no_overlap",
+          "ok": true,
+          "detail": "separacion minima 600 mm respetada",
+          "room_id": "room-mm-ausente"
+        },
+        {
+          "check": "distinct_walls",
+          "ok": true,
+          "detail": "3 paredes distintas usadas (esperadas >= 3)",
+          "room_id": "room-mm-ausente"
+        },
+        {
+          "check": "warnings_match",
+          "ok": true,
+          "detail": "warnings=[]",
+          "room_id": "room-mm-ausente"
+        },
+        {
+          "check": "bbox_guard_zero",
+          "ok": true,
+          "detail": "enviadas 5, dibujadas 5, rechazos esperados 0, fuera bbox 0"
+        },
+        {
+          "check": "apply_effective_units",
+          "ok": true,
+          "detail": "effective=4, override=False; esperado=4/False"
+        },
+        {
+          "check": "placement_rejections",
+          "ok": true,
+          "detail": "rechazos=[], esperados=[]"
+        },
+        {
+          "check": "xdata_containment",
+          "ok": true,
+          "detail": "5/5 contenidos; 5/5 con XDATA versionado"
+        },
+        {
+          "check": "footprint_relative",
+          "ok": true,
+          "detail": "footprints_m=[0.45, 0.45, 0.45, 0.45, 0.45], rango=[0.15, 0.450]"
+        },
+        {
+          "check": "origin_guard",
+          "ok": true,
+          "detail": "inserts prohibidos cerca del origen=0"
+        },
+        {
+          "check": "legacy_cleanup",
+          "ok": true,
+          "detail": "removed=0, inserts=[], defs=[]"
+        },
+        {
+          "check": "poisoned_block_defense",
+          "ok": true,
+          "detail": "blocks_used=['CBR_CENTRO', 'CBR_LLAVE_1', 'CBR_TOMA']"
+        },
+        {
+          "check": "idempotent_reprocess",
+          "ok": true,
+          "detail": "primera=5, segunda=5, esperada=5"
+        },
+        {
+          "check": "determinism",
+          "ok": true,
+          "detail": "dos corridas byte-identicas"
+        }
+      ]
+    },
+    {
+      "fixture": "unidades_cm_correcto",
+      "description": "Geometria real en cm; header correcto para matriz trust-but-verify",
+      "checks": [
+        {
+          "check": "detect_rooms_count",
+          "ok": true,
+          "detail": "esperadas 1, detectadas 1 (faces=1)"
+        },
+        {
+          "check": "detection_effective_units",
+          "ok": true,
+          "detail": "esperadas INSUNITS=5, obtenidas=5"
+        },
+        {
+          "check": "detect_rooms_match",
+          "ok": true,
+          "detail": "area verdad 12.00 m2 matcheada",
+          "room_id": "room-cm-correcto"
+        },
+        {
+          "check": "count_matches_rule",
+          "ok": true,
+          "detail": "esperadas 3, colocadas 3 (required=3)",
+          "room_id": "room-cm-correcto"
+        },
+        {
+          "check": "lighting_inside_room",
+          "ok": true,
+          "detail": "1 centros de luz, todos dentro del polígono",
+          "room_id": "room-cm-correcto"
+        },
+        {
+          "check": "switch_beside_door",
+          "ok": true,
+          "detail": "esperadas 1 llaves, colocadas 1",
+          "room_id": "room-cm-correcto"
+        },
+        {
+          "check": "wall_normal_present",
+          "ok": true,
+          "detail": "4/4 componentes de pared traen normal (sin ella el símbolo no puede rotarse hacia el ambiente)",
+          "room_id": "room-cm-correcto"
+        },
+        {
+          "check": "placement_effective_units",
+          "ok": true,
+          "detail": "esperadas INSUNITS=5, obtenidas=5",
+          "room_id": "room-cm-correcto"
+        },
+        {
+          "check": "inside_polygon",
+          "ok": true,
+          "detail": "3/3 dentro del poligono del ambiente",
+          "room_id": "room-cm-correcto"
+        },
+        {
+          "check": "on_wall",
+          "ok": true,
+          "detail": "peor distancia a pared 1.0 du (tolerancia 5.0)",
+          "room_id": "room-cm-correcto"
+        },
+        {
+          "check": "clearance_openings",
+          "ok": true,
+          "detail": "sin tomas a menos de 150 mm de aberturas",
+          "room_id": "room-cm-correcto"
+        },
+        {
+          "check": "no_overlap",
+          "ok": true,
+          "detail": "separacion minima 600 mm respetada",
+          "room_id": "room-cm-correcto"
+        },
+        {
+          "check": "distinct_walls",
+          "ok": true,
+          "detail": "3 paredes distintas usadas (esperadas >= 3)",
+          "room_id": "room-cm-correcto"
+        },
+        {
+          "check": "warnings_match",
+          "ok": true,
+          "detail": "warnings=[]",
+          "room_id": "room-cm-correcto"
+        },
+        {
+          "check": "bbox_guard_zero",
+          "ok": true,
+          "detail": "enviadas 5, dibujadas 5, rechazos esperados 0, fuera bbox 0"
+        },
+        {
+          "check": "apply_effective_units",
+          "ok": true,
+          "detail": "effective=5, override=False; esperado=5/False"
+        },
+        {
+          "check": "placement_rejections",
+          "ok": true,
+          "detail": "rechazos=[], esperados=[]"
+        },
+        {
+          "check": "xdata_containment",
+          "ok": true,
+          "detail": "5/5 contenidos; 5/5 con XDATA versionado"
+        },
+        {
+          "check": "footprint_relative",
+          "ok": true,
+          "detail": "footprints_m=[0.45, 0.45, 0.45, 0.45, 0.45], rango=[0.15, 0.450]"
+        },
+        {
+          "check": "origin_guard",
+          "ok": true,
+          "detail": "inserts prohibidos cerca del origen=0"
+        },
+        {
+          "check": "legacy_cleanup",
+          "ok": true,
+          "detail": "removed=0, inserts=[], defs=[]"
+        },
+        {
+          "check": "poisoned_block_defense",
+          "ok": true,
+          "detail": "blocks_used=['CBR_CENTRO', 'CBR_LLAVE_1', 'CBR_TOMA']"
+        },
+        {
+          "check": "idempotent_reprocess",
+          "ok": true,
+          "detail": "primera=5, segunda=5, esperada=5"
+        },
+        {
+          "check": "determinism",
+          "ok": true,
+          "detail": "dos corridas byte-identicas"
+        }
+      ]
+    },
+    {
+      "fixture": "unidades_cm_mentiroso",
+      "description": "Geometria real en cm; header mentiroso para matriz trust-but-verify",
+      "checks": [
+        {
+          "check": "detect_rooms_count",
+          "ok": true,
+          "detail": "esperadas 1, detectadas 1 (faces=1)"
+        },
+        {
+          "check": "detection_effective_units",
+          "ok": true,
+          "detail": "esperadas INSUNITS=5, obtenidas=5"
+        },
+        {
+          "check": "detect_rooms_match",
+          "ok": true,
+          "detail": "area verdad 12.00 m2 matcheada",
+          "room_id": "room-cm-mentiroso"
+        },
+        {
+          "check": "count_matches_rule",
+          "ok": true,
+          "detail": "esperadas 3, colocadas 3 (required=3)",
+          "room_id": "room-cm-mentiroso"
+        },
+        {
+          "check": "lighting_inside_room",
+          "ok": true,
+          "detail": "1 centros de luz, todos dentro del polígono",
+          "room_id": "room-cm-mentiroso"
+        },
+        {
+          "check": "switch_beside_door",
+          "ok": true,
+          "detail": "esperadas 1 llaves, colocadas 1",
+          "room_id": "room-cm-mentiroso"
+        },
+        {
+          "check": "wall_normal_present",
+          "ok": true,
+          "detail": "4/4 componentes de pared traen normal (sin ella el símbolo no puede rotarse hacia el ambiente)",
+          "room_id": "room-cm-mentiroso"
+        },
+        {
+          "check": "placement_effective_units",
+          "ok": true,
+          "detail": "esperadas INSUNITS=5, obtenidas=5",
+          "room_id": "room-cm-mentiroso"
+        },
+        {
+          "check": "inside_polygon",
+          "ok": true,
+          "detail": "3/3 dentro del poligono del ambiente",
+          "room_id": "room-cm-mentiroso"
+        },
+        {
+          "check": "on_wall",
+          "ok": true,
+          "detail": "peor distancia a pared 1.0 du (tolerancia 5.0)",
+          "room_id": "room-cm-mentiroso"
+        },
+        {
+          "check": "clearance_openings",
+          "ok": true,
+          "detail": "sin tomas a menos de 150 mm de aberturas",
+          "room_id": "room-cm-mentiroso"
+        },
+        {
+          "check": "no_overlap",
+          "ok": true,
+          "detail": "separacion minima 600 mm respetada",
+          "room_id": "room-cm-mentiroso"
+        },
+        {
+          "check": "distinct_walls",
+          "ok": true,
+          "detail": "3 paredes distintas usadas (esperadas >= 3)",
+          "room_id": "room-cm-mentiroso"
+        },
+        {
+          "check": "warnings_match",
+          "ok": true,
+          "detail": "warnings=[]",
+          "room_id": "room-cm-mentiroso"
+        },
+        {
+          "check": "bbox_guard_zero",
+          "ok": true,
+          "detail": "enviadas 5, dibujadas 5, rechazos esperados 0, fuera bbox 0"
+        },
+        {
+          "check": "apply_effective_units",
+          "ok": true,
+          "detail": "effective=5, override=True; esperado=5/True"
+        },
+        {
+          "check": "placement_rejections",
+          "ok": true,
+          "detail": "rechazos=[], esperados=[]"
+        },
+        {
+          "check": "xdata_containment",
+          "ok": true,
+          "detail": "5/5 contenidos; 5/5 con XDATA versionado"
+        },
+        {
+          "check": "footprint_relative",
+          "ok": true,
+          "detail": "footprints_m=[0.45, 0.45, 0.45, 0.45, 0.45], rango=[0.15, 0.450]"
+        },
+        {
+          "check": "origin_guard",
+          "ok": true,
+          "detail": "inserts prohibidos cerca del origen=0"
+        },
+        {
+          "check": "legacy_cleanup",
+          "ok": true,
+          "detail": "removed=0, inserts=[], defs=[]"
+        },
+        {
+          "check": "poisoned_block_defense",
+          "ok": true,
+          "detail": "blocks_used=['CBR_CENTRO', 'CBR_LLAVE_1', 'CBR_TOMA']"
+        },
+        {
+          "check": "idempotent_reprocess",
+          "ok": true,
+          "detail": "primera=5, segunda=5, esperada=5"
+        },
+        {
+          "check": "determinism",
+          "ok": true,
+          "detail": "dos corridas byte-identicas"
+        }
+      ]
+    },
+    {
+      "fixture": "unidades_cm_ausente",
+      "description": "Geometria real en cm; header ausente para matriz trust-but-verify",
+      "checks": [
+        {
+          "check": "detect_rooms_count",
+          "ok": true,
+          "detail": "esperadas 1, detectadas 1 (faces=1)"
+        },
+        {
+          "check": "detection_effective_units",
+          "ok": true,
+          "detail": "esperadas INSUNITS=5, obtenidas=5"
+        },
+        {
+          "check": "detect_rooms_match",
+          "ok": true,
+          "detail": "area verdad 12.00 m2 matcheada",
+          "room_id": "room-cm-ausente"
+        },
+        {
+          "check": "count_matches_rule",
+          "ok": true,
+          "detail": "esperadas 3, colocadas 3 (required=3)",
+          "room_id": "room-cm-ausente"
+        },
+        {
+          "check": "lighting_inside_room",
+          "ok": true,
+          "detail": "1 centros de luz, todos dentro del polígono",
+          "room_id": "room-cm-ausente"
+        },
+        {
+          "check": "switch_beside_door",
+          "ok": true,
+          "detail": "esperadas 1 llaves, colocadas 1",
+          "room_id": "room-cm-ausente"
+        },
+        {
+          "check": "wall_normal_present",
+          "ok": true,
+          "detail": "4/4 componentes de pared traen normal (sin ella el símbolo no puede rotarse hacia el ambiente)",
+          "room_id": "room-cm-ausente"
+        },
+        {
+          "check": "placement_effective_units",
+          "ok": true,
+          "detail": "esperadas INSUNITS=5, obtenidas=5",
+          "room_id": "room-cm-ausente"
+        },
+        {
+          "check": "inside_polygon",
+          "ok": true,
+          "detail": "3/3 dentro del poligono del ambiente",
+          "room_id": "room-cm-ausente"
+        },
+        {
+          "check": "on_wall",
+          "ok": true,
+          "detail": "peor distancia a pared 1.0 du (tolerancia 5.0)",
+          "room_id": "room-cm-ausente"
+        },
+        {
+          "check": "clearance_openings",
+          "ok": true,
+          "detail": "sin tomas a menos de 150 mm de aberturas",
+          "room_id": "room-cm-ausente"
+        },
+        {
+          "check": "no_overlap",
+          "ok": true,
+          "detail": "separacion minima 600 mm respetada",
+          "room_id": "room-cm-ausente"
+        },
+        {
+          "check": "distinct_walls",
+          "ok": true,
+          "detail": "3 paredes distintas usadas (esperadas >= 3)",
+          "room_id": "room-cm-ausente"
+        },
+        {
+          "check": "warnings_match",
+          "ok": true,
+          "detail": "warnings=[]",
+          "room_id": "room-cm-ausente"
+        },
+        {
+          "check": "bbox_guard_zero",
+          "ok": true,
+          "detail": "enviadas 5, dibujadas 5, rechazos esperados 0, fuera bbox 0"
+        },
+        {
+          "check": "apply_effective_units",
+          "ok": true,
+          "detail": "effective=5, override=False; esperado=5/False"
+        },
+        {
+          "check": "placement_rejections",
+          "ok": true,
+          "detail": "rechazos=[], esperados=[]"
+        },
+        {
+          "check": "xdata_containment",
+          "ok": true,
+          "detail": "5/5 contenidos; 5/5 con XDATA versionado"
+        },
+        {
+          "check": "footprint_relative",
+          "ok": true,
+          "detail": "footprints_m=[0.45, 0.45, 0.45, 0.45, 0.45], rango=[0.15, 0.450]"
+        },
+        {
+          "check": "origin_guard",
+          "ok": true,
+          "detail": "inserts prohibidos cerca del origen=0"
+        },
+        {
+          "check": "legacy_cleanup",
+          "ok": true,
+          "detail": "removed=0, inserts=[], defs=[]"
+        },
+        {
+          "check": "poisoned_block_defense",
+          "ok": true,
+          "detail": "blocks_used=['CBR_CENTRO', 'CBR_LLAVE_1', 'CBR_TOMA']"
+        },
+        {
+          "check": "idempotent_reprocess",
+          "ok": true,
+          "detail": "primera=5, segunda=5, esperada=5"
+        },
+        {
+          "check": "determinism",
+          "ok": true,
+          "detail": "dos corridas byte-identicas"
+        }
+      ]
+    },
+    {
+      "fixture": "unidades_m_correcto",
+      "description": "Geometria real en m; header correcto para matriz trust-but-verify",
+      "checks": [
+        {
+          "check": "detect_rooms_count",
+          "ok": true,
+          "detail": "esperadas 1, detectadas 1 (faces=1)"
+        },
+        {
+          "check": "detection_effective_units",
+          "ok": true,
+          "detail": "esperadas INSUNITS=6, obtenidas=6"
+        },
+        {
+          "check": "detect_rooms_match",
+          "ok": true,
+          "detail": "area verdad 12.00 m2 matcheada",
+          "room_id": "room-m-correcto"
+        },
+        {
+          "check": "count_matches_rule",
+          "ok": true,
+          "detail": "esperadas 3, colocadas 3 (required=3)",
+          "room_id": "room-m-correcto"
+        },
+        {
+          "check": "lighting_inside_room",
+          "ok": true,
+          "detail": "1 centros de luz, todos dentro del polígono",
+          "room_id": "room-m-correcto"
+        },
+        {
+          "check": "switch_beside_door",
+          "ok": true,
+          "detail": "esperadas 1 llaves, colocadas 1",
+          "room_id": "room-m-correcto"
+        },
+        {
+          "check": "wall_normal_present",
+          "ok": true,
+          "detail": "4/4 componentes de pared traen normal (sin ella el símbolo no puede rotarse hacia el ambiente)",
+          "room_id": "room-m-correcto"
+        },
+        {
+          "check": "placement_effective_units",
+          "ok": true,
+          "detail": "esperadas INSUNITS=6, obtenidas=6",
+          "room_id": "room-m-correcto"
+        },
+        {
+          "check": "inside_polygon",
+          "ok": true,
+          "detail": "3/3 dentro del poligono del ambiente",
+          "room_id": "room-m-correcto"
+        },
+        {
+          "check": "on_wall",
+          "ok": true,
+          "detail": "peor distancia a pared 0.0 du (tolerancia 0.1)",
+          "room_id": "room-m-correcto"
+        },
+        {
+          "check": "clearance_openings",
+          "ok": true,
+          "detail": "sin tomas a menos de 150 mm de aberturas",
+          "room_id": "room-m-correcto"
+        },
+        {
+          "check": "no_overlap",
+          "ok": true,
+          "detail": "separacion minima 600 mm respetada",
+          "room_id": "room-m-correcto"
+        },
+        {
+          "check": "distinct_walls",
+          "ok": true,
+          "detail": "3 paredes distintas usadas (esperadas >= 3)",
+          "room_id": "room-m-correcto"
+        },
+        {
+          "check": "warnings_match",
+          "ok": true,
+          "detail": "warnings=[]",
+          "room_id": "room-m-correcto"
+        },
+        {
+          "check": "bbox_guard_zero",
+          "ok": true,
+          "detail": "enviadas 5, dibujadas 5, rechazos esperados 0, fuera bbox 0"
+        },
+        {
+          "check": "apply_effective_units",
+          "ok": true,
+          "detail": "effective=6, override=False; esperado=6/False"
+        },
+        {
+          "check": "placement_rejections",
+          "ok": true,
+          "detail": "rechazos=[], esperados=[]"
+        },
+        {
+          "check": "xdata_containment",
+          "ok": true,
+          "detail": "5/5 contenidos; 5/5 con XDATA versionado"
+        },
+        {
+          "check": "footprint_relative",
+          "ok": true,
+          "detail": "footprints_m=[0.45, 0.45, 0.45, 0.45, 0.45], rango=[0.15, 0.450]"
+        },
+        {
+          "check": "origin_guard",
+          "ok": true,
+          "detail": "inserts prohibidos cerca del origen=0"
+        },
+        {
+          "check": "legacy_cleanup",
+          "ok": true,
+          "detail": "removed=0, inserts=[], defs=[]"
+        },
+        {
+          "check": "poisoned_block_defense",
+          "ok": true,
+          "detail": "blocks_used=['CBR_CENTRO', 'CBR_LLAVE_1', 'CBR_TOMA']"
+        },
+        {
+          "check": "idempotent_reprocess",
+          "ok": true,
+          "detail": "primera=5, segunda=5, esperada=5"
+        },
+        {
+          "check": "determinism",
+          "ok": true,
+          "detail": "dos corridas byte-identicas"
+        }
+      ]
+    },
+    {
+      "fixture": "unidades_m_mentiroso",
+      "description": "Geometria real en m; header mentiroso para matriz trust-but-verify",
+      "checks": [
+        {
+          "check": "detect_rooms_count",
+          "ok": true,
+          "detail": "esperadas 1, detectadas 1 (faces=1)"
+        },
+        {
+          "check": "detection_effective_units",
+          "ok": true,
+          "detail": "esperadas INSUNITS=6, obtenidas=6"
+        },
+        {
+          "check": "detect_rooms_match",
+          "ok": true,
+          "detail": "area verdad 12.00 m2 matcheada",
+          "room_id": "room-m-mentiroso"
+        },
+        {
+          "check": "count_matches_rule",
+          "ok": true,
+          "detail": "esperadas 3, colocadas 3 (required=3)",
+          "room_id": "room-m-mentiroso"
+        },
+        {
+          "check": "lighting_inside_room",
+          "ok": true,
+          "detail": "1 centros de luz, todos dentro del polígono",
+          "room_id": "room-m-mentiroso"
+        },
+        {
+          "check": "switch_beside_door",
+          "ok": true,
+          "detail": "esperadas 1 llaves, colocadas 1",
+          "room_id": "room-m-mentiroso"
+        },
+        {
+          "check": "wall_normal_present",
+          "ok": true,
+          "detail": "4/4 componentes de pared traen normal (sin ella el símbolo no puede rotarse hacia el ambiente)",
+          "room_id": "room-m-mentiroso"
+        },
+        {
+          "check": "placement_effective_units",
+          "ok": true,
+          "detail": "esperadas INSUNITS=6, obtenidas=6",
+          "room_id": "room-m-mentiroso"
+        },
+        {
+          "check": "inside_polygon",
+          "ok": true,
+          "detail": "3/3 dentro del poligono del ambiente",
+          "room_id": "room-m-mentiroso"
+        },
+        {
+          "check": "on_wall",
+          "ok": true,
+          "detail": "peor distancia a pared 0.0 du (tolerancia 0.1)",
+          "room_id": "room-m-mentiroso"
+        },
+        {
+          "check": "clearance_openings",
+          "ok": true,
+          "detail": "sin tomas a menos de 150 mm de aberturas",
+          "room_id": "room-m-mentiroso"
+        },
+        {
+          "check": "no_overlap",
+          "ok": true,
+          "detail": "separacion minima 600 mm respetada",
+          "room_id": "room-m-mentiroso"
+        },
+        {
+          "check": "distinct_walls",
+          "ok": true,
+          "detail": "3 paredes distintas usadas (esperadas >= 3)",
+          "room_id": "room-m-mentiroso"
+        },
+        {
+          "check": "warnings_match",
+          "ok": true,
+          "detail": "warnings=[]",
+          "room_id": "room-m-mentiroso"
+        },
+        {
+          "check": "bbox_guard_zero",
+          "ok": true,
+          "detail": "enviadas 5, dibujadas 5, rechazos esperados 0, fuera bbox 0"
+        },
+        {
+          "check": "apply_effective_units",
+          "ok": true,
+          "detail": "effective=6, override=True; esperado=6/True"
+        },
+        {
+          "check": "placement_rejections",
+          "ok": true,
+          "detail": "rechazos=[], esperados=[]"
+        },
+        {
+          "check": "xdata_containment",
+          "ok": true,
+          "detail": "5/5 contenidos; 5/5 con XDATA versionado"
+        },
+        {
+          "check": "footprint_relative",
+          "ok": true,
+          "detail": "footprints_m=[0.45, 0.45, 0.45, 0.45, 0.45], rango=[0.15, 0.450]"
+        },
+        {
+          "check": "origin_guard",
+          "ok": true,
+          "detail": "inserts prohibidos cerca del origen=0"
+        },
+        {
+          "check": "legacy_cleanup",
+          "ok": true,
+          "detail": "removed=0, inserts=[], defs=[]"
+        },
+        {
+          "check": "poisoned_block_defense",
+          "ok": true,
+          "detail": "blocks_used=['CBR_CENTRO', 'CBR_LLAVE_1', 'CBR_TOMA']"
+        },
+        {
+          "check": "idempotent_reprocess",
+          "ok": true,
+          "detail": "primera=5, segunda=5, esperada=5"
+        },
+        {
+          "check": "determinism",
+          "ok": true,
+          "detail": "dos corridas byte-identicas"
+        }
+      ]
+    },
+    {
+      "fixture": "unidades_m_ausente",
+      "description": "Geometria real en m; header ausente para matriz trust-but-verify",
+      "checks": [
+        {
+          "check": "detect_rooms_count",
+          "ok": true,
+          "detail": "esperadas 1, detectadas 1 (faces=1)"
+        },
+        {
+          "check": "detection_effective_units",
+          "ok": true,
+          "detail": "esperadas INSUNITS=6, obtenidas=6"
+        },
+        {
+          "check": "detect_rooms_match",
+          "ok": true,
+          "detail": "area verdad 12.00 m2 matcheada",
+          "room_id": "room-m-ausente"
+        },
+        {
+          "check": "count_matches_rule",
+          "ok": true,
+          "detail": "esperadas 3, colocadas 3 (required=3)",
+          "room_id": "room-m-ausente"
+        },
+        {
+          "check": "lighting_inside_room",
+          "ok": true,
+          "detail": "1 centros de luz, todos dentro del polígono",
+          "room_id": "room-m-ausente"
+        },
+        {
+          "check": "switch_beside_door",
+          "ok": true,
+          "detail": "esperadas 1 llaves, colocadas 1",
+          "room_id": "room-m-ausente"
+        },
+        {
+          "check": "wall_normal_present",
+          "ok": true,
+          "detail": "4/4 componentes de pared traen normal (sin ella el símbolo no puede rotarse hacia el ambiente)",
+          "room_id": "room-m-ausente"
+        },
+        {
+          "check": "placement_effective_units",
+          "ok": true,
+          "detail": "esperadas INSUNITS=6, obtenidas=6",
+          "room_id": "room-m-ausente"
+        },
+        {
+          "check": "inside_polygon",
+          "ok": true,
+          "detail": "3/3 dentro del poligono del ambiente",
+          "room_id": "room-m-ausente"
+        },
+        {
+          "check": "on_wall",
+          "ok": true,
+          "detail": "peor distancia a pared 0.0 du (tolerancia 0.1)",
+          "room_id": "room-m-ausente"
+        },
+        {
+          "check": "clearance_openings",
+          "ok": true,
+          "detail": "sin tomas a menos de 150 mm de aberturas",
+          "room_id": "room-m-ausente"
+        },
+        {
+          "check": "no_overlap",
+          "ok": true,
+          "detail": "separacion minima 600 mm respetada",
+          "room_id": "room-m-ausente"
+        },
+        {
+          "check": "distinct_walls",
+          "ok": true,
+          "detail": "3 paredes distintas usadas (esperadas >= 3)",
+          "room_id": "room-m-ausente"
+        },
+        {
+          "check": "warnings_match",
+          "ok": true,
+          "detail": "warnings=[]",
+          "room_id": "room-m-ausente"
+        },
+        {
+          "check": "bbox_guard_zero",
+          "ok": true,
+          "detail": "enviadas 5, dibujadas 5, rechazos esperados 0, fuera bbox 0"
+        },
+        {
+          "check": "apply_effective_units",
+          "ok": true,
+          "detail": "effective=6, override=False; esperado=6/False"
+        },
+        {
+          "check": "placement_rejections",
+          "ok": true,
+          "detail": "rechazos=[], esperados=[]"
+        },
+        {
+          "check": "xdata_containment",
+          "ok": true,
+          "detail": "5/5 contenidos; 5/5 con XDATA versionado"
+        },
+        {
+          "check": "footprint_relative",
+          "ok": true,
+          "detail": "footprints_m=[0.45, 0.45, 0.45, 0.45, 0.45], rango=[0.15, 0.450]"
+        },
+        {
+          "check": "origin_guard",
+          "ok": true,
+          "detail": "inserts prohibidos cerca del origen=0"
+        },
+        {
+          "check": "legacy_cleanup",
+          "ok": true,
+          "detail": "removed=0, inserts=[], defs=[]"
+        },
+        {
+          "check": "poisoned_block_defense",
+          "ok": true,
+          "detail": "blocks_used=['CBR_CENTRO', 'CBR_LLAVE_1', 'CBR_TOMA']"
+        },
+        {
+          "check": "idempotent_reprocess",
+          "ok": true,
+          "detail": "primera=5, segunda=5, esperada=5"
+        },
+        {
+          "check": "determinism",
+          "ok": true,
+          "detail": "dos corridas byte-identicas"
+        }
+      ]
+    },
+    {
+      "fixture": "tres_plantas_adversario",
+      "description": "Tres plantas apiladas, grillas cruzadas, rotulo lejano y ruido en origen",
+      "checks": [
+        {
+          "check": "detect_rooms_count",
+          "ok": true,
+          "detail": "esperadas 3, detectadas 3 (faces=3)"
+        },
+        {
+          "check": "detection_effective_units",
+          "ok": true,
+          "detail": "esperadas INSUNITS=4, obtenidas=4"
+        },
+        {
+          "check": "detect_rooms_match",
+          "ok": true,
+          "detail": "area verdad 12.00 m2 matcheada",
+          "room_id": "planta-1"
+        },
+        {
+          "check": "detect_rooms_match",
+          "ok": true,
+          "detail": "area verdad 12.00 m2 matcheada",
+          "room_id": "planta-2"
+        },
+        {
+          "check": "detect_rooms_match",
+          "ok": true,
+          "detail": "area verdad 12.00 m2 matcheada",
+          "room_id": "planta-3"
+        },
+        {
+          "check": "count_matches_rule",
+          "ok": true,
+          "detail": "esperadas 3, colocadas 3 (required=3)",
+          "room_id": "planta-1"
+        },
+        {
+          "check": "lighting_inside_room",
+          "ok": true,
+          "detail": "1 centros de luz, todos dentro del polígono",
+          "room_id": "planta-1"
+        },
+        {
+          "check": "switch_beside_door",
+          "ok": true,
+          "detail": "esperadas 1 llaves, colocadas 1",
+          "room_id": "planta-1"
+        },
+        {
+          "check": "wall_normal_present",
+          "ok": true,
+          "detail": "4/4 componentes de pared traen normal (sin ella el símbolo no puede rotarse hacia el ambiente)",
+          "room_id": "planta-1"
+        },
+        {
+          "check": "placement_effective_units",
+          "ok": true,
+          "detail": "esperadas INSUNITS=4, obtenidas=4",
+          "room_id": "planta-1"
+        },
+        {
+          "check": "inside_polygon",
+          "ok": true,
+          "detail": "3/3 dentro del poligono del ambiente",
+          "room_id": "planta-1"
+        },
+        {
+          "check": "on_wall",
+          "ok": true,
+          "detail": "peor distancia a pared 10.0 du (tolerancia 50.0)",
+          "room_id": "planta-1"
+        },
+        {
+          "check": "clearance_openings",
+          "ok": true,
+          "detail": "sin tomas a menos de 150 mm de aberturas",
+          "room_id": "planta-1"
+        },
+        {
+          "check": "no_overlap",
+          "ok": true,
+          "detail": "separacion minima 600 mm respetada",
+          "room_id": "planta-1"
+        },
+        {
+          "check": "distinct_walls",
+          "ok": true,
+          "detail": "3 paredes distintas usadas (esperadas >= 3)",
+          "room_id": "planta-1"
+        },
+        {
+          "check": "warnings_match",
+          "ok": true,
+          "detail": "warnings=[]",
+          "room_id": "planta-1"
+        },
+        {
+          "check": "count_matches_rule",
+          "ok": true,
+          "detail": "esperadas 3, colocadas 3 (required=3)",
+          "room_id": "planta-2"
+        },
+        {
+          "check": "lighting_inside_room",
+          "ok": true,
+          "detail": "1 centros de luz, todos dentro del polígono",
+          "room_id": "planta-2"
+        },
+        {
+          "check": "switch_beside_door",
+          "ok": true,
+          "detail": "esperadas 1 llaves, colocadas 1",
+          "room_id": "planta-2"
+        },
+        {
+          "check": "wall_normal_present",
+          "ok": true,
+          "detail": "4/4 componentes de pared traen normal (sin ella el símbolo no puede rotarse hacia el ambiente)",
+          "room_id": "planta-2"
+        },
+        {
+          "check": "placement_effective_units",
+          "ok": true,
+          "detail": "esperadas INSUNITS=4, obtenidas=4",
+          "room_id": "planta-2"
+        },
+        {
+          "check": "inside_polygon",
+          "ok": true,
+          "detail": "3/3 dentro del poligono del ambiente",
+          "room_id": "planta-2"
+        },
+        {
+          "check": "on_wall",
+          "ok": true,
+          "detail": "peor distancia a pared 10.0 du (tolerancia 50.0)",
+          "room_id": "planta-2"
+        },
+        {
+          "check": "clearance_openings",
+          "ok": true,
+          "detail": "sin tomas a menos de 150 mm de aberturas",
+          "room_id": "planta-2"
+        },
+        {
+          "check": "no_overlap",
+          "ok": true,
+          "detail": "separacion minima 600 mm respetada",
+          "room_id": "planta-2"
+        },
+        {
+          "check": "distinct_walls",
+          "ok": true,
+          "detail": "3 paredes distintas usadas (esperadas >= 3)",
+          "room_id": "planta-2"
+        },
+        {
+          "check": "warnings_match",
+          "ok": true,
+          "detail": "warnings=[]",
+          "room_id": "planta-2"
+        },
+        {
+          "check": "count_matches_rule",
+          "ok": true,
+          "detail": "esperadas 3, colocadas 3 (required=3)",
+          "room_id": "planta-3"
+        },
+        {
+          "check": "lighting_inside_room",
+          "ok": true,
+          "detail": "1 centros de luz, todos dentro del polígono",
+          "room_id": "planta-3"
+        },
+        {
+          "check": "switch_beside_door",
+          "ok": true,
+          "detail": "esperadas 1 llaves, colocadas 1",
+          "room_id": "planta-3"
+        },
+        {
+          "check": "wall_normal_present",
+          "ok": true,
+          "detail": "4/4 componentes de pared traen normal (sin ella el símbolo no puede rotarse hacia el ambiente)",
+          "room_id": "planta-3"
+        },
+        {
+          "check": "placement_effective_units",
+          "ok": true,
+          "detail": "esperadas INSUNITS=4, obtenidas=4",
+          "room_id": "planta-3"
+        },
+        {
+          "check": "inside_polygon",
+          "ok": true,
+          "detail": "3/3 dentro del poligono del ambiente",
+          "room_id": "planta-3"
+        },
+        {
+          "check": "on_wall",
+          "ok": true,
+          "detail": "peor distancia a pared 10.0 du (tolerancia 50.0)",
+          "room_id": "planta-3"
+        },
+        {
+          "check": "clearance_openings",
+          "ok": true,
+          "detail": "sin tomas a menos de 150 mm de aberturas",
+          "room_id": "planta-3"
+        },
+        {
+          "check": "no_overlap",
+          "ok": true,
+          "detail": "separacion minima 600 mm respetada",
+          "room_id": "planta-3"
+        },
+        {
+          "check": "distinct_walls",
+          "ok": true,
+          "detail": "3 paredes distintas usadas (esperadas >= 3)",
+          "room_id": "planta-3"
+        },
+        {
+          "check": "warnings_match",
+          "ok": true,
+          "detail": "warnings=[]",
+          "room_id": "planta-3"
+        },
+        {
+          "check": "bbox_guard_zero",
+          "ok": true,
+          "detail": "enviadas 15, dibujadas 15, rechazos esperados 0, fuera bbox 0"
+        },
+        {
+          "check": "apply_effective_units",
+          "ok": true,
+          "detail": "effective=4, override=False; esperado=4/False"
+        },
+        {
+          "check": "placement_rejections",
+          "ok": true,
+          "detail": "rechazos=[], esperados=[]"
+        },
+        {
+          "check": "xdata_containment",
+          "ok": true,
+          "detail": "15/15 contenidos; 15/15 con XDATA versionado"
+        },
+        {
+          "check": "footprint_relative",
+          "ok": true,
+          "detail": "footprints_m=[0.45, 0.45, 0.45, 0.45, 0.45, 0.45, 0.45, 0.45, 0.45, 0.45, 0.45, 0.45, 0.45, 0.45, 0.45], rango=[0.15, 0.450]"
+        },
+        {
+          "check": "origin_guard",
+          "ok": true,
+          "detail": "inserts prohibidos cerca del origen=0"
+        },
+        {
+          "check": "legacy_cleanup",
+          "ok": true,
+          "detail": "removed=0, inserts=[], defs=[]"
+        },
+        {
+          "check": "poisoned_block_defense",
+          "ok": true,
+          "detail": "blocks_used=['CBR_CENTRO', 'CBR_LLAVE_1', 'CBR_TOMA']"
+        },
+        {
+          "check": "idempotent_reprocess",
+          "ok": true,
+          "detail": "primera=15, segunda=15, esperada=15"
+        },
+        {
+          "check": "determinism",
+          "ok": true,
+          "detail": "dos corridas byte-identicas"
+        }
+      ]
+    },
+    {
+      "fixture": "contenido_legacy",
+      "description": "Capa electrica pre-poblada con cinco bloques CAMBRE_* gigantes sin XDATA",
+      "checks": [
+        {
+          "check": "detect_rooms_count",
+          "ok": true,
+          "detail": "esperadas 1, detectadas 1 (faces=1)"
+        },
+        {
+          "check": "detection_effective_units",
+          "ok": true,
+          "detail": "esperadas INSUNITS=6, obtenidas=6"
+        },
+        {
+          "check": "detect_rooms_match",
+          "ok": true,
+          "detail": "area verdad 12.00 m2 matcheada",
+          "room_id": "legacy-room"
+        },
+        {
+          "check": "count_matches_rule",
+          "ok": true,
+          "detail": "esperadas 3, colocadas 3 (required=3)",
+          "room_id": "legacy-room"
+        },
+        {
+          "check": "lighting_inside_room",
+          "ok": true,
+          "detail": "1 centros de luz, todos dentro del polígono",
+          "room_id": "legacy-room"
+        },
+        {
+          "check": "switch_beside_door",
+          "ok": true,
+          "detail": "esperadas 1 llaves, colocadas 1",
+          "room_id": "legacy-room"
+        },
+        {
+          "check": "wall_normal_present",
+          "ok": true,
+          "detail": "4/4 componentes de pared traen normal (sin ella el símbolo no puede rotarse hacia el ambiente)",
+          "room_id": "legacy-room"
+        },
+        {
+          "check": "placement_effective_units",
+          "ok": true,
+          "detail": "esperadas INSUNITS=6, obtenidas=6",
+          "room_id": "legacy-room"
+        },
+        {
+          "check": "inside_polygon",
+          "ok": true,
+          "detail": "3/3 dentro del poligono del ambiente",
+          "room_id": "legacy-room"
+        },
+        {
+          "check": "on_wall",
+          "ok": true,
+          "detail": "peor distancia a pared 0.0 du (tolerancia 0.1)",
+          "room_id": "legacy-room"
+        },
+        {
+          "check": "clearance_openings",
+          "ok": true,
+          "detail": "sin tomas a menos de 150 mm de aberturas",
+          "room_id": "legacy-room"
+        },
+        {
+          "check": "no_overlap",
+          "ok": true,
+          "detail": "separacion minima 600 mm respetada",
+          "room_id": "legacy-room"
+        },
+        {
+          "check": "distinct_walls",
+          "ok": true,
+          "detail": "3 paredes distintas usadas (esperadas >= 3)",
+          "room_id": "legacy-room"
+        },
+        {
+          "check": "warnings_match",
+          "ok": true,
+          "detail": "warnings=[]",
+          "room_id": "legacy-room"
+        },
+        {
+          "check": "bbox_guard_zero",
+          "ok": true,
+          "detail": "enviadas 5, dibujadas 5, rechazos esperados 0, fuera bbox 0"
+        },
+        {
+          "check": "apply_effective_units",
+          "ok": true,
+          "detail": "effective=6, override=False; esperado=6/False"
+        },
+        {
+          "check": "placement_rejections",
+          "ok": true,
+          "detail": "rechazos=[], esperados=[]"
+        },
+        {
+          "check": "xdata_containment",
+          "ok": true,
+          "detail": "5/5 contenidos; 5/5 con XDATA versionado"
+        },
+        {
+          "check": "footprint_relative",
+          "ok": true,
+          "detail": "footprints_m=[0.45, 0.45, 0.45, 0.45, 0.45], rango=[0.15, 0.450]"
+        },
+        {
+          "check": "origin_guard",
+          "ok": true,
+          "detail": "inserts prohibidos cerca del origen=0"
+        },
+        {
+          "check": "legacy_cleanup",
+          "ok": true,
+          "detail": "removed=13, inserts=[], defs=[]"
+        },
+        {
+          "check": "poisoned_block_defense",
+          "ok": true,
+          "detail": "blocks_used=['CBR_CENTRO', 'CBR_LLAVE_1', 'CBR_TOMA']"
+        },
+        {
+          "check": "idempotent_reprocess",
+          "ok": true,
+          "detail": "primera=5, segunda=5, esperada=5"
+        },
+        {
+          "check": "determinism",
+          "ok": true,
+          "detail": "dos corridas byte-identicas"
+        }
+      ]
+    },
+    {
+      "fixture": "simbolo_envenenado",
+      "description": "Definicion CBR_TOMA preexistente con footprint gigante",
+      "checks": [
+        {
+          "check": "detect_rooms_count",
+          "ok": true,
+          "detail": "esperadas 1, detectadas 1 (faces=1)"
+        },
+        {
+          "check": "detection_effective_units",
+          "ok": true,
+          "detail": "esperadas INSUNITS=6, obtenidas=6"
+        },
+        {
+          "check": "detect_rooms_match",
+          "ok": true,
+          "detail": "area verdad 12.00 m2 matcheada",
+          "room_id": "poison-room"
+        },
+        {
+          "check": "count_matches_rule",
+          "ok": true,
+          "detail": "esperadas 3, colocadas 3 (required=3)",
+          "room_id": "poison-room"
+        },
+        {
+          "check": "lighting_inside_room",
+          "ok": true,
+          "detail": "1 centros de luz, todos dentro del polígono",
+          "room_id": "poison-room"
+        },
+        {
+          "check": "switch_beside_door",
+          "ok": true,
+          "detail": "esperadas 1 llaves, colocadas 1",
+          "room_id": "poison-room"
+        },
+        {
+          "check": "wall_normal_present",
+          "ok": true,
+          "detail": "4/4 componentes de pared traen normal (sin ella el símbolo no puede rotarse hacia el ambiente)",
+          "room_id": "poison-room"
+        },
+        {
+          "check": "placement_effective_units",
+          "ok": true,
+          "detail": "esperadas INSUNITS=6, obtenidas=6",
+          "room_id": "poison-room"
+        },
+        {
+          "check": "inside_polygon",
+          "ok": true,
+          "detail": "3/3 dentro del poligono del ambiente",
+          "room_id": "poison-room"
+        },
+        {
+          "check": "on_wall",
+          "ok": true,
+          "detail": "peor distancia a pared 0.0 du (tolerancia 0.1)",
+          "room_id": "poison-room"
+        },
+        {
+          "check": "clearance_openings",
+          "ok": true,
+          "detail": "sin tomas a menos de 150 mm de aberturas",
+          "room_id": "poison-room"
+        },
+        {
+          "check": "no_overlap",
+          "ok": true,
+          "detail": "separacion minima 600 mm respetada",
+          "room_id": "poison-room"
+        },
+        {
+          "check": "distinct_walls",
+          "ok": true,
+          "detail": "3 paredes distintas usadas (esperadas >= 3)",
+          "room_id": "poison-room"
+        },
+        {
+          "check": "warnings_match",
+          "ok": true,
+          "detail": "warnings=[]",
+          "room_id": "poison-room"
+        },
+        {
+          "check": "bbox_guard_zero",
+          "ok": true,
+          "detail": "enviadas 5, dibujadas 5, rechazos esperados 0, fuera bbox 0"
+        },
+        {
+          "check": "apply_effective_units",
+          "ok": true,
+          "detail": "effective=6, override=False; esperado=6/False"
+        },
+        {
+          "check": "placement_rejections",
+          "ok": true,
+          "detail": "rechazos=[], esperados=[]"
+        },
+        {
+          "check": "xdata_containment",
+          "ok": true,
+          "detail": "5/5 contenidos; 5/5 con XDATA versionado"
+        },
+        {
+          "check": "footprint_relative",
+          "ok": true,
+          "detail": "footprints_m=[0.45, 0.45, 0.45, 0.45, 0.45], rango=[0.15, 0.450]"
+        },
+        {
+          "check": "origin_guard",
+          "ok": true,
+          "detail": "inserts prohibidos cerca del origen=0"
+        },
+        {
+          "check": "legacy_cleanup",
+          "ok": true,
+          "detail": "removed=0, inserts=[], defs=[]"
+        },
+        {
+          "check": "poisoned_block_defense",
+          "ok": true,
+          "detail": "blocks_used=['CBR_CENTRO', 'CBR_LLAVE_1', 'CBR_TOMA__V2']"
+        },
+        {
+          "check": "idempotent_reprocess",
+          "ok": true,
+          "detail": "primera=5, segunda=5, esperada=5"
+        },
+        {
+          "check": "determinism",
+          "ok": true,
+          "detail": "dos corridas byte-identicas"
+        }
+      ]
+    },
+    {
+      "fixture": "placements_degenerados",
+      "description": "Placements explicito en origen, NaN, tipo desconocido y sin posicion",
+      "checks": [
+        {
+          "check": "detect_rooms_count",
+          "ok": true,
+          "detail": "esperadas 1, detectadas 1 (faces=1)"
+        },
+        {
+          "check": "detection_effective_units",
+          "ok": true,
+          "detail": "esperadas INSUNITS=6, obtenidas=6"
+        },
+        {
+          "check": "detect_rooms_match",
+          "ok": true,
+          "detail": "area verdad 12.00 m2 matcheada",
+          "room_id": "guard-room"
+        },
+        {
+          "check": "count_matches_rule",
+          "ok": true,
+          "detail": "esperadas 3, colocadas 3 (required=3)",
+          "room_id": "guard-room"
+        },
+        {
+          "check": "lighting_inside_room",
+          "ok": true,
+          "detail": "1 centros de luz, todos dentro del polígono",
+          "room_id": "guard-room"
+        },
+        {
+          "check": "switch_beside_door",
+          "ok": true,
+          "detail": "esperadas 1 llaves, colocadas 1",
+          "room_id": "guard-room"
+        },
+        {
+          "check": "wall_normal_present",
+          "ok": true,
+          "detail": "4/4 componentes de pared traen normal (sin ella el símbolo no puede rotarse hacia el ambiente)",
+          "room_id": "guard-room"
+        },
+        {
+          "check": "placement_effective_units",
+          "ok": true,
+          "detail": "esperadas INSUNITS=6, obtenidas=6",
+          "room_id": "guard-room"
+        },
+        {
+          "check": "inside_polygon",
+          "ok": true,
+          "detail": "3/3 dentro del poligono del ambiente",
+          "room_id": "guard-room"
+        },
+        {
+          "check": "on_wall",
+          "ok": true,
+          "detail": "peor distancia a pared 0.0 du (tolerancia 0.1)",
+          "room_id": "guard-room"
+        },
+        {
+          "check": "clearance_openings",
+          "ok": true,
+          "detail": "sin tomas a menos de 150 mm de aberturas",
+          "room_id": "guard-room"
+        },
+        {
+          "check": "no_overlap",
+          "ok": true,
+          "detail": "separacion minima 600 mm respetada",
+          "room_id": "guard-room"
+        },
+        {
+          "check": "distinct_walls",
+          "ok": true,
+          "detail": "3 paredes distintas usadas (esperadas >= 3)",
+          "room_id": "guard-room"
+        },
+        {
+          "check": "warnings_match",
+          "ok": true,
+          "detail": "warnings=[]",
+          "room_id": "guard-room"
+        },
+        {
+          "check": "bbox_guard_zero",
+          "ok": true,
+          "detail": "enviadas 9, dibujadas 5, rechazos esperados 4, fuera bbox 0"
+        },
+        {
+          "check": "apply_effective_units",
+          "ok": true,
+          "detail": "effective=6, override=False; esperado=6/False"
+        },
+        {
+          "check": "placement_rejections",
+          "ok": true,
+          "detail": "rechazos=['non_finite_position', 'unknown_placement_kind', 'missing_or_invalid_position', 'origin_guard'], esperados=['origin_guard', 'non_finite_position', 'unknown_placement_kind', 'missing_or_invalid_position']"
+        },
+        {
+          "check": "xdata_containment",
+          "ok": true,
+          "detail": "5/5 contenidos; 5/5 con XDATA versionado"
+        },
+        {
+          "check": "footprint_relative",
+          "ok": true,
+          "detail": "footprints_m=[0.45, 0.45, 0.45, 0.45, 0.45], rango=[0.15, 0.450]"
+        },
+        {
+          "check": "origin_guard",
+          "ok": true,
+          "detail": "inserts prohibidos cerca del origen=0"
+        },
+        {
+          "check": "legacy_cleanup",
+          "ok": true,
+          "detail": "removed=0, inserts=[], defs=[]"
+        },
+        {
+          "check": "poisoned_block_defense",
+          "ok": true,
+          "detail": "blocks_used=['CBR_CENTRO', 'CBR_LLAVE_1', 'CBR_TOMA']"
+        },
+        {
+          "check": "idempotent_reprocess",
+          "ok": true,
+          "detail": "primera=5, segunda=5, esperada=5"
+        },
+        {
+          "check": "determinism",
+          "ok": true,
+          "detail": "dos corridas byte-identicas"
+        }
+      ]
     }
   ],
+  "real_plans": {
+    "status": "ok",
+    "root": "/home/ignac/claude-code-projects/vanguardia/colocador-planos-electricos/fixtures/real",
+    "plans": [
+      {
+        "plan": "cambre-vivienda-contaminado.dxf",
+        "ok": true,
+        "rooms_detected": 27,
+        "rooms_wired": 24,
+        "components": {
+          "centro": 40,
+          "llave": 9,
+          "llave_2_puntos": 2,
+          "llave_3_puntos": 2,
+          "toma": 44
+        },
+        "room_errors": [],
+        "output_dxf": "/tmp/cambre-harness-ms8rr99q/real/cambre-vivienda-contaminado-electrico.dxf",
+        "render_png": null,
+        "error": null,
+        "gates": [
+          {
+            "gate": "G1_rooms",
+            "ok": true,
+            "detail": "32/33 etiquetas resueltas (97%) en 27 ambientes"
+          },
+          {
+            "gate": "G5_coverage",
+            "ok": true,
+            "detail": "24 ambientes cableados, 0 con error explícito, de 24 cableables"
+          },
+          {
+            "gate": "G2_size",
+            "ok": true,
+            "detail": "97 símbolos entre 4.277 y 5.294 mm de papel (banda [3.0, 5.5]), escala única 0.1"
+          },
+          {
+            "gate": "G3_orientation",
+            "ok": true,
+            "detail": "57/57 componentes de pared con normal de pared"
+          },
+          {
+            "gate": "G4_placement",
+            "ok": true,
+            "detail": "97 componentes dibujados en 27 ambientes, 0 fuera de su polígono, 0 rechazos en total"
+          },
+          {
+            "gate": "G6_hygiene",
+            "ok": true,
+            "detail": "capas de origen intactas=True, legacy removido=6, bloques purgados=['CAMBRE_OUTLET', 'CAMBRE_SWITCH']"
+          },
+          {
+            "gate": "G6_idempotence",
+            "ok": true,
+            "detail": "primera corrida 97 inserts, segunda 97"
+          }
+        ]
+      },
+      {
+        "plan": "cambre-vivienda-limpio.dxf",
+        "ok": true,
+        "rooms_detected": 27,
+        "rooms_wired": 24,
+        "components": {
+          "centro": 40,
+          "llave": 9,
+          "llave_2_puntos": 2,
+          "llave_3_puntos": 2,
+          "toma": 44
+        },
+        "room_errors": [],
+        "output_dxf": "/tmp/cambre-harness-ms8rr99q/real/cambre-vivienda-limpio-electrico.dxf",
+        "render_png": null,
+        "error": null,
+        "gates": [
+          {
+            "gate": "G1_rooms",
+            "ok": true,
+            "detail": "32/33 etiquetas resueltas (97%) en 27 ambientes"
+          },
+          {
+            "gate": "G5_coverage",
+            "ok": true,
+            "detail": "24 ambientes cableados, 0 con error explícito, de 24 cableables"
+          },
+          {
+            "gate": "G2_size",
+            "ok": true,
+            "detail": "97 símbolos entre 4.277 y 5.294 mm de papel (banda [3.0, 5.5]), escala única 0.1"
+          },
+          {
+            "gate": "G3_orientation",
+            "ok": true,
+            "detail": "57/57 componentes de pared con normal de pared"
+          },
+          {
+            "gate": "G4_placement",
+            "ok": true,
+            "detail": "97 componentes dibujados en 27 ambientes, 0 fuera de su polígono, 0 rechazos en total"
+          },
+          {
+            "gate": "G6_hygiene",
+            "ok": true,
+            "detail": "capas de origen intactas=True, legacy removido=0, bloques purgados=[]"
+          },
+          {
+            "gate": "G6_idempotence",
+            "ok": true,
+            "detail": "primera corrida 97 inserts, segunda 97"
+          }
+        ]
+      },
+      {
+        "plan": "cambre-vivienda-simbolos-3cm.dxf",
+        "ok": true,
+        "rooms_detected": 27,
+        "rooms_wired": 24,
+        "components": {
+          "centro": 40,
+          "llave": 9,
+          "llave_2_puntos": 2,
+          "llave_3_puntos": 2,
+          "toma": 44
+        },
+        "room_errors": [],
+        "output_dxf": "/tmp/cambre-harness-ms8rr99q/real/cambre-vivienda-simbolos-3cm-electrico.dxf",
+        "render_png": null,
+        "error": null,
+        "gates": [
+          {
+            "gate": "G1_rooms",
+            "ok": true,
+            "detail": "32/33 etiquetas resueltas (97%) en 27 ambientes"
+          },
+          {
+            "gate": "G5_coverage",
+            "ok": true,
+            "detail": "24 ambientes cableados, 0 con error explícito, de 24 cableables"
+          },
+          {
+            "gate": "G2_size",
+            "ok": true,
+            "detail": "97 símbolos entre 4.277 y 5.294 mm de papel (banda [3.0, 5.5]), escala única 0.1"
+          },
+          {
+            "gate": "G3_orientation",
+            "ok": true,
+            "detail": "57/57 componentes de pared con normal de pared"
+          },
+          {
+            "gate": "G4_placement",
+            "ok": true,
+            "detail": "97 componentes dibujados en 27 ambientes, 0 fuera de su polígono, 0 rechazos en total"
+          },
+          {
+            "gate": "G6_hygiene",
+            "ok": true,
+            "detail": "capas de origen intactas=True, legacy removido=6, bloques purgados=['SYM_TOMA']"
+          },
+          {
+            "gate": "G6_idempotence",
+            "ok": true,
+            "detail": "primera corrida 97 inserts, segunda 97"
+          }
+        ]
+      },
+      {
+        "plan": "traslado-st.dxf",
+        "ok": false,
+        "rooms_detected": 0,
+        "rooms_wired": 0,
+        "components": {},
+        "room_errors": [],
+        "output_dxf": null,
+        "render_png": null,
+        "error": "NO_WALLS: geometry has no wall segments",
+        "gates": [
+          {
+            "gate": "G1_rooms",
+            "ok": false,
+            "detail": "NO_WALLS: geometry has no wall segments"
+          }
+        ],
+        "expected_fail": "layout industrial sin capa de muros reconocible"
+      }
+    ]
+  },
   "summary": {
-    "total_checks": 107,
-    "passed": 107,
-    "failed": 0
+    "total_checks": 518,
+    "passed": 518,
+    "failed": 0,
+    "real_plans_run": 4,
+    "real_plans_failed": 0
   },
   "baseline": {
     "mode": "llm",
