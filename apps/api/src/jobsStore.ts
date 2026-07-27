@@ -100,6 +100,12 @@ export type JobPipelineMetadata = {
     room_types: Record<string, string>
     room_warnings: Record<string, string[]>
   }
+  /**
+   * Why the geometric room detector did not answer (or returned no usable rooms),
+   * when rooms came from the vision model instead. Present only on that fallback
+   * path so the architect can tell measured rooms apart from estimated ones.
+   */
+  room_detection_failure?: string
 }
 
 export type JobRow = {
