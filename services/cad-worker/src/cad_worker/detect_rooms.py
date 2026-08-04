@@ -395,6 +395,98 @@ MERGED_TYPE_PRIORITY = (
     "generico",
 )
 WARN_MERGED_PRIVATE = "MERGED_ROOM_INCLUDES_PRIVATE_SPACE"
+WARN_MERGED_OVERLAP = "MERGED_ROOMS_SHARE_REGION"
+
+# Two regions covering this much of the smaller one are the same physical space,
+# whatever their labels say. Below it, ordinary neighbours touching at a wall.
+OVERLAP_SAME_REGION_RATIO = 0.60
+
+
+def _room_vertices(record: dict[str, Any]) -> list[tuple[float, float]]:
+    polygon = record.get("polygon")
+    vertices = polygon.get("vertices") if isinstance(polygon, dict) else None
+    if not isinstance(vertices, list):
+        return []
+    return [
+        (float(v["x"]), float(v["y"]))
+        for v in vertices
+        if isinstance(v, dict) and "x" in v and "y" in v
+    ]
+
+
+def _overlap_ratio(a: list[tuple[float, float]], b: list[tuple[float, float]]) -> float:
+    """Shared area as a fraction of the smaller region. 0.0 when it cannot be measured."""
+    if len(a) < 3 or len(b) < 3:
+        return 0.0
+    try:
+        from shapely.geometry import Polygon
+
+        pa, pb = Polygon(a), Polygon(b)
+        if not pa.is_valid:
+            pa = pa.buffer(0)
+        if not pb.is_valid:
+            pb = pb.buffer(0)
+        smaller = min(pa.area, pb.area)
+        if smaller <= 0:
+            return 0.0
+        return float(pa.intersection(pb).area / smaller)
+    except Exception:  # noqa: BLE001 - without shapely, overlap stays unmeasured
+        return 0.0
+
+
+def _merge_rooms_sharing_a_region(rooms: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """Fold together rooms whose polygons cover the same physical space.
+
+    Sharing is detected by where each label's *text* sits, so two labels whose
+    fills landed on the same region still emerge as two rooms whenever neither
+    text falls inside the other's contour — a caption printed over the dividing
+    wall is enough. On a real plan that produced a 1.5 m² SALA DE MAQUINAS and a
+    2.0 m² BAÑO SERV. occupying one another completely, and each was then given
+    its own quota of outlets: two symbols 8 cm apart on the same wall.
+
+    Geometry settles what the captions could not. Merging follows the open-plan
+    precedent above — one room carrying every name is truer than inventing a wall
+    between them or dropping one outright.
+    """
+    if len(rooms) < 2:
+        return rooms
+
+    vertices = [_room_vertices(room) for room in rooms]
+    order = sorted(range(len(rooms)), key=lambda i: -float(rooms[i].get("area_m2") or 0.0))
+    absorbed_by: dict[int, int] = {}
+    for position, index in enumerate(order):
+        if index in absorbed_by:
+            continue
+        for other in order[position + 1 :]:
+            if other in absorbed_by:
+                continue
+            if _overlap_ratio(vertices[index], vertices[other]) >= OVERLAP_SAME_REGION_RATIO:
+                absorbed_by[other] = index
+
+    if not absorbed_by:
+        return rooms
+
+    merged: list[dict[str, Any]] = []
+    for index, room in enumerate(rooms):
+        if index in absorbed_by:
+            continue
+        names = [str(room.get("label") or "")] + [
+            str(rooms[other].get("label") or "")
+            for other, keeper in absorbed_by.items()
+            if keeper == index
+        ]
+        names = [name for name in names if name]
+        if len(names) > 1:
+            record = dict(room)
+            record["label"] = " / ".join(names)
+            record["merged_labels"] = names
+            warnings = list(record.get("warnings") or [])
+            warnings.append(WARN_MERGED_OVERLAP)
+            record["warnings"] = warnings
+            merged.append(record)
+        else:
+            merged.append(room)
+    return merged
 
 
 def _assemble_rooms(
@@ -479,7 +571,7 @@ def _assemble_rooms(
             record["warnings"] = warnings
         rooms.append(record)
 
-    return rooms, unresolved
+    return _merge_rooms_sharing_a_region(rooms), unresolved
 
 
 def _detect_rooms_from_labels(
