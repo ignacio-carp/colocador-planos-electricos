@@ -33,6 +33,12 @@ adivinada. Después de escribir el DXF se **mide** el bbox real de cada INSERT: 
 alguno cae fuera de la banda de legibilidad, la operación falla en vez de
 entregar el archivo.
 
+El tope relativo al ambiente se calcula contra **los ambientes del documento**,
+nunca contra los de la corrida. Tomarlo de la corrida hacía que procesar de a un
+ambiente —que es como lo usa la UI— dimensionara cada símbolo contra el ambiente
+que lo tocó: el DXF del último test traía 9 escalas distintas, de 0,067 a 0,100,
+50% de diferencia entre el símbolo de un baño y el del living.
+
 ## Cómo se detectan los ambientes
 
 Por cada etiqueta de local del plano se rasteriza el entorno y se hace flood-fill
@@ -49,6 +55,31 @@ ambiente.
 Ambientes que caen en la misma región se reportan como un único ambiente
 integrado con todos sus nombres (una cocina-comedor-living lo es de verdad), no
 se descartan ni se les inventa una pared.
+
+Compartir región se decidía sólo por dónde cae el **texto** de cada etiqueta, y
+eso deja pasar el caso en que dos rellenos dan la misma región pero ninguno de
+los dos textos cae dentro del contorno del otro: alcanza con un rótulo impreso
+sobre el muro divisorio. En el plano de Cambre eso produjo una SALA DE MAQUINAS
+de 1,5 m² y un BAÑO SERV. de 2,0 m² ocupándose mutuamente por completo, y cada
+uno recibió su cuota de tomas: dos símbolos a 8 cm sobre la misma pared. Ahora
+la geometría decide lo que los rótulos no pudieron: dos polígonos que comparten
+más del 60% del menor son el mismo espacio y se funden, con warning
+`MERGED_ROOMS_SHARE_REGION`.
+
+## Dónde puede apoyarse un componente
+
+Un tramo utilizable es **muro menos vano**, no borde menos vano. La diferencia no
+es cosmética: derivarlo del borde completo convertía al lado abierto de una
+galería (un límite dibujado como solado, sin muro detrás) en el tramo libre más
+largo del ambiente, y el ranking de candidatos prefiere el más largo. Sobre el
+plano de Cambre eso puso 16 de 64 tomas y llaves a más de 40 cm de todo muro, la
+peor a 7,07 m, cada una registrada como apoyada en un «tramo útil de pared». El
+mismo perímetro fantasma alimentaba el conteo normativo, así que el defecto
+además pedía las tomas que después colocaba en el aire.
+
+Un ambiente sin ningún borde con muro verificable no recibe tomas: se reporta con
+`NO_VERIFIED_WALL_FOR_OUTLETS`. Un centro de luz sí, porque va en el techo y no
+depende de la pared.
 
 ## Correr el loop
 
@@ -84,8 +115,14 @@ está, cada plano se mide contra:
 `cambre-completo-2026.07.2`, y los 4 planos del corpus real.
 
 Sobre `cambre-vivienda-limpio.dxf` (vivienda de dos plantas, 33 locales
-rotulados): 27 ambientes detectados, 24 cableados, 97 componentes (44 tomas,
-40 centros de luz, 13 llaves), todos entre 4,3 y 5,3 mm de papel.
+rotulados): 26 ambientes detectados, 23 cableados, 87 componentes (36 tomas,
+39 centros de luz, 12 llaves), todos entre 4,3 y 5,3 mm de papel y **a una sola
+escala**.
+
+Bajó de 27 ambientes a 26 porque dos que ocupaban la misma región ahora se
+funden, y de 97 componentes a 87 porque las colocaciones que se apoyaban en un
+borde sin muro ya no se emiten. Ninguno de los dos números era mejor por ser más
+alto: 10 de esos 97 componentes estaban en el aire.
 
 `traslado-st.dxf` es un layout industrial sin capa de muros reconocible y falla
 explícito con `NO_WALLS`. Está en el corpus a propósito: el motor tiene que
@@ -96,6 +133,14 @@ fallar fuerte, no inventar.
 - 11 de los 24 ambientes cableados quedan sin llave porque su vano no da un tramo
   limpio de perímetro sin muro (espacios integrados, y ambientes donde el tapón
   del cierre morfológico corre el borde). Sale con warning `NO_DOOR_FOR_SWITCH`.
+- Los exteriores cuyo límite es solado y no muro quedan sin tomas, con
+  `NO_VERIFIED_WALL_FOR_OUTLETS`. Es deliberado: el motor no coloca sobre un
+  borde que no pudo verificar. La contrapartida es que una galería con columnas
+  en vez de pared necesita colocación manual.
+- El relleno todavía devuelve ambientes imposiblemente chicos en plantas densas
+  (en el corpus real, dormitorios de 2,4 y 3,8 m²). Sale con warning de área
+  fuera de rango, pero el polígono se usa igual, y un ambiente subdimensionado
+  recibe menos tomas de las que le corresponden.
 - Los centros de luz de un ambiente grande se distribuyen sobre un solo eje. En
   una planta integrada en L eso los alinea en fila.
 - Planos sin capa de nombres de local pierden el mejor insumo y caen al detector
