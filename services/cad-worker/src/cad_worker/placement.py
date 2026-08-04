@@ -54,6 +54,10 @@ WARN_NO_BED = "NO_BED_DETECTED"
 WARN_BED_NOT_AGAINST_WALL = "BED_NOT_AGAINST_WALL"
 WARN_INSUFFICIENT_WALL_SPACE = "INSUFFICIENT_WALL_SPACE"
 WARN_WALLS_UNMATCHED = "WALLS_UNMATCHED"
+# Every boundary of the room is unverified: no outlet can be honestly placed on
+# it. Reported rather than filled, so the room reads as "pending" on the plan
+# instead of carrying symbols floating in open air.
+WARN_NO_VERIFIED_WALL = "NO_VERIFIED_WALL_FOR_OUTLETS"
 WARN_KITCHEN_COUNTER = "KITCHEN-COUNTER-UNVERIFIED"
 WARN_NO_DOOR_FOR_SWITCH = "NO_DOOR_FOR_SWITCH"
 
@@ -223,12 +227,21 @@ def _build_edge_spans(
         #
         # The gap only means "doorway" when the rest of the edge does have a wall
         # behind it. An edge with no wall at all is not a room made of doors, it
-        # is a boundary we could not verify — reading it as a doorway deleted
-        # every usable span and left rooms with no outlets at all.
+        # is a boundary we could not verify.
+        # Clamped to the edge: the projection runs along the infinite line, so a
+        # wall that continues past the corner reports an interval reaching beyond
+        # this edge. Harmless while spans were carved out of (0, length); once
+        # they are carved out of the wall itself, an unclamped interval puts the
+        # component past the end of the edge and outside the room.
+        backed = _merge_intervals(
+            [
+                (max(0.0, start), min(length, end))
+                for start, end in wall_intervals
+                if min(length, end) - max(0.0, start) > 0
+            ],
+        )
         unbacked = (
-            subtract_intervals((0.0, length), _merge_intervals(wall_intervals))
-            if edge.wall_supported
-            else []
+            subtract_intervals((0.0, length), backed) if edge.wall_supported else []
         )
         edge.door_intervals = [
             interval
@@ -241,7 +254,15 @@ def _build_edge_spans(
             (interval[0] - clearance, interval[1] + clearance)
             for interval in _merge_intervals(opening_intervals + edge.door_intervals)
         ]
-        spans = subtract_intervals((0.0, length), cuts)
+        # A usable span is wall minus doorway, not edge minus doorway. Deriving it
+        # from the whole edge made an unbacked boundary — the open side of a
+        # gallery, a terrace edge drawn as paving — the *longest* span in the
+        # room, and the ranking below prefers the longest. That is how outlets
+        # ended up seven metres from the nearest wall, each recorded as sitting on
+        # a "tramo útil de pared". A boundary we could not verify carries nothing.
+        spans: list[tuple[float, float]] = []
+        for start, end in backed:
+            spans.extend(subtract_intervals((start, end), cuts))
         edge.spans = [s for s in spans if s[1] - s[0] >= min_span]
         edges.append(edge)
     return edges, any_supported
@@ -353,7 +374,28 @@ def _place_on_edge(
     t = offset / edge.length if edge.length > 0 else 0.0
     base = point_at(edge.a, edge.b, min(1.0, max(0.0, t)))
     nx, ny = inward_normal(edge.a, edge.b, vertices)
-    return (base[0] + nx * nudge, base[1] + ny * nudge), (nx, ny)
+    # The nudge only exists so the symbol does not sit exactly on the line; it may
+    # never carry the component out of the room. Near a reflex corner the edge's
+    # inward normal points out of the polygon, and on a 15-vertex room in the real
+    # corpus that pushed an outlet past its own boundary. Containment beats
+    # cosmetics: shorten the nudge, and if the corner defeats it entirely, aim at
+    # a point known to be inside instead.
+    nudged = (base[0] + nx * nudge, base[1] + ny * nudge)
+    if point_in_polygon(nudged, vertices):
+        return nudged, (nx, ny)
+    for factor in (0.5, 0.25, 0.1):
+        trial = (base[0] + nx * nudge * factor, base[1] + ny * nudge * factor)
+        if point_in_polygon(trial, vertices):
+            return trial, (nx, ny)
+    inside = _interior_point(vertices)
+    dx, dy = inside[0] - base[0], inside[1] - base[1]
+    distance = math.hypot(dx, dy)
+    if distance > 0:
+        step = min(nudge, distance * 0.5)
+        trial = (base[0] + dx / distance * step, base[1] + dy / distance * step)
+        if point_in_polygon(trial, vertices):
+            return trial, (nx, ny)
+    return base, (nx, ny)
 
 
 @dataclass
@@ -706,7 +748,12 @@ def place_outlets_for_room(
     if not any_supported:
         warnings.append(WARN_WALLS_UNMATCHED)
 
+    # Only wall-backed stretches count. Summing the whole boundary inflated the
+    # requirement with metres of open air, and the extra outlets it asked for
+    # were then placed on that same open air.
     usable_perimeter = sum(s[1] - s[0] for e in edges for s in e.spans)
+    if usable_perimeter <= 0:
+        warnings.append(WARN_NO_VERIFIED_WALL)
     required = _required_outlets(rule, usable_perimeter, du_per_m)
 
     normalized_type = str(room_type or "").strip().lower()
