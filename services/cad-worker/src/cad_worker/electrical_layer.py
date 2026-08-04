@@ -32,6 +32,7 @@ from cad_worker.dxf_io import open_dxf_file, save_dxf_file
 from cad_worker.extract_geometry import extract_geometry, geometry_bounding_box, point_inside_bbox
 from cad_worker.geometry import point_in_polygon, point_seg_distance, polygon_edges
 from cad_worker.symbol_catalog import (
+    CATALOG,
     SymbolDef,
     UnknownPlacementKindError,
     compute_symbol_scale_resolution,
@@ -363,6 +364,30 @@ def _placement_rotation(item: dict[str, object], symbol: SymbolDef) -> float:
     return 0.0
 
 
+def _layer_component_census(msp: Any, layer_name: str) -> tuple[dict[str, int], list[tuple[float, float]]]:
+    """Every component on the layer right now: counts by catalog kind, and positions.
+
+    The legend describes the layer, so it has to be measured from the layer. Taking
+    the tally from the current run instead ended a room-by-room session with a
+    legend declaring four components on a plan that carried a hundred and four —
+    and a wrong count is exactly what an architect uses the legend to catch.
+    """
+    kind_by_block: dict[str, str] = {}
+    for kind, symbol in CATALOG.items():
+        kind_by_block.setdefault(symbol.block_name, kind)
+
+    counts: dict[str, int] = {}
+    points: list[tuple[float, float]] = []
+    for entity in msp:
+        if entity.dxf.layer != layer_name or entity.dxftype() != "INSERT":
+            continue
+        points.append((float(entity.dxf.insert.x), float(entity.dxf.insert.y)))
+        kind = kind_by_block.get(entity.dxf.name)
+        if kind is not None:
+            counts[kind] = counts.get(kind, 0) + 1
+    return counts, points
+
+
 def _draw_symbol_legend(
     msp: Any,
     *,
@@ -510,6 +535,13 @@ def apply_electrical_layer(
     detected_polygons = _detected_room_polygons(geometry)
     resolution_polygons = attached_polygons or detected_polygons
     unit_resolution = resolve_drawing_units(header_insunits, geometry, resolution_polygons)
+    # Symbol size is a property of the drawing, not of this run. Preferring the
+    # polygons attached to the current placements made a one-room run size its
+    # symbols against that single room: processing the plan room by room, as the
+    # UI does, produced nine different symbol sizes in one file (0.067 to 0.100,
+    # a 50% spread). The document-wide detection answers the same question the
+    # same way on every run.
+    scale_polygons = detected_polygons or attached_polygons
     effective_bbox_margin = (
         float(bbox_margin)
         if bbox_margin is not None
@@ -579,7 +611,7 @@ def apply_electrical_layer(
     )
     scale_resolution = compute_symbol_scale_resolution(
         unit_resolution,
-        resolution_polygons,
+        scale_polygons,
         plot_scale=plot_scale,
         paper_mm=largest_paper_mm,
     )
@@ -650,18 +682,27 @@ def apply_electrical_layer(
         )
         added += 1
 
-    component_counts: dict[str, int] = {}
-    for _x, _y, item, _symbol, _index in accepted:
-        kind = resolve_placement_kind(item)
-        component_counts[kind] = component_counts.get(kind, 0) + 1
+    # Measured after the blockrefs are in, so it sees this run's components and
+    # every earlier run's alike.
+    component_counts, layer_points = _layer_component_census(msp, layer_name)
 
+    # Anchored to the rooms, not to the components. Anchoring to the components of
+    # the current run put the legend beside whichever room happened to be
+    # processed first, which on a room-by-room session dropped it inside the
+    # living room. The detected rooms are the plan itself, and unlike the raw
+    # bounding box they exclude the title block and the site work.
+    legend_points = [
+        vertex
+        for polygon in detected_polygons
+        for vertex in polygon_vertices(polygon)
+    ] or layer_points
     legend_drawn = _draw_symbol_legend(
         msp,
         counts=component_counts,
         layer_name=layer_name,
         color_aci=config.color_aci,
         scale=symbol_scale,
-        points=[(x, y) for x, y, _item, _symbol, _index in accepted],
+        points=legend_points,
         generation_id=generation_id,
     )
 
