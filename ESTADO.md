@@ -107,6 +107,12 @@ documento.
 ## Próximo paso
 
 La decisión sobre qué hacer con las cuatro ramas está **pendiente de Nacho**.
+
+**Estado al 18-ago-2026:** Nacho le consultó a Juan Cruz Riera —creador principal del
+proyecto— en qué estado están sus commits. La decisión queda esperando esa respuesta:
+no es sólo una cuestión de higiene de ramas, porque es un repositorio compartido y el
+criterio de integración lo fija él. No mergear nada hasta que conteste.
+
 Datos para tomarla:
 
 - `main` está congelado desde el 2026-07-06 (`5058afb`); no recibe commits
